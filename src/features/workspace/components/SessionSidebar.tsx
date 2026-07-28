@@ -20,6 +20,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Input } from "@/shared/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/shared/components/ui/input-group";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/shared/components/ui/menu";
+import { Textarea } from "@/shared/components/ui/textarea";
 import { sessions } from "@/features/workspace/data/mockWorkspace";
 
 type SessionSidebarProps = {
@@ -35,7 +36,7 @@ const navItems = [
   { icon: HistoryIcon, label: "專案" },
   { icon: ServerIcon, label: "MCP Server" },
   { icon: PlugZapIcon, label: "外掛/技能" },
-  { icon: HatGlasses, label: "智能體" },
+  { icon: HatGlasses, label: "智能體/工具" },
 ];
 
 const recentProjects = [
@@ -56,6 +57,17 @@ type McpServer = {
 
 type McpDialogView = "list" | "add" | "edit";
 
+type AgentDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  scope: "system" | "custom";
+};
+
+type AgentDialogView = "list" | "mode" | "form" | "yaml";
+type AgentEditMode = "add" | "edit";
+type AgentToolTab = "agents" | "tools";
+
 const initialMcpServers: McpServer[] = [
   {
     id: "lan-mcp",
@@ -75,6 +87,63 @@ const emptyMcpForm = {
   password: "",
 };
 
+const agentDefinitions: AgentDefinition[] = [
+  {
+    id: "build",
+    name: "build",
+    description: "The default agent. Executes tools based on configured permissions.",
+    scope: "system",
+  },
+  {
+    id: "explore",
+    name: "explore",
+    description: "Fast agent specialized for exploring codebases and answering repository questions.",
+    scope: "system",
+  },
+  {
+    id: "general",
+    name: "general",
+    description: "General-purpose agent for researching complex questions and executing multi-step tasks.",
+    scope: "system",
+  },
+  {
+    id: "plan",
+    name: "plan",
+    description: "Plan mode. Disallows all edit tools.",
+    scope: "system",
+  },
+  {
+    id: "docs-implement",
+    name: "Docs Implement",
+    description: "掃描 docs 中需求實作的文件，平行派 subagent 實作，完成後更新狀態。",
+    scope: "custom",
+  },
+  {
+    id: "docs-plan",
+    name: "Docs Plan",
+    description: "像內建 plan 一樣規劃工作，但可在 docs 新增或修改規劃文件並標記。",
+    scope: "custom",
+  },
+];
+
+const toolDefinitions = [
+  { id: "read", name: "read", description: "Read files from the current workspace.", category: "Files" },
+  { id: "grep", name: "grep", description: "Search file contents using regular expressions.", category: "Search" },
+  { id: "glob", name: "glob", description: "Find files by path pattern across the workspace.", category: "Search" },
+  { id: "bash", name: "bash", description: "Run approved terminal commands for verification and development tasks.", category: "Runtime" },
+  { id: "apply-patch", name: "apply_patch", description: "Apply precise file edits through patch operations.", category: "Edit" },
+  { id: "task", name: "task", description: "Launch subagents for larger exploration or implementation work.", category: "Agent" },
+];
+
+const emptyAgentForm = {
+  name: "",
+  description: "",
+};
+
+function agentToYaml(agent: Pick<AgentDefinition, "name" | "description">) {
+  return `name: ${agent.name || "my-agent"}\ndescription: ${agent.description || "Describe when this agent should be used."}\nmode: subagent\ntools:\n  - read\n  - grep\n  - glob\npermissions:\n  edit: allow\n`;
+}
+
 export function SessionSidebar({
   activeProjectPath,
   onProjectChange,
@@ -92,6 +161,14 @@ export function SessionSidebar({
   const [mcpServers, setMcpServers] = useState<McpServer[]>(initialMcpServers);
   const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
   const [mcpForm, setMcpForm] = useState(emptyMcpForm);
+  const [agentsDialogOpen, setAgentsDialogOpen] = useState(false);
+  const [agentDialogView, setAgentDialogView] = useState<AgentDialogView>("list");
+  const [agentEditMode, setAgentEditMode] = useState<AgentEditMode>("add");
+  const [agentToolTab, setAgentToolTab] = useState<AgentToolTab>("agents");
+  const [agents, setAgents] = useState<AgentDefinition[]>(agentDefinitions);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [agentForm, setAgentForm] = useState(emptyAgentForm);
+  const [agentYaml, setAgentYaml] = useState(agentToYaml(emptyAgentForm));
 
   const filteredProjects = recentProjects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
@@ -165,6 +242,57 @@ export function SessionSidebar({
     });
   }
 
+  function openAgentsList() {
+    setAgentDialogView("list");
+    setAgentToolTab("agents");
+    setAgentsDialogOpen(true);
+  }
+
+  function openAddAgentMode() {
+    setAgentEditMode("add");
+    setEditingAgentId(null);
+    setAgentForm(emptyAgentForm);
+    setAgentYaml(agentToYaml(emptyAgentForm));
+    setAgentDialogView("mode");
+  }
+
+  function openEditAgentMode(agent: AgentDefinition) {
+    setAgentEditMode("edit");
+    setEditingAgentId(agent.id);
+    setAgentForm({ name: agent.name, description: agent.description });
+    setAgentYaml(agentToYaml(agent));
+    setAgentDialogView("mode");
+  }
+
+  function openAgentEditor(view: "form" | "yaml") {
+    setAgentDialogView(view);
+  }
+
+  function submitAgentConfig() {
+    const fallbackName = agentEditMode === "add" ? "custom-agent" : "agent";
+    const yamlName = agentYaml.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    const yamlDescription = agentYaml.match(/^description:\s*(.+)$/m)?.[1]?.trim();
+    const nextAgent = {
+      id: editingAgentId ?? `agent-${Date.now()}`,
+      name: agentDialogView === "yaml" ? yamlName || fallbackName : agentForm.name.trim() || fallbackName,
+      description: agentDialogView === "yaml" ? yamlDescription || "透過 YAML 新增的 opencode agent。" : agentForm.description.trim() || "透過介面新增的 opencode agent。",
+      scope: "custom" as const,
+    };
+
+    setAgents((current) => {
+      if (agentEditMode === "edit" && editingAgentId) {
+        return current.map((agent) => agent.id === editingAgentId ? nextAgent : agent);
+      }
+
+      return [...current, nextAgent];
+    });
+    setAgentDialogView("list");
+  }
+
+  function deleteAgent(agentId: string) {
+    setAgents((current) => current.filter((agent) => agent.id !== agentId));
+  }
+
   return (
     <>
       <aside
@@ -195,6 +323,7 @@ export function SessionSidebar({
                   onClick={() => {
                     if (item.label === "專案") setProjectDialogOpen(true);
                     if (item.label === "MCP Server") openMcpList();
+                    if (item.label === "智能體/工具") openAgentsList();
                   }}
                   type="button"
                 >
@@ -523,6 +652,211 @@ export function SessionSidebar({
                   <Button disabled={!mcpForm.url.trim()} onClick={submitMcpServer}>
                     {mcpDialogView === "add" ? "添加服務器" : "保存"}
                   </Button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {agentsDialogOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
+          <section
+            aria-label="Agents"
+            className="w-full max-w-[640px] overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+          >
+            <div className="flex h-14 items-center justify-between gap-4 px-5">
+              <div className="flex min-w-0 items-center gap-2">
+                {agentDialogView !== "list" && (
+                  <button
+                    aria-label="返回智能體/工具列表"
+                    className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setAgentDialogView(agentDialogView === "mode" ? "list" : "mode")}
+                    type="button"
+                  >
+                    <ArrowLeftIcon aria-hidden="true" className="size-4" />
+                  </button>
+                )}
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-base">
+                    {agentDialogView === "list" ? "智能體/工具" : agentDialogView === "mode" ? (agentEditMode === "add" ? "新增 Agent" : "編輯 Agent") : agentDialogView === "form" ? "介面設定 Agent" : "YAML 設定 Agent"}
+                  </h2>
+                  <p className="mt-0.5 text-muted-foreground text-xs">{agentDialogView === "list" ? `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}` : "opencode agent YAML 設定"}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  aria-label="新增 Agent"
+                  className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={openAddAgentMode}
+                  type="button"
+                >
+                  <PlusIcon aria-hidden="true" className="size-4" />
+                </button>
+                <button
+                  aria-label="關閉 Agents"
+                  className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setAgentsDialogOpen(false)}
+                  type="button"
+                >
+                  <XIcon aria-hidden="true" className="size-4" />
+                </button>
+              </div>
+            </div>
+
+            {agentDialogView === "list" && (
+              <div className="grid max-h-[min(70dvh,560px)] gap-5 overflow-y-auto px-6 pb-6">
+                <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
+                  <button
+                    className={`h-8 rounded-md font-medium text-sm transition ${agentToolTab === "agents" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => setAgentToolTab("agents")}
+                    type="button"
+                  >
+                    智能體
+                  </button>
+                  <button
+                    className={`h-8 rounded-md font-medium text-sm transition ${agentToolTab === "tools" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => setAgentToolTab("tools")}
+                    type="button"
+                  >
+                    工具
+                  </button>
+                </div>
+
+                {agentToolTab === "agents" && (
+                  <>
+                <section aria-labelledby="built-in-agents-title">
+                  <h3 className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide" id="built-in-agents-title">Built-in Agents</h3>
+                  <ul className="grid gap-1">
+                    {agents.filter((agent) => agent.scope === "system").map((agent) => (
+                      <li key={agent.id}>
+                        <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate font-semibold text-sm">{agent.name}</span>
+                              <Badge size="sm" variant="info">system</Badge>
+                            </div>
+                            <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">{agent.description}</p>
+                          </div>
+                          <Menu>
+                            <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                            </MenuTrigger>
+                            <MenuPopup align="end" className="min-w-36">
+                              <MenuItem>查看設定</MenuItem>
+                              <MenuItem>複製名稱</MenuItem>
+                            </MenuPopup>
+                          </Menu>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section aria-labelledby="custom-agents-title">
+                  <h3 className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide" id="custom-agents-title">Custom Agents</h3>
+                  <ul className="grid gap-1">
+                    {agents.filter((agent) => agent.scope === "custom").map((agent) => (
+                      <li key={agent.id}>
+                        <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate font-semibold text-sm">{agent.name}</span>
+                              <Badge size="sm" variant="success">custom</Badge>
+                            </div>
+                            <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">{agent.description}</p>
+                          </div>
+                          <Menu>
+                            <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                              <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                            </MenuTrigger>
+                            <MenuPopup align="end" className="min-w-36">
+                              <MenuItem onClick={() => openEditAgentMode(agent)}>編輯</MenuItem>
+                              <MenuItem>複製</MenuItem>
+                              <MenuSeparator />
+                              <MenuItem onClick={() => deleteAgent(agent.id)} variant="destructive">刪除</MenuItem>
+                            </MenuPopup>
+                          </Menu>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+                  </>
+                )}
+
+                {agentToolTab === "tools" && (
+                  <section aria-labelledby="available-tools-title">
+                    <h3 className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide" id="available-tools-title">Available Tools</h3>
+                    <ul className="grid gap-1">
+                      {toolDefinitions.map((tool) => (
+                        <li key={tool.id}>
+                          <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="truncate font-semibold text-sm">{tool.name}</span>
+                                <Badge size="sm" variant="outline">{tool.category}</Badge>
+                              </div>
+                              <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">{tool.description}</p>
+                            </div>
+                            <Menu>
+                              <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                                <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                              </MenuTrigger>
+                              <MenuPopup align="end" className="min-w-36">
+                                <MenuItem>查看工具說明</MenuItem>
+                                <MenuItem>複製工具名稱</MenuItem>
+                              </MenuPopup>
+                            </Menu>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {agentDialogView === "mode" && (
+              <div className="grid gap-3 px-6 pb-6">
+                <button className="grid gap-1 rounded-lg border bg-muted/45 p-4 text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openAgentEditor("form")} type="button">
+                  <span className="font-semibold text-sm">用介面{agentEditMode === "add" ? "新增" : "編輯"}</span>
+                  <span className="text-muted-foreground text-xs">填寫名稱、描述與常用設定，系統會產生 opencode agent YAML。</span>
+                </button>
+                <button className="grid gap-1 rounded-lg border bg-muted/45 p-4 text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => openAgentEditor("yaml")} type="button">
+                  <span className="font-semibold text-sm">用 YAML 文件{agentEditMode === "add" ? "新增" : "編輯"}</span>
+                  <span className="text-muted-foreground text-xs">直接貼上或修改 opencode agent 的 YAML 設定檔內容。</span>
+                </button>
+              </div>
+            )}
+
+            {agentDialogView === "form" && (
+              <div className="grid gap-4 px-6 pb-6">
+                <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
+                  <label className="grid gap-2 text-muted-foreground text-sm">
+                    Agent 名稱
+                    <Input aria-label="Agent 名稱" onChange={(event) => setAgentForm((current) => ({ ...current, name: event.target.value }))} placeholder="docs-implement" value={agentForm.name} />
+                  </label>
+                  <label className="grid gap-2 text-muted-foreground text-sm">
+                    使用時機 / 描述
+                    <Textarea aria-label="Agent 描述" onChange={(event) => setAgentForm((current) => ({ ...current, description: event.target.value }))} placeholder="描述這個 agent 何時應該被使用，以及它要負責的任務。" rows={4} value={agentForm.description} />
+                  </label>
+                </div>
+                <div>
+                  <Button disabled={!agentForm.name.trim()} onClick={submitAgentConfig}>{agentEditMode === "add" ? "新增 Agent" : "保存"}</Button>
+                </div>
+              </div>
+            )}
+
+            {agentDialogView === "yaml" && (
+              <div className="grid gap-4 px-6 pb-6">
+                <label className="grid gap-2 text-muted-foreground text-sm">
+                  opencode agent YAML
+                  <Textarea aria-label="opencode agent YAML" className="font-mono" onChange={(event) => setAgentYaml(event.target.value)} rows={12} spellCheck={false} value={agentYaml} />
+                </label>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-muted-foreground text-xs">會從 YAML 的 <code>name</code> 與 <code>description</code> 更新清單顯示。</p>
+                  <Button disabled={!agentYaml.trim()} onClick={submitAgentConfig}>{agentEditMode === "add" ? "新增 Agent" : "保存 YAML"}</Button>
                 </div>
               </div>
             )}
