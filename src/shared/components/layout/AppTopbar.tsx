@@ -61,13 +61,13 @@ export function AppTopbar({
         <>
           <AgentSwitcher activeAgent={activeAgent} agents={agents} onAgentChange={onAgentChange} />
           <ContextMeter usage={tokenUsage} />
-          <Button aria-label="Open context panel" className="min-[1181px]:hidden" onClick={onOpenContextPanel} size="icon" variant="ghost">
+          <Button aria-label="Open context panel" className="bg-background min-[1181px]:hidden" onClick={onOpenContextPanel} size="icon" variant="outline">
             <PanelRightIcon aria-hidden="true" />
           </Button>
         </>
       }
       start={
-        <Button aria-label="Open sidebar" className="max-[760px]:inline-flex min-[761px]:hidden" onClick={onOpenSidebar} size="icon" variant="ghost">
+        <Button aria-label="Open sidebar" className="bg-background max-[760px]:inline-flex min-[761px]:hidden" onClick={onOpenSidebar} size="icon" variant="outline">
           <PanelLeftIcon aria-hidden="true" />
         </Button>
       }

@@ -73,7 +73,7 @@ export function AppShell({
       {sidebarOpen && onCloseSidebar && (
         <button
           aria-label="Close sidebar overlay"
-          className="fixed inset-0 z-30 bg-black/20 min-[761px]:hidden"
+          className="fixed inset-0 z-30 bg-background min-[761px]:hidden"
           onClick={onCloseSidebar}
           type="button"
         />
@@ -81,7 +81,7 @@ export function AppShell({
       {asideOpen && onCloseAside && (
         <button
           aria-label="Close side panel overlay"
-          className="fixed inset-0 z-30 bg-black/20 min-[1181px]:hidden"
+          className="fixed inset-0 z-30 bg-background min-[1181px]:hidden"
           onClick={onCloseAside}
           type="button"
         />

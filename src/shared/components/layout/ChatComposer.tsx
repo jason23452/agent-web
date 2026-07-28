@@ -72,8 +72,8 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
             </div>
           )}
 
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2 max-[760px]:grid-cols-[minmax(0,1fr)_auto]">
-            <span className="relative max-[760px]:hidden">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
+            <span className="relative">
               <Button aria-label="加入檔案" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" onClick={() => setUploadOpen((current) => !current)} size="icon" variant="ghost">
                 <PaperclipIcon aria-hidden="true" />
               </Button>

@@ -1286,17 +1286,17 @@ export function AppSidebar({
   return (
     <>
       <Sidebar
-        className={`z-40 flex min-h-dvh flex-col gap-4 border-border border-r bg-muted/35 px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
+        className={`z-40 flex min-h-dvh flex-col gap-4 border-border border-r bg-background px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
         data-region="session-sidebar"
       >
       <div className="flex items-center justify-between gap-3 px-2">
         <div className="font-semibold text-lg tracking-[-0.02em]">AICaht</div>
         <Button
           aria-label="收合側欄"
-          className="max-[760px]:inline-flex min-[761px]:hidden"
+          className="bg-background max-[760px]:inline-flex min-[761px]:hidden"
           onClick={onClose}
           size="icon"
-          variant="ghost"
+          variant="outline"
         >
           <PanelLeftCloseIcon aria-hidden="true" />
         </Button>
