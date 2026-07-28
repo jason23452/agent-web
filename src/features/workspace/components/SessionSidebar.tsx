@@ -1659,10 +1659,10 @@ export function SessionSidebar({
 
                   <section className="grid gap-3" aria-labelledby="provider-auth-methods-title">
                     <p className="text-muted-foreground text-sm" id="provider-auth-methods-title">選擇 {selectedModelProvider.name} 的登錄方式。</p>
-                    <div className="grid gap-1 pl-5">
+                    <div className="grid gap-1 pl-4">
                       {selectedModelProvider.authMethods.map((method) => (
                         <button
-                          className="flex min-h-8 w-fit items-center rounded-md px-1 text-left font-medium text-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="flex min-h-9 w-full items-center rounded-lg px-3 text-left font-medium text-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           key={method}
                           onClick={() => setSelectedProviderAuthMethod(method)}
                           type="button"
