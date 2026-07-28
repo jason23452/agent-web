@@ -56,6 +56,8 @@ type McpServer = {
 };
 
 type McpDialogView = "list" | "add" | "edit";
+type PermissionAction = "allow" | "ask" | "deny";
+type PermissionValue = PermissionAction | Record<string, PermissionAction>;
 
 type AgentDefinition = {
   id: string;
@@ -68,11 +70,21 @@ type AgentDefinition = {
   toolGuidance?: Record<string, string>;
   skillGuidance?: Record<string, string>;
   skills: string[];
-  permission: Record<string, "allow" | "ask" | "deny">;
+  subagents: string[];
+  subagentGuidance?: Record<string, string>;
+  permission: Record<string, PermissionValue>;
   systemPrompt: string;
   temperature?: string;
+  top_p?: string;
+  variant?: string;
   steps?: string;
+  disable?: boolean;
   hidden?: boolean;
+  color?: string;
+  promptSource?: "inline" | "file";
+  promptFile?: string;
+  providerOptionsJson?: string;
+  permissionRulesJson?: string;
 };
 
 type AgentDialogView = "list" | "detail" | "config";
@@ -109,6 +121,7 @@ const agentDefinitions: AgentDefinition[] = [
     model: "openai/gpt-5.5",
     tools: ["read", "grep", "glob", "bash", "apply_patch"],
     skills: ["react-vite-feature-based", "coss"],
+    subagents: ["explore", "general", "plan"],
     permission: { read: "allow", grep: "allow", glob: "allow", bash: "allow", edit: "allow", task: "allow" },
     systemPrompt: "You are the default build agent. Implement requested changes directly and verify your work.",
   },
@@ -121,6 +134,7 @@ const agentDefinitions: AgentDefinition[] = [
     model: "openai/gpt-5.5-mini",
     tools: ["read", "grep", "glob", "task"],
     skills: ["react-vite-feature-based"],
+    subagents: ["plan"],
     permission: { read: "allow", grep: "allow", glob: "allow", edit: "deny", bash: "ask", task: "allow" },
     systemPrompt: "Explore the codebase quickly and return concise findings. Do not edit files.",
   },
@@ -133,6 +147,7 @@ const agentDefinitions: AgentDefinition[] = [
     model: "openai/gpt-5.5",
     tools: ["read", "grep", "glob", "bash", "task"],
     skills: ["playwright-e2e-testing", "accessibility-compliance"],
+    subagents: ["explore", "plan"],
     permission: { read: "allow", grep: "allow", glob: "allow", bash: "ask", edit: "ask", task: "allow" },
     systemPrompt: "Research complex questions and execute multi-step work with clear verification.",
   },
@@ -145,6 +160,7 @@ const agentDefinitions: AgentDefinition[] = [
     model: "openai/gpt-5.5-mini",
     tools: ["read", "grep", "glob"],
     skills: ["information-architecture"],
+    subagents: [],
     permission: { read: "allow", grep: "allow", glob: "allow", bash: "ask", edit: "deny", task: "deny" },
     systemPrompt: "Analyze and plan. Do not modify files.",
   },
@@ -157,6 +173,7 @@ const agentDefinitions: AgentDefinition[] = [
     model: "openai/gpt-5.5",
     tools: ["read", "grep", "glob", "task", "apply_patch"],
     skills: ["react-vite-feature-based", "coss"],
+    subagents: ["explore", "docs-plan"],
     permission: { read: "allow", grep: "allow", glob: "allow", bash: "ask", edit: "allow", task: "allow" },
     systemPrompt: "Read implementation docs, coordinate subagents, implement requested changes, and update status notes.",
   },
@@ -169,6 +186,7 @@ const agentDefinitions: AgentDefinition[] = [
     model: "openai/gpt-5.5-mini",
     tools: ["read", "grep", "glob"],
     skills: ["information-architecture"],
+    subagents: ["plan"],
     permission: { read: "allow", grep: "allow", glob: "allow", bash: "ask", edit: "ask", task: "deny" },
     systemPrompt: "Plan documentation-driven work and write concise implementation plans when needed.",
   },
@@ -181,6 +199,20 @@ const availableSkills = [
   "accessibility-compliance",
   "information-architecture",
   "responsive-design",
+];
+
+const modelVariants = ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+const agentColors = ["", "primary", "secondary", "accent", "success", "warning", "error", "info"];
+
+const availableModels = [
+  "openai/gpt-5.5",
+  "openai/gpt-5.5-mini",
+  "opencode/gpt-5.1-codex",
+  "anthropic/claude-opus-4-5-20251101",
+  "anthropic/claude-sonnet-4-5-20250929",
+  "google/gemini-3-pro",
+  "minimax/minimax-m2.1",
 ];
 
 function getToolPermissionKey(tool: string) {
@@ -203,28 +235,91 @@ function isCustomTool(toolName: string) {
   return toolDefinitions.some((tool) => tool.name === toolName && tool.source === "custom");
 }
 
+function permissionToYaml(permission: Record<string, PermissionValue>) {
+  return Object.entries(permission).map(([key, value]) => {
+    if (typeof value === "string") return `  ${key}: ${value}`;
+    const rules = Object.entries(value).map(([pattern, action]) => `    ${JSON.stringify(pattern)}: ${action}`).join("\n");
+    return `  ${key}:\n${rules}`;
+  }).join("\n");
+}
+
+function providerOptionsToYaml(optionsJson?: string) {
+  if (!optionsJson?.trim()) return "";
+
+  try {
+    const options = JSON.parse(optionsJson) as Record<string, unknown>;
+    return Object.entries(options).map(([key, value]) => {
+      if (typeof value === "string") return `${key}: ${value}`;
+      return `${key}: ${JSON.stringify(value)}`;
+    }).join("\n");
+  } catch {
+    return "# Provider options JSON is invalid and was not emitted.";
+  }
+}
+
+function parseJsonObject<T>(json?: string) {
+  if (!json?.trim()) return null;
+  try {
+    const parsed = JSON.parse(json) as T;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getPermissionVariant(value: PermissionValue) {
+  if (typeof value !== "string") return "info" as const;
+  if (value === "allow") return "success" as const;
+  if (value === "deny") return "error" as const;
+  return "warning" as const;
+}
+
+function getPermissionLabel(value: PermissionValue) {
+  return typeof value === "string" ? value : "rules";
+}
+
+function taskPermissionFor(subagents: string[]) {
+  if (subagents.length === 0) return "deny" as PermissionAction;
+  return { "*": "deny" as const, ...Object.fromEntries(subagents.map((subagent) => [subagent, "allow" as const])) };
+}
+
 const emptyAgentForm = {
   name: "",
   description: "",
   mode: "subagent" as AgentDefinition["mode"],
   model: "openai/gpt-5.5",
   temperature: "0.3",
+  top_p: "1",
+  variant: "",
   steps: "",
+  disable: false,
+  hidden: false,
+  color: "",
+  promptSource: "inline" as AgentDefinition["promptSource"],
+  promptFile: "",
+  providerOptionsJson: "",
+  permissionRulesJson: "",
   tools: ["read", "grep", "glob"],
   toolGuidance: {} as Record<string, string>,
   skillGuidance: {} as Record<string, string>,
   skills: ["react-vite-feature-based"],
-  permission: { read: "allow", grep: "allow", glob: "allow", bash: "ask", edit: "ask", task: "ask" } as AgentDefinition["permission"],
+  subagents: [] as string[],
+  subagentGuidance: {} as Record<string, string>,
+  permission: { read: "allow", grep: "allow", glob: "allow", list: "allow", bash: "ask", edit: "ask", task: "deny", skill: "allow", webfetch: "ask", websearch: "ask", lsp: "allow", question: "ask", todowrite: "ask", external_directory: "ask", doom_loop: "ask" } as AgentDefinition["permission"],
   systemPrompt: "",
 };
 
 function agentToYaml(agent: Pick<AgentDefinition, "name" | "description"> & Partial<AgentDefinition>) {
   const tools = agent.tools?.length ? agent.tools : ["read", "grep", "glob"];
   const skills = agent.skills?.length ? agent.skills : ["react-vite-feature-based"];
-  const permission = "permission" in agent && agent.permission ? agent.permission as AgentDefinition["permission"] : { edit: "allow", bash: "ask", read: "allow", grep: "allow", glob: "allow" };
+  const subagents = agent.subagents?.length ? agent.subagents : [];
+  const permission: Record<string, PermissionValue> = "permission" in agent && agent.permission ? agent.permission as AgentDefinition["permission"] : { edit: "allow", bash: "ask", read: "allow", grep: "allow", glob: "allow" };
+  const permissionRules = parseJsonObject<Record<string, PermissionValue>>(agent.permissionRulesJson);
+  const effectivePermission: Record<string, PermissionValue> = { ...permission, ...permissionRules, task: taskPermissionFor(subagents) };
   const systemPrompt = "systemPrompt" in agent && agent.systemPrompt ? agent.systemPrompt : "You are a focused opencode agent. Follow the user's request and use the configured tools responsibly.";
   const toolGuidance = "toolGuidance" in agent && agent.toolGuidance ? agent.toolGuidance : {};
   const skillGuidance = "skillGuidance" in agent && agent.skillGuidance ? agent.skillGuidance : {};
+  const subagentGuidance = "subagentGuidance" in agent && agent.subagentGuidance ? agent.subagentGuidance : {};
   const guidanceText = tools
     .map((tool) => ({ tool, guidance: toolGuidance[tool]?.trim() }))
     .filter((item) => item.guidance)
@@ -235,7 +330,14 @@ function agentToYaml(agent: Pick<AgentDefinition, "name" | "description"> & Part
     .filter((item) => item.guidance)
     .map((item) => `- ${item.skill}: ${item.guidance}`)
     .join("\n");
-  return `---\nname: ${agent.name || "my-agent"}\ndescription: ${agent.description || "Describe when this agent should be used."}\nmode: ${agent.mode ?? "subagent"}\nmodel: ${"model" in agent && agent.model ? agent.model : "openai/gpt-5.5"}\ntemperature: ${"temperature" in agent && agent.temperature ? agent.temperature : "0.3"}\n${"steps" in agent && agent.steps ? `steps: ${agent.steps}\n` : ""}tools:\n${tools.map((tool) => `  ${tool}: true`).join("\n")}\nskills:\n${skills.map((skill) => `  - ${skill}`).join("\n")}\npermission:\n${Object.entries(permission).map(([key, value]) => `  ${key}: ${value}`).join("\n")}\n---\n${systemPrompt}${guidanceText ? `\n\n## Tool usage guidance\n${guidanceText}` : ""}${skillGuidanceText ? `\n\n## Skill usage guidance\n${skillGuidanceText}` : ""}\n`;
+  const subagentGuidanceText = subagents
+    .map((subagent) => ({ subagent, guidance: subagentGuidance[subagent]?.trim() }))
+    .filter((item) => item.guidance)
+    .map((item) => `- ${item.subagent}: ${item.guidance}`)
+    .join("\n");
+  const providerOptionsYaml = providerOptionsToYaml(agent.providerOptionsJson);
+  const promptFile = agent.promptSource === "file" && agent.promptFile?.trim() ? `prompt: "{file:${agent.promptFile.trim()}}"\n` : "";
+  return `---\nname: ${agent.name || "my-agent"}\ndescription: ${agent.description || "Describe when this agent should be used."}\nmode: ${agent.mode ?? "subagent"}\nmodel: ${"model" in agent && agent.model ? agent.model : "openai/gpt-5.5"}\ntemperature: ${"temperature" in agent && agent.temperature ? agent.temperature : "0.3"}\ntop_p: ${"top_p" in agent && agent.top_p ? agent.top_p : "1"}\n${"variant" in agent && agent.variant ? `variant: ${agent.variant}\n` : ""}${"steps" in agent && agent.steps ? `steps: ${agent.steps}\n` : ""}${agent.disable ? "disable: true\n" : ""}${agent.hidden ? "hidden: true\n" : ""}${agent.color ? `color: ${agent.color}\n` : ""}${promptFile}${providerOptionsYaml ? `${providerOptionsYaml}\n` : ""}tools:\n${tools.map((tool) => `  ${tool}: true`).join("\n")}\nskills:\n${skills.map((skill) => `  - ${skill}`).join("\n")}\npermission:\n${permissionToYaml(effectivePermission)}\n---\n${agent.promptSource === "file" ? "" : systemPrompt}${guidanceText ? `\n\n## Tool usage guidance\n${guidanceText}` : ""}${skillGuidanceText ? `\n\n## Skill usage guidance\n${skillGuidanceText}` : ""}${subagentGuidanceText ? `\n\n## Subagent usage guidance\n${subagentGuidanceText}` : ""}\n`;
 }
 
 export function SessionSidebar({
@@ -266,9 +368,11 @@ export function SessionSidebar({
   const [agentForm, setAgentForm] = useState(emptyAgentForm);
   const [agentYaml, setAgentYaml] = useState(agentToYaml(emptyAgentForm));
   const [toolToAdd, setToolToAdd] = useState(toolDefinitions[0]!.name);
+  const [subagentToAdd, setSubagentToAdd] = useState("");
   const [skillToAdd, setSkillToAdd] = useState(availableSkills[0]!);
   const [guidanceTool, setGuidanceTool] = useState<string | null>(null);
   const [guidanceSkill, setGuidanceSkill] = useState<string | null>(null);
+  const [guidanceSubagent, setGuidanceSubagent] = useState<string | null>(null);
 
   const filteredProjects = recentProjects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
@@ -288,6 +392,27 @@ export function SessionSidebar({
     return server.url.toLowerCase().includes(keyword) || server.name.toLowerCase().includes(keyword) || server.username.toLowerCase().includes(keyword);
   });
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
+
+  function agentCanReach(fromAgentId: string, targetAgentId: string, visited = new Set<string>()): boolean {
+    if (fromAgentId === targetAgentId) return true;
+    if (visited.has(fromAgentId)) return false;
+    visited.add(fromAgentId);
+
+    const fromAgent = agents.find((agent) => agent.id === fromAgentId);
+    if (!fromAgent) return false;
+
+    return fromAgent.subagents.some((subagentId) => agentCanReach(subagentId, targetAgentId, visited));
+  }
+
+  function getCallableSubagentOptions(agentId: string | null, assignedSubagents: string[]) {
+    return agents.filter((agent) => {
+      if (agent.mode === "primary") return false;
+      if (agentId && agent.id === agentId) return false;
+      if (assignedSubagents.includes(agent.id)) return false;
+      if (agentId && agentCanReach(agent.id, agentId)) return false;
+      return true;
+    });
+  }
 
   function openMcpList() {
     setMcpDialogView("list");
@@ -348,6 +473,7 @@ export function SessionSidebar({
     setAgentToolTab("agents");
     setGuidanceTool(null);
     setGuidanceSkill(null);
+    setGuidanceSubagent(null);
     setAgentsDialogOpen(true);
   }
 
@@ -360,6 +486,7 @@ export function SessionSidebar({
     setAgentYaml(agentToYaml(emptyAgentForm));
     setGuidanceTool(null);
     setGuidanceSkill(null);
+    setGuidanceSubagent(null);
     setAgentDialogView("config");
   }
 
@@ -367,6 +494,7 @@ export function SessionSidebar({
     setSelectedAgentId(agent.id);
     setGuidanceTool(null);
     setGuidanceSkill(null);
+    setGuidanceSubagent(null);
     setAgentDialogView("detail");
   }
 
@@ -381,17 +509,29 @@ export function SessionSidebar({
       mode: agent.mode,
       model: agent.model,
       temperature: agent.temperature ?? "0.3",
+      top_p: agent.top_p ?? "1",
+      variant: agent.variant ?? "",
       steps: agent.steps ?? "",
+      disable: agent.disable ?? false,
+      hidden: agent.hidden ?? false,
+      color: agent.color ?? "",
+      promptSource: agent.promptSource ?? "inline",
+      promptFile: agent.promptFile ?? "",
+      providerOptionsJson: agent.providerOptionsJson ?? "",
+      permissionRulesJson: agent.permissionRulesJson ?? "",
       tools: agent.tools,
       toolGuidance: agent.toolGuidance ?? {},
       skillGuidance: agent.skillGuidance ?? {},
       skills: agent.skills,
+      subagents: agent.subagents,
+      subagentGuidance: agent.subagentGuidance ?? {},
       permission: agent.permission,
       systemPrompt: agent.systemPrompt,
     });
     setAgentYaml(agentToYaml(agent));
     setGuidanceTool(null);
     setGuidanceSkill(null);
+    setGuidanceSubagent(null);
     setAgentDialogView("config");
   }
 
@@ -414,6 +554,7 @@ export function SessionSidebar({
     const yamlDescription = agentYaml.match(/^description:\s*(.+)$/m)?.[1]?.trim();
     const yamlMode = agentYaml.match(/^mode:\s*(primary|subagent|all)$/m)?.[1] as AgentDefinition["mode"] | undefined;
     const yamlModel = agentYaml.match(/^model:\s*(.+)$/m)?.[1]?.trim();
+    const yamlPromptFile = agentYaml.match(/^prompt:\s*"?\{file:(.+?)\}"?$/m)?.[1]?.trim();
     const yamlPrompt = agentYaml.split("---").slice(2).join("---").trim();
     const nextAgent: AgentDefinition = {
       id: editingAgentId ?? `agent-${Date.now()}`,
@@ -423,12 +564,23 @@ export function SessionSidebar({
       mode: agentConfigMode === "yaml" ? yamlMode ?? "subagent" : agentForm.mode,
       model: agentConfigMode === "yaml" ? yamlModel || "openai/gpt-5.5" : agentForm.model,
       temperature: agentConfigMode === "yaml" ? agentYaml.match(/^temperature:\s*(.+)$/m)?.[1]?.trim() : agentForm.temperature,
+      top_p: agentConfigMode === "yaml" ? agentYaml.match(/^top_p:\s*(.+)$/m)?.[1]?.trim() : agentForm.top_p,
+      variant: agentConfigMode === "yaml" ? agentYaml.match(/^variant:\s*(.+)$/m)?.[1]?.trim() : agentForm.variant,
       steps: agentConfigMode === "yaml" ? agentYaml.match(/^steps:\s*(.+)$/m)?.[1]?.trim() : agentForm.steps,
+      disable: agentConfigMode === "yaml" ? agentYaml.match(/^disable:\s*true$/m) !== null : agentForm.disable,
+      hidden: agentConfigMode === "yaml" ? agentYaml.match(/^hidden:\s*true$/m) !== null : agentForm.hidden,
+      color: agentConfigMode === "yaml" ? agentYaml.match(/^color:\s*(.+)$/m)?.[1]?.trim() : agentForm.color,
+      promptSource: agentConfigMode === "yaml" ? yamlPromptFile ? "file" : "inline" : agentForm.promptSource,
+      promptFile: agentConfigMode === "yaml" ? yamlPromptFile ?? "" : agentForm.promptFile,
+      providerOptionsJson: agentConfigMode === "yaml" ? "" : agentForm.providerOptionsJson,
+      permissionRulesJson: agentConfigMode === "yaml" ? "" : agentForm.permissionRulesJson,
       tools: agentConfigMode === "yaml" ? ["read", "grep", "glob"] : agentForm.tools,
       toolGuidance: agentConfigMode === "yaml" ? {} : agentForm.toolGuidance,
       skillGuidance: agentConfigMode === "yaml" ? {} : agentForm.skillGuidance,
       skills: agentConfigMode === "yaml" ? ["react-vite-feature-based"] : agentForm.skills,
-      permission: agentConfigMode === "yaml" ? { read: "allow", grep: "allow", glob: "allow", bash: "ask", edit: "ask", task: "ask" } : agentForm.permission,
+      subagents: agentConfigMode === "yaml" ? [] : agentForm.subagents,
+      subagentGuidance: agentConfigMode === "yaml" ? {} : agentForm.subagentGuidance,
+      permission: agentConfigMode === "yaml" ? emptyAgentForm.permission : { ...agentForm.permission, task: taskPermissionFor(agentForm.subagents) },
       systemPrompt: agentConfigMode === "yaml" ? yamlPrompt || "" : agentForm.systemPrompt,
     };
 
@@ -443,35 +595,53 @@ export function SessionSidebar({
   }
 
   function deleteAgent(agentId: string) {
-    setAgents((current) => current.filter((agent) => agent.id !== agentId));
+    setAgents((current) => current.filter((agent) => agent.id !== agentId).map((agent) => {
+      const nextSubagentGuidance = { ...agent.subagentGuidance };
+      delete nextSubagentGuidance[agentId];
+      return { ...agent, subagents: agent.subagents.filter((subagentId) => subagentId !== agentId), subagentGuidance: nextSubagentGuidance };
+    }));
   }
 
   function updateAgentConfig(agentId: string, update: (agent: AgentDefinition) => AgentDefinition) {
     setAgents((current) => current.map((agent) => agent.id === agentId ? update(agent) : agent));
   }
 
-  function addAgentTool() {
-    if (!selectedAgentId || !toolToAdd) return;
-    const permissionKey = getToolPermissionKey(toolToAdd);
-    updateAgentConfig(selectedAgentId, (agent) => agent.tools.includes(toolToAdd) ? agent : {
-      ...agent,
-      tools: [...agent.tools, toolToAdd],
-      toolGuidance: isCustomTool(toolToAdd) ? { ...agent.toolGuidance, [toolToAdd]: agent.toolGuidance?.[toolToAdd] ?? "" } : agent.toolGuidance,
-      permission: { ...agent.permission, [permissionKey]: agent.permission[permissionKey] ?? "ask" },
+  function addFormSubagent() {
+    const options = getCallableSubagentOptions(editingAgentId, agentForm.subagents);
+    const subagentId = options.some((agent) => agent.id === subagentToAdd) ? subagentToAdd : options[0]?.id;
+    if (!subagentId) return;
+    setAgentForm((current) => {
+      if (current.subagents.includes(subagentId)) return current;
+      const nextSubagents = [...current.subagents, subagentId];
+      return { ...current, subagents: nextSubagents, subagentGuidance: { ...current.subagentGuidance, [subagentId]: current.subagentGuidance[subagentId] ?? "" }, permission: { ...current.permission, task: taskPermissionFor(nextSubagents) } };
     });
   }
 
-  function removeAgentTool(tool: string) {
-    if (!selectedAgentId) return;
-    const permissionKey = getToolPermissionKey(tool);
-    if (guidanceTool === tool) setGuidanceTool(null);
-    updateAgentConfig(selectedAgentId, (agent) => {
-      const nextPermission = { ...agent.permission };
-      const nextToolGuidance = { ...agent.toolGuidance };
-      delete nextPermission[permissionKey];
-      delete nextToolGuidance[tool];
-      return { ...agent, tools: agent.tools.filter((item) => item !== tool), toolGuidance: nextToolGuidance, permission: nextPermission };
+  function removeFormSubagent(subagentId: string) {
+    if (guidanceSubagent === subagentId) setGuidanceSubagent(null);
+    setAgentForm((current) => {
+      const nextSubagentGuidance = { ...current.subagentGuidance };
+      delete nextSubagentGuidance[subagentId];
+      const nextSubagents = current.subagents.filter((item) => item !== subagentId);
+      return { ...current, subagents: nextSubagents, subagentGuidance: nextSubagentGuidance, permission: { ...current.permission, task: taskPermissionFor(nextSubagents) } };
     });
+  }
+
+  function updateSubagentGuidance(subagentId: string, value: string) {
+    if (agentDialogView === "config") {
+      setAgentForm((current) => ({
+        ...current,
+        subagentGuidance: { ...current.subagentGuidance, [subagentId]: value },
+      }));
+      return;
+    }
+
+    if (selectedAgentId) {
+      updateAgentConfig(selectedAgentId, (agent) => ({
+        ...agent,
+        subagentGuidance: { ...agent.subagentGuidance, [subagentId]: value },
+      }));
+    }
   }
 
   function updateToolGuidance(tool: string, value: string) {
@@ -508,21 +678,6 @@ export function SessionSidebar({
         skillGuidance: { ...agent.skillGuidance, [skill]: value },
       }));
     }
-  }
-
-  function addAgentSkill() {
-    if (!selectedAgentId || !skillToAdd) return;
-    updateAgentConfig(selectedAgentId, (agent) => agent.skills.includes(skillToAdd) ? agent : { ...agent, skills: [...agent.skills, skillToAdd], skillGuidance: { ...agent.skillGuidance, [skillToAdd]: agent.skillGuidance?.[skillToAdd] ?? "" } });
-  }
-
-  function removeAgentSkill(skill: string) {
-    if (!selectedAgentId) return;
-    if (guidanceSkill === skill) setGuidanceSkill(null);
-    updateAgentConfig(selectedAgentId, (agent) => {
-      const nextSkillGuidance = { ...agent.skillGuidance };
-      delete nextSkillGuidance[skill];
-      return { ...agent, skills: agent.skills.filter((item) => item !== skill), skillGuidance: nextSkillGuidance };
-    });
   }
 
   return (
@@ -974,11 +1129,10 @@ export function SessionSidebar({
                             <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                               <MoreHorizontalIcon aria-hidden="true" className="size-4" />
                             </MenuTrigger>
-                            <MenuPopup align="end" className="min-w-36">
-                              <MenuItem onClick={() => openAgentDetail(agent)}>查看設定</MenuItem>
-                              <MenuItem onClick={() => openEditAgentMode(agent)}>編輯</MenuItem>
-                              <MenuItem>複製名稱</MenuItem>
-                            </MenuPopup>
+                             <MenuPopup align="end" className="min-w-36">
+                               <MenuItem onClick={() => openAgentDetail(agent)}>查看設定</MenuItem>
+                               <MenuItem>複製名稱</MenuItem>
+                             </MenuPopup>
                           </Menu>
                         </div>
                       </li>
@@ -1071,7 +1225,7 @@ export function SessionSidebar({
                 {agentConfigMode === "interface" ? (
                   <>
                     <section className="grid gap-2" aria-labelledby="agent-tools-title">
-                      <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-sm" id="agent-tools-title">Tools</h4><Badge size="sm" variant="secondary">{selectedAgent.tools.length}</Badge></div>
+                      <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-sm" id="agent-tools-title">Tools</h4><div className="flex items-center gap-1.5"><Badge size="sm" variant="warning">deprecated</Badge><Badge size="sm" variant="secondary">{selectedAgent.tools.length}</Badge></div></div>
                       <div className="grid gap-1.5">
                         {selectedAgent.tools.map((tool) => {
                           const permissionKey = getToolPermissionKey(tool);
@@ -1081,32 +1235,62 @@ export function SessionSidebar({
                                 <span className="min-w-0 truncate font-mono">{tool}</span>
                                 {isCustomTool(tool) && (
                                   <Button onClick={() => setGuidanceTool(guidanceTool === tool ? null : tool)} size="sm" type="button" variant="outline">
-                                    {selectedAgent.toolGuidance?.[tool]?.trim() ? "編輯使用情境" : "新增使用情境"}
+                                    查看使用情境
                                   </Button>
                                 )}
                                 <select
                                   aria-label={`${tool} permission`}
                                   className="h-7 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-                                  onChange={(event) => updateAgentConfig(selectedAgent.id, (agent) => ({ ...agent, permission: { ...agent.permission, [permissionKey]: event.target.value as "allow" | "ask" | "deny" } }))}
-                                  value={selectedAgent.permission[permissionKey] ?? "ask"}
+                                  disabled
+                                  value={typeof selectedAgent.permission[permissionKey] === "string" ? selectedAgent.permission[permissionKey] : "ask"}
                                 >
                                   <option value="allow">allow</option>
                                   <option value="ask">ask</option>
                                   <option value="deny">deny</option>
                                 </select>
-                                <button aria-label={`移除 tool ${tool}`} className="grid size-6 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => removeAgentTool(tool)} type="button"><XIcon aria-hidden="true" className="size-3" /></button>
+                                <span className="size-6" aria-hidden="true" />
                               </div>
                               {guidanceTool === tool && isCustomTool(tool) && (
                                 <label className="grid gap-1.5 border-border/70 border-t pt-2 text-muted-foreground text-xs">
                                   使用情境
-                                  <Textarea aria-label={`${tool} 使用情境`} onChange={(event) => updateToolGuidance(tool, event.target.value)} placeholder={`說明 ${tool} 什麼情況需要被呼叫，以及模型應該如何使用它。`} rows={3} value={selectedAgent.toolGuidance?.[tool] ?? ""} />
+                                  <Textarea aria-label={`${tool} 使用情境`} placeholder="尚未設定使用情境。" readOnly rows={3} value={selectedAgent.toolGuidance?.[tool] ?? ""} />
                                 </label>
                               )}
                             </div>
                           );
                         })}
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"><select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setToolToAdd(event.target.value)} value={toolToAdd}>{toolDefinitions.map((tool) => <option key={tool.id} value={tool.name}>{tool.name} · {tool.category}</option>)}</select><Button onClick={addAgentTool} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Tool</Button></div>
+                      <p className="text-muted-foreground text-xs">查看設定為唯讀；請到自訂 Agent 的編輯頁修改 tools。</p>
+                    </section>
+
+                    <section className="grid gap-2" aria-labelledby="agent-subagents-title">
+                      <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-sm" id="agent-subagents-title">Callable Subagents</h4><Badge size="sm" variant="secondary">{selectedAgent.subagents.length}</Badge></div>
+                      <div className="grid gap-1.5">
+                        {selectedAgent.subagents.map((subagentId) => {
+                          const subagent = agents.find((agent) => agent.id === subagentId);
+                          return (
+                            <div className="grid gap-2 rounded-md border bg-background px-2 py-1.5 text-xs" key={subagentId}>
+                              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
+                                <span className="min-w-0 truncate font-mono">{subagent?.name ?? subagentId}</span>
+                                <Badge size="sm" variant="outline">{subagent?.mode ?? "subagent"}</Badge>
+                                <Button onClick={() => setGuidanceSubagent(guidanceSubagent === subagentId ? null : subagentId)} size="sm" type="button" variant="outline">
+                                  查看使用情境
+                                </Button>
+                                <span className="size-6" aria-hidden="true" />
+                              </div>
+                              {guidanceSubagent === subagentId && (
+                                <label className="grid gap-1.5 border-border/70 border-t pt-2 text-muted-foreground text-xs">
+                                  使用情境
+                                  <Textarea aria-label={`${subagent?.name ?? subagentId} 使用情境`} placeholder="尚未設定使用情境。" readOnly rows={3} value={selectedAgent.subagentGuidance?.[subagentId] ?? ""} />
+                                </label>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {selectedAgent.subagents.length === 0 && <p className="rounded-md border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">尚未設定可調用 subagent。</p>}
+                      </div>
+                      <p className="text-muted-foreground text-xs">查看設定為唯讀；請到自訂 Agent 的編輯頁修改 callable subagents。</p>
+                      <p className="text-muted-foreground text-xs">這會輸出成官方 permission.task 規則；清單會排除自己與會造成回呼循環的 agent。</p>
                     </section>
 
                     <section className="grid gap-2" aria-labelledby="agent-skills-title">
@@ -1117,26 +1301,26 @@ export function SessionSidebar({
                             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
                               <span className="min-w-0 truncate font-mono">{skill}</span>
                               <Button onClick={() => setGuidanceSkill(guidanceSkill === skill ? null : skill)} size="sm" type="button" variant="outline">
-                                {selectedAgent.skillGuidance?.[skill]?.trim() ? "編輯使用情境" : "新增使用情境"}
+                                查看使用情境
                               </Button>
-                              <button aria-label={`移除 skill ${skill}`} className="grid size-6 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => removeAgentSkill(skill)} type="button"><XIcon aria-hidden="true" className="size-3" /></button>
+                              <span className="size-6" aria-hidden="true" />
                             </div>
                             {guidanceSkill === skill && (
                               <label className="grid gap-1.5 border-border/70 border-t pt-2 text-muted-foreground text-xs">
                                 使用情境
-                                <Textarea aria-label={`${skill} 使用情境`} onChange={(event) => updateSkillGuidance(skill, event.target.value)} placeholder={`說明這個 agent 什麼情況會使用 ${skill} skill。`} rows={3} value={selectedAgent.skillGuidance?.[skill] ?? ""} />
+                                <Textarea aria-label={`${skill} 使用情境`} placeholder="尚未設定使用情境。" readOnly rows={3} value={selectedAgent.skillGuidance?.[skill] ?? ""} />
                               </label>
                             )}
                           </div>
                         ))}
                       </div>
-                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"><select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setSkillToAdd(event.target.value)} value={skillToAdd}>{availableSkills.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select><Button onClick={addAgentSkill} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Skill</Button></div>
+                      <p className="text-muted-foreground text-xs">查看設定為唯讀；請到自訂 Agent 的編輯頁修改 skills。</p>
                     </section>
 
                     <section className="grid gap-2" aria-labelledby="agent-permissions-title">
                       <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-sm" id="agent-permissions-title">Permissions</h4><Badge size="sm" variant="secondary">{Object.keys(selectedAgent.permission).length}</Badge></div>
                       <div className="grid gap-1.5 sm:grid-cols-2">
-                        {Object.entries(selectedAgent.permission).map(([key, value]) => <div className="flex items-center justify-between rounded-md border bg-background px-2 py-1.5 text-xs" key={key}><span className="font-mono">{key}</span><Badge size="sm" variant={value === "allow" ? "success" : value === "deny" ? "error" : "warning"}>{value}</Badge></div>)}
+                        {Object.entries({ ...selectedAgent.permission, task: taskPermissionFor(selectedAgent.subagents) }).map(([key, value]) => <div className="flex items-center justify-between rounded-md border bg-background px-2 py-1.5 text-xs" key={key}><span className="font-mono">{key}</span><Badge size="sm" variant={getPermissionVariant(value)}>{getPermissionLabel(value)}</Badge></div>)}
                       </div>
                     </section>
                   </>
@@ -1145,7 +1329,7 @@ export function SessionSidebar({
                 )}
 
                 <div className="flex justify-end">
-                  <Button onClick={() => openEditAgentMode(selectedAgent)} size="sm">編輯 Agent</Button>
+                  {selectedAgent.scope === "custom" ? <Button onClick={() => openEditAgentMode(selectedAgent)} size="sm">編輯 Agent</Button> : <p className="text-muted-foreground text-xs">官方內建 Agent 僅可查看；只有自訂 Agent 可以編輯。</p>}
                 </div>
               </div>
             )}
@@ -1157,20 +1341,38 @@ export function SessionSidebar({
                   <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="grid gap-2 text-muted-foreground text-sm">Agent 名稱<Input aria-label="Agent 名稱" onChange={(event) => setAgentForm((current) => ({ ...current, name: event.target.value }))} placeholder="docs-implement" value={agentForm.name} /></label>
-                      <label className="grid gap-2 text-muted-foreground text-sm">Model<Input aria-label="Agent model" onChange={(event) => setAgentForm((current) => ({ ...current, model: event.target.value }))} placeholder="openai/gpt-5.5" value={agentForm.model} /></label>
+                      <label className="grid gap-2 text-muted-foreground text-sm">Model<select aria-label="Agent model" className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, model: event.target.value }))} value={agentForm.model}>{!availableModels.includes(agentForm.model) && <option value={agentForm.model}>{agentForm.model}</option>}{availableModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <label className="grid gap-2 text-muted-foreground text-sm">Mode<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, mode: event.target.value as AgentDefinition["mode"] }))} value={agentForm.mode}><option value="primary">primary</option><option value="subagent">subagent</option><option value="all">all</option></select></label>
                       <label className="grid gap-2 text-muted-foreground text-sm">Temperature<Input aria-label="temperature" onChange={(event) => setAgentForm((current) => ({ ...current, temperature: event.target.value }))} placeholder="0.3" value={agentForm.temperature} /></label>
+                      <label className="grid gap-2 text-muted-foreground text-sm">Top P<Input aria-label="top_p" onChange={(event) => setAgentForm((current) => ({ ...current, top_p: event.target.value }))} placeholder="1" value={agentForm.top_p} /></label>
+                      <label className="grid min-w-0 gap-2 text-muted-foreground text-sm">Variant<select aria-label="variant" className="h-8 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, variant: event.target.value }))} value={agentForm.variant}>{modelVariants.map((variant) => <option key={variant || "default"} value={variant}>{variant || "default"}</option>)}</select></label>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
                       <label className="grid gap-2 text-muted-foreground text-sm">Steps<Input aria-label="steps" onChange={(event) => setAgentForm((current) => ({ ...current, steps: event.target.value }))} placeholder="可留空" value={agentForm.steps} /></label>
                     </div>
                     <label className="grid gap-2 text-muted-foreground text-sm">使用時機 / Description<Textarea aria-label="Agent 描述" onChange={(event) => setAgentForm((current) => ({ ...current, description: event.target.value }))} placeholder="描述這個 agent 何時應該被使用，以及它要負責的任務。" rows={3} value={agentForm.description} /></label>
-                    <label className="grid gap-2 text-muted-foreground text-sm">系統提示詞 / Prompt<Textarea aria-label="系統提示詞" onChange={(event) => setAgentForm((current) => ({ ...current, systemPrompt: event.target.value }))} placeholder="輸入這個 agent 的 system prompt 內容。" rows={5} value={agentForm.systemPrompt} /></label>
+                    <section className="grid gap-3 rounded-lg border bg-background p-3">
+                      <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-sm text-foreground">Advanced</h4><Badge size="sm" variant="outline">OpenCode</Badge></div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm"><input checked={agentForm.disable} onChange={(event) => setAgentForm((current) => ({ ...current, disable: event.target.checked }))} type="checkbox" />Disable agent</label>
+                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm"><input checked={agentForm.hidden} onChange={(event) => setAgentForm((current) => ({ ...current, hidden: event.target.checked }))} type="checkbox" />Hidden from @ menu</label>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="grid gap-2 text-muted-foreground text-sm">Color<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, color: event.target.value }))} value={agentForm.color}>{agentColors.map((color) => <option key={color || "default"} value={color}>{color || "default"}</option>)}</select></label>
+                        <label className="grid gap-2 text-muted-foreground text-sm">Prompt Source<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, promptSource: event.target.value as AgentDefinition["promptSource"] }))} value={agentForm.promptSource}><option value="inline">inline markdown body</option><option value="file">file reference</option></select></label>
+                      </div>
+                      {agentForm.promptSource === "file" && <label className="grid gap-2 text-muted-foreground text-sm">Prompt file<Input aria-label="Prompt file" onChange={(event) => setAgentForm((current) => ({ ...current, promptFile: event.target.value }))} placeholder="./prompts/review.txt" value={agentForm.promptFile} /></label>}
+                      <label className="grid gap-2 text-muted-foreground text-sm">Permission rules JSON<Textarea aria-label="Permission rules JSON" className="font-mono" onChange={(event) => setAgentForm((current) => ({ ...current, permissionRulesJson: event.target.value }))} placeholder={'{"bash":{"*":"ask","git *":"allow"},"external_directory":{"~/projects/**":"allow"}}'} rows={3} spellCheck={false} value={agentForm.permissionRulesJson} /></label>
+                      <label className="grid gap-2 text-muted-foreground text-sm">Provider-specific options JSON<Textarea aria-label="Provider-specific options JSON" className="font-mono" onChange={(event) => setAgentForm((current) => ({ ...current, providerOptionsJson: event.target.value }))} placeholder={'{"reasoningEffort":"high","textVerbosity":"low"}'} rows={3} spellCheck={false} value={agentForm.providerOptionsJson} /></label>
+                    </section>
+                    {agentForm.promptSource === "inline" && <label className="grid gap-2 text-muted-foreground text-sm">系統提示詞 / Prompt<Textarea aria-label="系統提示詞" onChange={(event) => setAgentForm((current) => ({ ...current, systemPrompt: event.target.value }))} placeholder="輸入這個 agent 的 system prompt 內容。" rows={5} value={agentForm.systemPrompt} /></label>}
 
                     <section className="grid gap-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-semibold text-sm text-foreground">Tools</h4>
-                        <Badge size="sm" variant="secondary">{agentForm.tools.length}</Badge>
+                        <div className="flex items-center gap-1.5"><Badge size="sm" variant="warning">deprecated</Badge><Badge size="sm" variant="secondary">{agentForm.tools.length}</Badge></div>
                       </div>
                       <div className="grid gap-1.5">
                         {agentForm.tools.map((tool) => {
@@ -1184,7 +1386,7 @@ export function SessionSidebar({
                                     {agentForm.toolGuidance[tool]?.trim() ? "編輯使用情境" : "新增使用情境"}
                                   </Button>
                                 )}
-                                <select aria-label={`${tool} permission`} className="h-7 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, permission: { ...current.permission, [permissionKey]: event.target.value as "allow" | "ask" | "deny" } }))} value={agentForm.permission[permissionKey] ?? "ask"}>
+                                <select aria-label={`${tool} permission`} className="h-7 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, permission: { ...current.permission, [permissionKey]: event.target.value as PermissionAction } }))} value={typeof agentForm.permission[permissionKey] === "string" ? agentForm.permission[permissionKey] : "ask"}>
                                   <option value="allow">allow</option>
                                   <option value="ask">ask</option>
                                   <option value="deny">deny</option>
@@ -1208,6 +1410,45 @@ export function SessionSidebar({
                         <Button onClick={() => setAgentForm((current) => { const permissionKey = getToolPermissionKey(toolToAdd); return current.tools.includes(toolToAdd) ? current : { ...current, tools: [...current.tools, toolToAdd], toolGuidance: isCustomTool(toolToAdd) ? { ...current.toolGuidance, [toolToAdd]: current.toolGuidance[toolToAdd] ?? "" } : current.toolGuidance, permission: { ...current.permission, [permissionKey]: current.permission[permissionKey] ?? "ask" } }; })} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Tool</Button>
                       </div>
                     </section>
+
+                    <section className="grid gap-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold text-sm text-foreground">Callable Subagents</h4>
+                        <Badge size="sm" variant="secondary">{agentForm.subagents.length}</Badge>
+                      </div>
+                      <div className="grid gap-1.5">
+                        {agentForm.subagents.map((subagentId) => {
+                          const subagent = agents.find((agent) => agent.id === subagentId);
+                          return (
+                            <div className="grid gap-2 rounded-md border bg-background px-2 py-1.5 text-xs" key={subagentId}>
+                              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
+                                <span className="min-w-0 truncate font-mono">{subagent?.name ?? subagentId}</span>
+                                <Badge size="sm" variant="outline">{subagent?.mode ?? "subagent"}</Badge>
+                                <Button onClick={() => setGuidanceSubagent(guidanceSubagent === subagentId ? null : subagentId)} size="sm" type="button" variant="outline">
+                                  {agentForm.subagentGuidance[subagentId]?.trim() ? "編輯使用情境" : "新增使用情境"}
+                                </Button>
+                                <button aria-label={`移除 subagent ${subagent?.name ?? subagentId}`} className="grid size-6 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => removeFormSubagent(subagentId)} type="button"><XIcon aria-hidden="true" className="size-3" /></button>
+                              </div>
+                              {guidanceSubagent === subagentId && (
+                                <label className="grid gap-1.5 border-border/70 border-t pt-2 text-muted-foreground text-xs">
+                                  使用情境
+                                  <Textarea aria-label={`${subagent?.name ?? subagentId} 使用情境`} onChange={(event) => updateSubagentGuidance(subagentId, event.target.value)} placeholder={`說明這個 agent 什麼情況會呼叫 ${subagent?.name ?? subagentId} subagent。`} rows={3} value={agentForm.subagentGuidance[subagentId] ?? ""} />
+                                </label>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {agentForm.subagents.length === 0 && <p className="rounded-md border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">尚未設定可調用 subagent。</p>}
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                        <select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setSubagentToAdd(event.target.value)} value={subagentToAdd}>
+                          {getCallableSubagentOptions(editingAgentId, agentForm.subagents).map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · {agent.mode}</option>)}
+                        </select>
+                        <Button disabled={getCallableSubagentOptions(editingAgentId, agentForm.subagents).length === 0} onClick={addFormSubagent} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Subagent</Button>
+                      </div>
+                      <p className="text-muted-foreground text-xs">這會輸出成官方 permission.task 規則；subagent 可以再調用其他 subagent，但不能選回呼叫鏈上的 agent。</p>
+                    </section>
+
                     <section className="grid gap-2">
                       <div className="flex items-center justify-between">
                         <h4 className="font-semibold text-sm text-foreground">Skills</h4>
@@ -1237,7 +1478,7 @@ export function SessionSidebar({
                         <Button onClick={() => setAgentForm((current) => current.skills.includes(skillToAdd) ? current : { ...current, skills: [...current.skills, skillToAdd], skillGuidance: { ...current.skillGuidance, [skillToAdd]: current.skillGuidance[skillToAdd] ?? "" } })} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Skill</Button>
                       </div>
                     </section>
-                    <section className="grid gap-2"><h4 className="font-semibold text-sm text-foreground">Permissions</h4><div className="grid gap-2 sm:grid-cols-2">{Object.entries(agentForm.permission).map(([key, value]) => <label className="grid gap-1 text-muted-foreground text-xs" key={key}>{key}<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, permission: { ...current.permission, [key]: event.target.value as "allow" | "ask" | "deny" } }))} value={value}><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select></label>)}</div></section>
+                    <section className="grid gap-2"><h4 className="font-semibold text-sm text-foreground">Permissions</h4><div className="grid gap-2 sm:grid-cols-2">{Object.entries(agentForm.permission).filter(([key]) => key !== "task").map(([key, value]) => <label className="grid gap-1 text-muted-foreground text-xs" key={key}>{key}<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, permission: { ...current.permission, [key]: event.target.value as PermissionAction } }))} value={typeof value === "string" ? value : "ask"}><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select></label>)}</div><p className="text-muted-foreground text-xs">task 權限由 Callable Subagents 產生 object syntax 規則。</p></section>
                   </div>
                 ) : (
                   <label className="grid gap-2 text-muted-foreground text-sm">opencode agent Markdown (.md)<Textarea aria-label="opencode agent Markdown" className="font-mono" onChange={(event) => setAgentYaml(event.target.value)} rows={16} spellCheck={false} value={agentYaml} /></label>
