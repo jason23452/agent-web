@@ -9,6 +9,7 @@ import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewD
 import { AppShell } from "@/shared/components/layout/AppShell"
 import { AppSidebar } from "@/shared/components/layout/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/AppTopbar"
+import { ChatComposer } from "@/shared/components/layout/ChatComposer"
 
 type AppRoute =
   | { name: "home" }
@@ -136,13 +137,7 @@ export function AppRouter() {
     ) : route.name === "workspaceProject" ? (
       <WorkspaceProjectRoute />
     ) : (
-      <HomeRoute
-        attachments={attachments}
-        onAddAttachment={addAttachment}
-        onClearPin={() => setPinContext(null)}
-        onRemoveAttachment={removeAttachment}
-        pinContext={pinContext}
-      />
+      <HomeRoute />
     )
 
   return (
@@ -150,6 +145,15 @@ export function AppRouter() {
       ariaLabel="AICaht agent workspace"
       aside={<AppContextPanel fileTree={fileTree} open={contextPanelOpen} onClose={() => setContextPanelOpen(false)} onPreviewFile={setPreviewFile} />}
       asideOpen={contextPanelOpen}
+      composer={
+        <ChatComposer
+          attachments={attachments}
+          onAddAttachment={addAttachment}
+          onClearPin={() => setPinContext(null)}
+          onRemoveAttachment={removeAttachment}
+          pinContext={pinContext}
+        />
+      }
       onCloseAside={() => setContextPanelOpen(false)}
       onCloseSidebar={() => setSidebarOpen(false)}
       sidebar={

@@ -7,6 +7,7 @@ type AppShellProps = {
   asideOpen?: boolean
   children: ReactNode
   className?: string
+  composer?: ReactNode
   mainClassName?: string
   onCloseAside?: () => void
   onCloseSidebar?: () => void
@@ -21,6 +22,7 @@ export function AppShell({
   asideOpen = false,
   children,
   className,
+  composer,
   mainClassName,
   onCloseAside,
   onCloseSidebar,
@@ -29,7 +31,17 @@ export function AppShell({
   topNav,
 }: AppShellProps) {
   const hasAside = Boolean(aside)
+  const hasComposer = Boolean(composer)
   const hasSidebar = Boolean(sidebar)
+
+  const mainRows =
+    topNav && hasComposer
+      ? "grid-rows-[auto_minmax(0,1fr)_auto]"
+      : topNav
+        ? "grid-rows-[auto_minmax(0,1fr)]"
+        : hasComposer
+          ? "grid-rows-[minmax(0,1fr)_auto]"
+          : "grid-rows-[minmax(0,1fr)]"
 
   return (
     <section
@@ -47,13 +59,14 @@ export function AppShell({
       <div
         className={cn(
           "grid min-h-dvh min-w-0 bg-background",
-          topNav ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
+          mainRows,
           mainClassName,
         )}
         data-region="app-main"
       >
         {topNav}
         {children}
+        {composer}
       </div>
       {aside}
 
