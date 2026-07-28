@@ -6,6 +6,8 @@ import { SessionSidebar } from "@/features/workspace/components/SessionSidebar"
 import { agents, starterAttachments } from "@/features/workspace/data/mockWorkspace"
 import type { Attachment, FileNode, PinContext } from "@/features/workspace/types/workspace"
 
+const initialProjectPath = "/workspace/test-web/"
+
 export function WorkspaceShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
@@ -13,6 +15,7 @@ export function WorkspaceShell() {
   const [previewFile, setPreviewFile] = useState<FileNode | null>(null)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [activeProjectPath, setActiveProjectPath] = useState(initialProjectPath)
 
   const activeAgent = agents.find((agent) => agent.id === activeAgentId) ?? agents[0]!
 
@@ -32,9 +35,10 @@ export function WorkspaceShell() {
 
   return (
     <section className="min-h-dvh bg-muted/40 text-foreground min-[761px]:grid min-[761px]:grid-cols-[240px_minmax(0,1fr)] min-[1181px]:grid-cols-[260px_minmax(0,1fr)_332px]" aria-label="AICaht OpenCode agent 工作區">
-      <SessionSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onSelectSession={closeMobileSurfaces} />
+      <SessionSidebar activeProjectPath={activeProjectPath} onProjectChange={setActiveProjectPath} open={sidebarOpen} onClose={() => setSidebarOpen(false)} onSelectSession={closeMobileSurfaces} />
       <ChatPane
         activeAgent={activeAgent}
+        activeProjectPath={activeProjectPath}
         agents={agents}
         attachments={attachments}
         onAddAttachment={addAttachment}

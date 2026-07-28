@@ -70,7 +70,6 @@ function summarizeText(text: string, limit = 240) {
 export function FilePreviewDialog({
   file,
   onClose,
-  onPin,
   onLibraryUpload,
   onLocalUpload,
 }: FilePreviewDialogProps) {
@@ -83,7 +82,6 @@ export function FilePreviewDialog({
       onClose={onClose}
       onLibraryUpload={onLibraryUpload}
       onLocalUpload={onLocalUpload}
-      onPin={onPin}
     />
   )
 }
@@ -93,13 +91,11 @@ function FilePreviewDialogContent({
   onClose,
   onLibraryUpload,
   onLocalUpload,
-  onPin,
 }: {
   file: FileNode
   onClose: () => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
-  onPin: (context: PinContext) => void
 }) {
   const initialContent = getFileSample(file)
   const [activeTab, setActiveTab] = useState<WorkTab>("agent")
@@ -121,14 +117,6 @@ function FilePreviewDialogContent({
   const metadataText = metadata || file.type.toUpperCase()
   const lines = savedContent.split("\n")
   const draftChanged = draftContent !== savedContent
-
-  function pinWholeFile() {
-    onPin({
-      label: file.name,
-      meta: file.type.toUpperCase(),
-      text: summarizeText(savedContent),
-    })
-  }
 
   function handleLibraryUpload() {
     onLibraryUpload?.()

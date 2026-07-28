@@ -1,4 +1,5 @@
 import {
+  FolderIcon,
   HistoryIcon,
   PanelLeftCloseIcon,
   PlugZapIcon,
@@ -6,11 +7,15 @@ import {
   ServerIcon,
   SparklesIcon,
   HatGlasses,
+  XIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { sessions } from "@/features/workspace/data/mockWorkspace";
 
 type SessionSidebarProps = {
+  activeProjectPath: string;
+  onProjectChange: (path: string) => void;
   open: boolean;
   onClose: () => void;
   onSelectSession: () => void;
@@ -24,16 +29,34 @@ const navItems = [
   { icon: HatGlasses, label: "智能體" },
 ];
 
+const recentProjects = [
+  { id: "test-web", name: "test-web", path: "/workspace/test-web/" },
+  { id: "agent-web", name: "agent-web", path: "C:/Users/Bojii/Desktop/SDD/agent-web/" },
+  { id: "build-example", name: "build-example", path: "C:/Users/Bojii/Desktop/SDD/build-example/" },
+];
+
 export function SessionSidebar({
+  activeProjectPath,
+  onProjectChange,
   open,
   onClose,
   onSelectSession,
 }: SessionSidebarProps) {
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+
+  const filteredProjects = recentProjects.filter((project) => {
+    const keyword = projectSearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return project.name.toLowerCase().includes(keyword) || project.path.toLowerCase().includes(keyword);
+  });
+
   return (
-    <aside
-      className={`z-40 flex min-h-dvh flex-col gap-4 border-border border-r bg-muted/35 px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
-      data-region="session-sidebar"
-    >
+    <>
+      <aside
+        className={`z-40 flex min-h-dvh flex-col gap-4 border-border border-r bg-muted/35 px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
+        data-region="session-sidebar"
+      >
       <div className="flex items-center justify-between gap-3 px-2">
         <div className="font-semibold text-lg tracking-[-0.02em]">AICaht</div>
         <Button
@@ -55,6 +78,9 @@ export function SessionSidebar({
               <li key={item.label}>
                 <button
                   className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${item.active ? "bg-accent text-accent-foreground" : "text-foreground"}`}
+                  onClick={() => {
+                    if (item.label === "專案") setProjectDialogOpen(true);
+                  }}
                   type="button"
                 >
                   <Icon aria-hidden="true" className="size-4" />
@@ -107,6 +133,68 @@ export function SessionSidebar({
           </span>
         </div>
       </div>
-    </aside>
+      </aside>
+
+      {projectDialogOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
+          <section
+            aria-label="打開項目"
+            className="w-full max-w-[640px] overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+          >
+            <div className="flex h-14 items-center justify-between gap-4 border-border/70 border-b px-4">
+              <h2 className="font-semibold text-base">打開項目</h2>
+              <button
+                aria-label="關閉打開項目"
+                className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setProjectDialogOpen(false)}
+                type="button"
+              >
+                <XIcon aria-hidden="true" className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-3">
+              <label className="relative block">
+                <span className="sr-only">搜尋文件夾</span>
+                <SearchIcon aria-hidden="true" className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-3 size-4 text-muted-foreground" />
+                <input
+                  className="h-9 w-full rounded-md border-0 bg-muted/60 pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground focus:bg-muted focus:ring-2 focus:ring-ring"
+                  onChange={(event) => setProjectSearch(event.target.value)}
+                  placeholder="搜索文件夹"
+                  value={projectSearch}
+                />
+              </label>
+
+              <div className="mt-6 px-1">
+                <p className="mb-3 font-semibold text-muted-foreground text-xs">最近項目</p>
+                <ul className="grid min-h-28 gap-1">
+                  {filteredProjects.map((project) => (
+                    <li key={project.id}>
+                      <button
+                        className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${project.path === activeProjectPath ? "bg-accent" : ""}`}
+                        onClick={() => {
+                          onProjectChange(project.path);
+                          setProjectDialogOpen(false);
+                          onClose();
+                        }}
+                        type="button"
+                      >
+                        <FolderIcon aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+                        <span className="min-w-0 truncate text-muted-foreground text-sm">
+                          {project.path}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                  {filteredProjects.length === 0 && (
+                    <li className="px-2 py-8 text-center text-muted-foreground text-sm">找不到符合的項目</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
   );
 }

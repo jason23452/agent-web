@@ -7,13 +7,21 @@ import type { Agent } from "@/features/workspace/types/workspace"
 
 type WorkspaceTopbarProps = {
   activeAgent: Agent
+  activeProjectPath: string
   agents: Agent[]
   onAgentChange: (agentId: string) => void
   onOpenContextPanel: () => void
   onOpenSidebar: () => void
 }
 
-export function WorkspaceTopbar({ activeAgent, agents, onAgentChange, onOpenContextPanel, onOpenSidebar }: WorkspaceTopbarProps) {
+function getProjectLabel(path: string) {
+  const segments = path.replace(/\\/g, "/").split("/").filter(Boolean)
+  return segments.at(-1) ?? path
+}
+
+export function WorkspaceTopbar({ activeAgent, activeProjectPath, agents, onAgentChange, onOpenContextPanel, onOpenSidebar }: WorkspaceTopbarProps) {
+  const projectLabel = getProjectLabel(activeProjectPath)
+
   return (
     <header className="sticky top-0 z-20 grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-border/70 border-b bg-background/90 px-3 backdrop-blur-xl sm:px-6">
       <div className="flex items-center gap-2">
@@ -22,11 +30,11 @@ export function WorkspaceTopbar({ activeAgent, agents, onAgentChange, onOpenCont
         </Button>
       </div>
 
-      <div className="hidden min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs min-[760px]:flex" title="~/OpenDesign/projects/aicaht-workspace">
+      <div className="hidden min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs min-[760px]:flex" title={activeProjectPath}>
         <HomeIcon aria-hidden="true" className="size-4 shrink-0" />
-        <span className="truncate">AI_project</span>
+        <span className="truncate">當前專案</span>
         <span className="text-foreground">/</span>
-        <span className="truncate font-medium text-foreground">aicaht-workspace</span>
+        <span className="truncate font-medium text-foreground">{projectLabel}</span>
       </div>
 
       <div className="flex items-center justify-end gap-2">

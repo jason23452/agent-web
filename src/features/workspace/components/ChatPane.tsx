@@ -5,6 +5,7 @@ import type { Agent, Attachment, PinContext } from "@/features/workspace/types/w
 
 type ChatPaneProps = {
   activeAgent: Agent
+  activeProjectPath: string
   agents: Agent[]
   attachments: Attachment[]
   onAddAttachment: () => void
@@ -18,6 +19,7 @@ type ChatPaneProps = {
 
 export function ChatPane({
   activeAgent,
+  activeProjectPath,
   agents,
   attachments,
   onAddAttachment,
@@ -32,6 +34,7 @@ export function ChatPane({
     <main className="grid min-h-dvh min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] bg-background" data-region="chat-main">
       <WorkspaceTopbar
         activeAgent={activeAgent}
+        activeProjectPath={activeProjectPath}
         agents={agents}
         onAgentChange={onAgentChange}
         onOpenContextPanel={onOpenContextPanel}
