@@ -87,8 +87,21 @@ type AgentDefinition = {
   permissionRulesJson?: string;
 };
 
-type AgentDialogView = "list" | "detail" | "config";
+type ToolDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  source: "built-in" | "custom";
+  runtime?: "python" | "js-ts";
+  entry?: string;
+  code?: string;
+  testInput?: string;
+};
+
+type AgentDialogView = "list" | "detail" | "config" | "tool-config";
 type AgentEditMode = "add" | "edit";
+type ToolEditMode = "add" | "edit";
 type AgentToolTab = "agents" | "tools";
 type AgentConfigMode = "interface" | "yaml";
 
@@ -220,7 +233,7 @@ function getToolPermissionKey(tool: string) {
   return tool;
 }
 
-const toolDefinitions = [
+const initialToolDefinitions: ToolDefinition[] = [
   { id: "read", name: "read", description: "Read files from the current workspace.", category: "Files", source: "built-in" },
   { id: "grep", name: "grep", description: "Search file contents using regular expressions.", category: "Search", source: "built-in" },
   { id: "glob", name: "glob", description: "Find files by path pattern across the workspace.", category: "Search", source: "built-in" },
@@ -231,8 +244,8 @@ const toolDefinitions = [
   { id: "cms_publish", name: "cms_publish", description: "Publish or validate CMS content through a project-specific tool.", category: "Custom", source: "custom" },
 ];
 
-function isCustomTool(toolName: string) {
-  return toolDefinitions.some((tool) => tool.name === toolName && tool.source === "custom");
+function isCustomTool(toolName: string, tools = initialToolDefinitions) {
+  return tools.some((tool) => tool.name === toolName && tool.source === "custom");
 }
 
 function permissionToYaml(permission: Record<string, PermissionValue>) {
@@ -309,6 +322,16 @@ const emptyAgentForm = {
   systemPrompt: "",
 };
 
+const emptyToolForm = {
+  name: "",
+  description: "",
+  category: "Custom",
+  runtime: "js-ts" as ToolDefinition["runtime"],
+  entry: "./.opencode/tools/my-tool.ts",
+  code: "",
+  testInput: '{"input":"hello"}',
+};
+
 function agentToYaml(agent: Pick<AgentDefinition, "name" | "description"> & Partial<AgentDefinition>) {
   const tools = agent.tools?.length ? agent.tools : ["read", "grep", "glob"];
   const skills = agent.skills?.length ? agent.skills : ["react-vite-feature-based"];
@@ -363,11 +386,16 @@ export function SessionSidebar({
   const [agentConfigMode, setAgentConfigMode] = useState<AgentConfigMode>("interface");
   const [agentToolTab, setAgentToolTab] = useState<AgentToolTab>("agents");
   const [agents, setAgents] = useState<AgentDefinition[]>(agentDefinitions);
+  const [toolDefinitions, setToolDefinitions] = useState<ToolDefinition[]>(initialToolDefinitions);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [editingToolId, setEditingToolId] = useState<string | null>(null);
+  const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentForm, setAgentForm] = useState(emptyAgentForm);
   const [agentYaml, setAgentYaml] = useState(agentToYaml(emptyAgentForm));
-  const [toolToAdd, setToolToAdd] = useState(toolDefinitions[0]!.name);
+  const [toolForm, setToolForm] = useState(emptyToolForm);
+  const [toolTestResult, setToolTestResult] = useState<{ status: "success" | "error"; message: string } | null>(null);
+  const [toolToAdd, setToolToAdd] = useState(initialToolDefinitions[0]!.name);
   const [subagentToAdd, setSubagentToAdd] = useState("");
   const [skillToAdd, setSkillToAdd] = useState(availableSkills[0]!);
   const [guidanceTool, setGuidanceTool] = useState<string | null>(null);
@@ -392,6 +420,7 @@ export function SessionSidebar({
     return server.url.toLowerCase().includes(keyword) || server.name.toLowerCase().includes(keyword) || server.username.toLowerCase().includes(keyword);
   });
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const isCustomToolName = (toolName: string) => isCustomTool(toolName, toolDefinitions);
 
   function agentCanReach(fromAgentId: string, targetAgentId: string, visited = new Set<string>()): boolean {
     if (fromAgentId === targetAgentId) return true;
@@ -488,6 +517,31 @@ export function SessionSidebar({
     setGuidanceSkill(null);
     setGuidanceSubagent(null);
     setAgentDialogView("config");
+  }
+
+  function openAddToolMode() {
+    setToolEditMode("add");
+    setEditingToolId(null);
+    setToolForm(emptyToolForm);
+    setToolTestResult(null);
+    setAgentDialogView("tool-config");
+  }
+
+  function openEditToolMode(tool: ToolDefinition) {
+    if (tool.source !== "custom") return;
+    setToolEditMode("edit");
+    setEditingToolId(tool.id);
+    setToolForm({
+      name: tool.name,
+      description: tool.description,
+      category: tool.category,
+      runtime: tool.runtime ?? "js-ts",
+      entry: tool.entry ?? `./.opencode/tools/${tool.name}.${tool.runtime === "python" ? "py" : "ts"}`,
+      code: tool.code ?? "",
+      testInput: tool.testInput ?? emptyToolForm.testInput,
+    });
+    setToolTestResult(null);
+    setAgentDialogView("tool-config");
   }
 
   function openAgentDetail(agent: AgentDefinition) {
@@ -602,6 +656,83 @@ export function SessionSidebar({
     }));
   }
 
+  function submitToolConfig() {
+    const name = toolForm.name.trim().replace(/\s+/g, "_");
+    if (!name) return;
+
+    const nextTool: ToolDefinition = {
+      id: editingToolId ?? name,
+      name,
+      description: toolForm.description.trim() || "Custom project tool.",
+      category: toolForm.category.trim() || "Custom",
+      source: "custom",
+      runtime: toolForm.runtime,
+      entry: toolForm.entry.trim() || `./.opencode/tools/${name}.${toolForm.runtime === "python" ? "py" : "ts"}`,
+      code: toolForm.code,
+      testInput: toolForm.testInput,
+    };
+
+    setToolDefinitions((current) => {
+      if (toolEditMode === "edit" && editingToolId) {
+        return current.map((tool) => tool.id === editingToolId && tool.source === "custom" ? nextTool : tool);
+      }
+
+      return current.some((tool) => tool.name === name) ? current : [...current, nextTool];
+    });
+    setToolToAdd(name);
+    setAgentDialogView("list");
+    setAgentToolTab("tools");
+  }
+
+  function deleteTool(tool: ToolDefinition) {
+    if (tool.source !== "custom") return;
+    setToolDefinitions((current) => current.filter((item) => item.id !== tool.id));
+    setAgents((current) => current.map((agent) => {
+      const permissionKey = getToolPermissionKey(tool.name);
+      const nextPermission = { ...agent.permission };
+      const nextToolGuidance = { ...agent.toolGuidance };
+      delete nextPermission[permissionKey];
+      delete nextToolGuidance[tool.name];
+      return { ...agent, tools: agent.tools.filter((item) => item !== tool.name), permission: nextPermission, toolGuidance: nextToolGuidance };
+    }));
+  }
+
+  function runToolCallTest() {
+    if (!toolForm.name.trim()) {
+      setToolTestResult({ status: "error", message: "Tool 名稱必填。" });
+      return;
+    }
+
+    if (!toolForm.entry.trim()) {
+      setToolTestResult({ status: "error", message: "Entry file 必填，否則執行時找不到 tool 檔案。" });
+      return;
+    }
+
+    if (!toolForm.code.trim()) {
+      setToolTestResult({ status: "error", message: "Tool code 不能為空，請先填入 Python 或 JS/TS 實作。" });
+      return;
+    }
+
+    try {
+      JSON.parse(toolForm.testInput || "{}");
+    } catch {
+      setToolTestResult({ status: "error", message: "Test input 必須是合法 JSON。" });
+      return;
+    }
+
+    const expectedExtension = toolForm.runtime === "python" ? ".py" : ".ts 或 .js";
+    const extensionValid = toolForm.runtime === "python"
+      ? toolForm.entry.endsWith(".py")
+      : toolForm.entry.endsWith(".ts") || toolForm.entry.endsWith(".js");
+
+    if (!extensionValid) {
+      setToolTestResult({ status: "error", message: `${toolForm.runtime === "python" ? "Python" : "JS/TS"} tool 的 entry 建議使用 ${expectedExtension}。` });
+      return;
+    }
+
+    setToolTestResult({ status: "success", message: "Tool call test passed：基本設定、entry 副檔名、code 與 JSON 測試參數都有效。" });
+  }
+
   function updateAgentConfig(agentId: string, update: (agent: AgentDefinition) => AgentDefinition) {
     setAgents((current) => current.map((agent) => agent.id === agentId ? update(agent) : agent));
   }
@@ -645,7 +776,7 @@ export function SessionSidebar({
   }
 
   function updateToolGuidance(tool: string, value: string) {
-    if (!isCustomTool(tool)) return;
+    if (!isCustomToolName(tool)) return;
 
     if (agentDialogView === "config") {
       setAgentForm((current) => ({
@@ -1066,16 +1197,16 @@ export function SessionSidebar({
                 )}
                 <div className="min-w-0">
                   <h2 className="font-semibold text-base">
-                    {agentDialogView === "list" ? "智能體/工具" : agentDialogView === "detail" ? "Agent 設定" : agentEditMode === "add" ? "新增 Agent" : "編輯 Agent"}
+                    {agentDialogView === "list" ? "智能體/工具" : agentDialogView === "detail" ? "Agent 設定" : agentDialogView === "tool-config" ? toolEditMode === "add" ? "新增 Tool" : "編輯 Tool" : agentEditMode === "add" ? "新增 Agent" : "編輯 Agent"}
                   </h2>
-                  <p className="mt-0.5 text-muted-foreground text-xs">{agentDialogView === "list" ? `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}` : "介面配置 / 文字配置 YAML"}</p>
+                  <p className="mt-0.5 text-muted-foreground text-xs">{agentDialogView === "list" ? `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}` : agentDialogView === "tool-config" ? "Python / JS / TS custom tool" : "介面配置 / 文字配置 YAML"}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  aria-label="新增 Agent"
+                  aria-label={agentToolTab === "tools" ? "新增 Tool" : "新增 Agent"}
                   className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={openAddAgentMode}
+                  onClick={agentToolTab === "tools" ? openAddToolMode : openAddAgentMode}
                   type="button"
                 >
                   <PlusIcon aria-hidden="true" className="size-4" />
@@ -1185,6 +1316,7 @@ export function SessionSidebar({
                                 <span className="truncate font-semibold text-sm">{tool.name}</span>
                                 <Badge size="sm" variant="outline">{tool.category}</Badge>
                                 <Badge size="sm" variant={tool.source === "custom" ? "success" : "secondary"}>{tool.source}</Badge>
+                                {tool.runtime && <Badge size="sm" variant="info">{tool.runtime === "python" ? "Python" : "JS/TS"}</Badge>}
                               </div>
                               <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">{tool.description}</p>
                             </div>
@@ -1194,7 +1326,10 @@ export function SessionSidebar({
                               </MenuTrigger>
                               <MenuPopup align="end" className="min-w-36">
                                 <MenuItem>查看工具說明</MenuItem>
+                                {tool.source === "custom" && <MenuItem onClick={() => openEditToolMode(tool)}>編輯</MenuItem>}
                                 <MenuItem>複製工具名稱</MenuItem>
+                                {tool.source === "custom" && <MenuSeparator />}
+                                {tool.source === "custom" && <MenuItem onClick={() => deleteTool(tool)} variant="destructive">刪除</MenuItem>}
                               </MenuPopup>
                             </Menu>
                           </div>
@@ -1203,6 +1338,38 @@ export function SessionSidebar({
                     </ul>
                   </section>
                 )}
+              </div>
+            )}
+
+            {agentDialogView === "tool-config" && (
+              <div className="grid max-h-[500px] gap-4 overflow-y-auto px-6 pb-6">
+                <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-2 text-muted-foreground text-sm">Tool 名稱<Input aria-label="Tool 名稱" onChange={(event) => { setToolTestResult(null); setToolForm((current) => ({ ...current, name: event.target.value })); }} placeholder="cms_publish" value={toolForm.name} /></label>
+                    <label className="grid gap-2 text-muted-foreground text-sm">Category<Input aria-label="Tool category" onChange={(event) => setToolForm((current) => ({ ...current, category: event.target.value }))} placeholder="Custom" value={toolForm.category} /></label>
+                  </div>
+                  <label className="grid gap-2 text-muted-foreground text-sm">描述<Textarea aria-label="Tool 描述" onChange={(event) => setToolForm((current) => ({ ...current, description: event.target.value }))} placeholder="描述這個 tool 會做什麼，以及 agent 什麼時候應該使用它。" rows={3} value={toolForm.description} /></label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-2 text-muted-foreground text-sm">Runtime<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => { setToolTestResult(null); setToolForm((current) => ({ ...current, runtime: event.target.value as ToolDefinition["runtime"], entry: current.entry || `./.opencode/tools/${current.name || "my-tool"}.${event.target.value === "python" ? "py" : "ts"}` })); }} value={toolForm.runtime}><option value="js-ts">JS / TS</option><option value="python">Python</option></select></label>
+                    <label className="grid gap-2 text-muted-foreground text-sm">Entry file<Input aria-label="Tool entry file" onChange={(event) => { setToolTestResult(null); setToolForm((current) => ({ ...current, entry: event.target.value })); }} placeholder={toolForm.runtime === "python" ? "./.opencode/tools/my-tool.py" : "./.opencode/tools/my-tool.ts"} value={toolForm.entry} /></label>
+                  </div>
+                  <label className="grid gap-2 text-muted-foreground text-sm">Tool code<Textarea aria-label="Tool code" className="font-mono" onChange={(event) => { setToolTestResult(null); setToolForm((current) => ({ ...current, code: event.target.value })); }} placeholder={toolForm.runtime === "python" ? "# Python tool implementation" : "// JS/TS tool implementation"} rows={10} spellCheck={false} value={toolForm.code} /></label>
+                  <section className="grid gap-3 rounded-lg border bg-background p-3" aria-labelledby="tool-call-test-title">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="font-semibold text-sm text-foreground" id="tool-call-test-title">Tool Call Test</h4>
+                        <p className="mt-0.5 text-muted-foreground text-xs">保存前先檢查 tool call 的基本設定，避免執行時才失敗。</p>
+                      </div>
+                      <Button onClick={runToolCallTest} size="sm" type="button" variant="outline">測試 Tool Call</Button>
+                    </div>
+                    <label className="grid gap-2 text-muted-foreground text-sm">Test input JSON<Textarea aria-label="Tool test input JSON" className="font-mono" onChange={(event) => { setToolTestResult(null); setToolForm((current) => ({ ...current, testInput: event.target.value })); }} placeholder={'{"input":"hello"}'} rows={4} spellCheck={false} value={toolForm.testInput} /></label>
+                    {toolTestResult && <div className={`rounded-md border px-3 py-2 text-xs ${toolTestResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>{toolTestResult.message}</div>}
+                  </section>
+                  <div className="rounded-lg border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">
+                    自訂工具會出現在工具清單與 Agent tool selector。內建工具不能編輯，只有 custom tool 可以編輯或刪除。
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-muted-foreground text-xs">Runtime 目前支援 Python 與 JS/TS；請先通過 Tool Call Test 再保存。</p><Button disabled={!toolForm.name.trim() || toolTestResult?.status !== "success"} onClick={submitToolConfig}>{toolEditMode === "add" ? "新增 Tool" : "保存 Tool"}</Button></div>
               </div>
             )}
 
@@ -1233,7 +1400,7 @@ export function SessionSidebar({
                             <div className="grid gap-2 rounded-md border bg-background px-2 py-1.5 text-xs" key={tool}>
                               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_7rem_auto] sm:items-center">
                                 <span className="min-w-0 truncate font-mono">{tool}</span>
-                                {isCustomTool(tool) && (
+                                {isCustomToolName(tool) && (
                                   <Button onClick={() => setGuidanceTool(guidanceTool === tool ? null : tool)} size="sm" type="button" variant="outline">
                                     查看使用情境
                                   </Button>
@@ -1250,7 +1417,7 @@ export function SessionSidebar({
                                 </select>
                                 <span className="size-6" aria-hidden="true" />
                               </div>
-                              {guidanceTool === tool && isCustomTool(tool) && (
+                              {guidanceTool === tool && isCustomToolName(tool) && (
                                 <label className="grid gap-1.5 border-border/70 border-t pt-2 text-muted-foreground text-xs">
                                   使用情境
                                   <Textarea aria-label={`${tool} 使用情境`} placeholder="尚未設定使用情境。" readOnly rows={3} value={selectedAgent.toolGuidance?.[tool] ?? ""} />
@@ -1344,7 +1511,7 @@ export function SessionSidebar({
                       <label className="grid gap-2 text-muted-foreground text-sm">Model<select aria-label="Agent model" className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, model: event.target.value }))} value={agentForm.model}>{!availableModels.includes(agentForm.model) && <option value={agentForm.model}>{agentForm.model}</option>}{availableModels.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <label className="grid gap-2 text-muted-foreground text-sm">Mode<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, mode: event.target.value as AgentDefinition["mode"] }))} value={agentForm.mode}><option value="primary">primary</option><option value="subagent">subagent</option><option value="all">all</option></select></label>
+                      <label className="grid gap-2 text-muted-foreground text-sm">Mode<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => { const mode = event.target.value as AgentDefinition["mode"]; return { ...current, mode, hidden: mode === "subagent" ? current.hidden : false }; })} value={agentForm.mode}><option value="primary">primary</option><option value="subagent">subagent</option><option value="all">all</option></select></label>
                       <label className="grid gap-2 text-muted-foreground text-sm">Temperature<Input aria-label="temperature" onChange={(event) => setAgentForm((current) => ({ ...current, temperature: event.target.value }))} placeholder="0.3" value={agentForm.temperature} /></label>
                       <label className="grid gap-2 text-muted-foreground text-sm">Top P<Input aria-label="top_p" onChange={(event) => setAgentForm((current) => ({ ...current, top_p: event.target.value }))} placeholder="1" value={agentForm.top_p} /></label>
                       <label className="grid min-w-0 gap-2 text-muted-foreground text-sm">Variant<select aria-label="variant" className="h-8 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, variant: event.target.value }))} value={agentForm.variant}>{modelVariants.map((variant) => <option key={variant || "default"} value={variant}>{variant || "default"}</option>)}</select></label>
@@ -1357,7 +1524,7 @@ export function SessionSidebar({
                       <div className="flex items-center justify-between gap-3"><h4 className="font-semibold text-sm text-foreground">Advanced</h4><Badge size="sm" variant="outline">OpenCode</Badge></div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm"><input checked={agentForm.disable} onChange={(event) => setAgentForm((current) => ({ ...current, disable: event.target.checked }))} type="checkbox" />Disable agent</label>
-                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm"><input checked={agentForm.hidden} onChange={(event) => setAgentForm((current) => ({ ...current, hidden: event.target.checked }))} type="checkbox" />Hidden from @ menu</label>
+                        {agentForm.mode === "subagent" && <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm"><input checked={agentForm.hidden} onChange={(event) => setAgentForm((current) => ({ ...current, hidden: event.target.checked }))} type="checkbox" />Hidden from @ menu</label>}
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2">
                         <label className="grid gap-2 text-muted-foreground text-sm">Color<select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setAgentForm((current) => ({ ...current, color: event.target.value }))} value={agentForm.color}>{agentColors.map((color) => <option key={color || "default"} value={color}>{color || "default"}</option>)}</select></label>
@@ -1381,7 +1548,7 @@ export function SessionSidebar({
                             <div className="grid gap-2 rounded-md border bg-background px-2 py-1.5 text-xs" key={tool}>
                               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_7rem_auto] sm:items-center">
                                 <span className="min-w-0 truncate font-mono">{tool}</span>
-                                {isCustomTool(tool) && (
+                                {isCustomToolName(tool) && (
                                   <Button onClick={() => setGuidanceTool(guidanceTool === tool ? null : tool)} size="sm" type="button" variant="outline">
                                     {agentForm.toolGuidance[tool]?.trim() ? "編輯使用情境" : "新增使用情境"}
                                   </Button>
@@ -1393,7 +1560,7 @@ export function SessionSidebar({
                                 </select>
                                 <button aria-label={`移除 tool ${tool}`} className="grid size-6 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => setAgentForm((current) => { const nextPermission = { ...current.permission }; const nextToolGuidance = { ...current.toolGuidance }; delete nextPermission[permissionKey]; delete nextToolGuidance[tool]; if (guidanceTool === tool) setGuidanceTool(null); return { ...current, tools: current.tools.filter((item) => item !== tool), toolGuidance: nextToolGuidance, permission: nextPermission }; })} type="button"><XIcon aria-hidden="true" className="size-3" /></button>
                               </div>
-                              {guidanceTool === tool && isCustomTool(tool) && (
+                              {guidanceTool === tool && isCustomToolName(tool) && (
                                 <label className="grid gap-1.5 border-border/70 border-t pt-2 text-muted-foreground text-xs">
                                   使用情境
                                   <Textarea aria-label={`${tool} 使用情境`} onChange={(event) => updateToolGuidance(tool, event.target.value)} placeholder={`說明 ${tool} 什麼情況需要被呼叫，以及模型應該如何使用它。`} rows={3} value={agentForm.toolGuidance[tool] ?? ""} />
@@ -1407,7 +1574,7 @@ export function SessionSidebar({
                         <select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setToolToAdd(event.target.value)} value={toolToAdd}>
                           {toolDefinitions.map((tool) => <option key={tool.id} value={tool.name}>{tool.name} · {tool.category}</option>)}
                         </select>
-                        <Button onClick={() => setAgentForm((current) => { const permissionKey = getToolPermissionKey(toolToAdd); return current.tools.includes(toolToAdd) ? current : { ...current, tools: [...current.tools, toolToAdd], toolGuidance: isCustomTool(toolToAdd) ? { ...current.toolGuidance, [toolToAdd]: current.toolGuidance[toolToAdd] ?? "" } : current.toolGuidance, permission: { ...current.permission, [permissionKey]: current.permission[permissionKey] ?? "ask" } }; })} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Tool</Button>
+                        <Button onClick={() => setAgentForm((current) => { const permissionKey = getToolPermissionKey(toolToAdd); return current.tools.includes(toolToAdd) ? current : { ...current, tools: [...current.tools, toolToAdd], toolGuidance: isCustomToolName(toolToAdd) ? { ...current.toolGuidance, [toolToAdd]: current.toolGuidance[toolToAdd] ?? "" } : current.toolGuidance, permission: { ...current.permission, [permissionKey]: current.permission[permissionKey] ?? "ask" } }; })} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Tool</Button>
                       </div>
                     </section>
 
