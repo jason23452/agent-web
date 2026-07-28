@@ -1286,7 +1286,7 @@ export function AppSidebar({
   return (
     <>
       <Sidebar
-        className={`z-40 flex min-h-dvh flex-col gap-4 border-border border-r bg-background px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
+        className={`z-40 grid min-h-dvh min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-4 border-border border-r bg-background px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
         data-region="session-sidebar"
       >
       <div className="flex items-center justify-between gap-3 px-2">
@@ -1331,7 +1331,7 @@ export function AppSidebar({
       </nav>
 
       <section
-        className="min-h-0 flex-1"
+        className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]"
         aria-labelledby="recent-sessions-title"
       >
         <div className="mb-2 grid gap-2 px-2">
@@ -1386,7 +1386,7 @@ export function AppSidebar({
             </label>
           )}
         </div>
-        <ul className="grid max-h-[calc(100dvh-250px)] gap-1 overflow-y-auto pr-1">
+        <ul className="grid min-h-0 auto-rows-max content-start gap-1 overflow-y-auto pr-1 pb-2">
           {filteredSessions.map((session) => (
             <li key={session.id}>
               <button
@@ -1417,7 +1417,7 @@ export function AppSidebar({
         </ul>
       </section>
 
-      <div className="mt-auto border-border/70 border-t px-2 pt-3">
+      <div className="shrink-0 border-border/70 border-t px-2 pt-3">
         <button
           aria-label="開啟使用者設定"
           className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

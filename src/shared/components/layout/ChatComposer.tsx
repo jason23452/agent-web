@@ -72,9 +72,9 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
             </div>
           )}
 
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-end gap-2">
-            <span className="relative">
-              <Button aria-label="加入檔案" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" onClick={() => setUploadOpen((current) => !current)} size="icon" variant="ghost">
+          <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 min-[761px]:items-end">
+            <span className="relative grid size-10 place-items-center self-center min-[761px]:self-end">
+              <Button aria-label="加入檔案" className="grid size-10 min-h-10 min-w-10 place-items-center rounded-full border-0 bg-transparent p-0 shadow-none before:hidden hover:bg-muted [&_svg]:mx-0 [&_svg]:size-5" onClick={() => setUploadOpen((current) => !current)} size="icon" variant="ghost">
                 <PaperclipIcon aria-hidden="true" />
               </Button>
               {uploadOpen && (
@@ -120,7 +120,7 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
               value={value}
             />
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 self-center min-[761px]:self-end">
               <Button aria-label="語音輸入" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" size="icon" variant="ghost">
                 <MicIcon aria-hidden="true" />
               </Button>
