@@ -1,8 +1,12 @@
 import {
+  ArrowLeftIcon,
+  CheckIcon,
   FolderIcon,
   HistoryIcon,
+  MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PlugZapIcon,
+  PlusIcon,
   SearchIcon,
   ServerIcon,
   SparklesIcon,
@@ -13,7 +17,9 @@ import { useState } from "react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/shared/components/ui/empty";
+import { Input } from "@/shared/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/shared/components/ui/input-group";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/shared/components/ui/menu";
 import { sessions } from "@/features/workspace/data/mockWorkspace";
 
 type SessionSidebarProps = {
@@ -38,6 +44,37 @@ const recentProjects = [
   { id: "build-example", name: "build-example", path: "C:/Users/Bojii/Desktop/SDD/build-example/" },
 ];
 
+type McpServer = {
+  id: string;
+  url: string;
+  name: string;
+  username: string;
+  password: string;
+  version: string;
+  isDefault: boolean;
+};
+
+type McpDialogView = "list" | "add" | "edit";
+
+const initialMcpServers: McpServer[] = [
+  {
+    id: "lan-mcp",
+    url: "http://192.168.1.104:8787",
+    name: "Localhost",
+    username: "",
+    password: "",
+    version: "v1.16.2",
+    isDefault: true,
+  },
+];
+
+const emptyMcpForm = {
+  url: "http://localhost:4096",
+  name: "Localhost",
+  username: "opencode",
+  password: "",
+};
+
 export function SessionSidebar({
   activeProjectPath,
   onProjectChange,
@@ -49,6 +86,12 @@ export function SessionSidebar({
   const [projectSearch, setProjectSearch] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
+  const [mcpDialogView, setMcpDialogView] = useState<McpDialogView>("list");
+  const [mcpSearch, setMcpSearch] = useState("");
+  const [mcpServers, setMcpServers] = useState<McpServer[]>(initialMcpServers);
+  const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
+  const [mcpForm, setMcpForm] = useState(emptyMcpForm);
 
   const filteredProjects = recentProjects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
@@ -61,6 +104,66 @@ export function SessionSidebar({
     if (!keyword) return true;
     return session.title.toLowerCase().includes(keyword) || session.meta.toLowerCase().includes(keyword);
   });
+
+  const filteredMcpServers = mcpServers.filter((server) => {
+    const keyword = mcpSearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return server.url.toLowerCase().includes(keyword) || server.name.toLowerCase().includes(keyword) || server.username.toLowerCase().includes(keyword);
+  });
+
+  function openMcpList() {
+    setMcpDialogView("list");
+    setMcpDialogOpen(true);
+  }
+
+  function openAddMcpServer() {
+    setEditingMcpId(null);
+    setMcpForm(emptyMcpForm);
+    setMcpDialogView("add");
+  }
+
+  function openEditMcpServer(server: McpServer) {
+    setEditingMcpId(server.id);
+    setMcpForm({
+      url: server.url,
+      name: server.name,
+      username: server.username,
+      password: server.password,
+    });
+    setMcpDialogView("edit");
+  }
+
+  function submitMcpServer() {
+    if (!mcpForm.url.trim()) return;
+
+    if (mcpDialogView === "edit" && editingMcpId) {
+      setMcpServers((current) => current.map((server) => server.id === editingMcpId ? { ...server, ...mcpForm } : server));
+    } else {
+      setMcpServers((current) => [
+        ...current,
+        {
+          id: `mcp-${Date.now()}`,
+          ...mcpForm,
+          version: "v1.16.2",
+          isDefault: current.length === 0,
+        },
+      ]);
+    }
+
+    setMcpDialogView("list");
+  }
+
+  function setDefaultMcpServer(serverId: string) {
+    setMcpServers((current) => current.map((server) => ({ ...server, isDefault: server.id === serverId })));
+  }
+
+  function deleteMcpServer(serverId: string) {
+    setMcpServers((current) => {
+      const next = current.filter((server) => server.id !== serverId);
+      if (next.some((server) => server.isDefault) || next.length === 0) return next;
+      return next.map((server, index) => ({ ...server, isDefault: index === 0 }));
+    });
+  }
 
   return (
     <>
@@ -91,6 +194,7 @@ export function SessionSidebar({
                   className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${item.active ? "bg-accent text-accent-foreground" : "text-foreground"}`}
                   onClick={() => {
                     if (item.label === "專案") setProjectDialogOpen(true);
+                    if (item.label === "MCP Server") openMcpList();
                   }}
                   type="button"
                 >
@@ -260,6 +364,168 @@ export function SessionSidebar({
                 </ul>
               </div>
             </div>
+          </section>
+        </div>
+      )}
+
+      {mcpDialogOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
+          <section
+            aria-label={mcpDialogView === "list" ? "服務器" : mcpDialogView === "add" ? "添加服務器" : "編輯服務器"}
+            className="w-full max-w-[640px] overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+          >
+            <div className="flex h-14 items-center justify-between gap-4 px-5">
+              <div className="flex min-w-0 items-center gap-2">
+                {mcpDialogView !== "list" && (
+                  <button
+                    aria-label="返回服務器列表"
+                    className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setMcpDialogView("list")}
+                    type="button"
+                  >
+                    <ArrowLeftIcon aria-hidden="true" className="size-4" />
+                  </button>
+                )}
+                <h2 className="truncate font-semibold text-base">
+                  {mcpDialogView === "list" ? "服務器" : mcpDialogView === "add" ? "添加服務器" : "編輯服務器"}
+                </h2>
+              </div>
+              <button
+                aria-label="關閉服務器"
+                className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setMcpDialogOpen(false)}
+                type="button"
+              >
+                <XIcon aria-hidden="true" className="size-4" />
+              </button>
+            </div>
+
+            {mcpDialogView === "list" ? (
+              <div className="grid gap-4 px-6 pb-6">
+                <InputGroup data-size="sm">
+                  <InputGroupAddon>
+                    <SearchIcon aria-hidden="true" />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    aria-label="搜索服務器"
+                    onChange={(event) => setMcpSearch(event.target.value)}
+                    placeholder="搜索服務器"
+                    value={mcpSearch}
+                  />
+                  {mcpSearch && (
+                    <InputGroupAddon align="inline-end">
+                      <button
+                        aria-label="清除服務器搜尋"
+                        className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => setMcpSearch("")}
+                        type="button"
+                      >
+                        <XIcon aria-hidden="true" className="size-3.5" />
+                      </button>
+                    </InputGroupAddon>
+                  )}
+                </InputGroup>
+
+                <ul className="grid min-h-24 gap-2">
+                  {filteredMcpServers.map((server) => (
+                    <li key={server.id}>
+                      <div className="flex items-center gap-3 rounded-lg bg-muted/55 px-4 py-3">
+                        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-green-500" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-semibold text-sm">{server.url.replace(/^https?:\/\//, "")}</span>
+                            <span className="shrink-0 text-muted-foreground text-xs">{server.version}</span>
+                          </div>
+                          <p className="mt-0.5 truncate text-muted-foreground text-sm">{server.username || "無用戶名"}</p>
+                        </div>
+                        {server.isDefault && <CheckIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
+                        <Menu>
+                          <MenuTrigger className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                          </MenuTrigger>
+                          <MenuPopup align="end" className="min-w-32">
+                            <MenuItem onClick={() => openEditMcpServer(server)}>編輯</MenuItem>
+                            <MenuItem onClick={() => setDefaultMcpServer(server.id)}>設為默認</MenuItem>
+                            <MenuSeparator />
+                            <MenuItem onClick={() => deleteMcpServer(server.id)} variant="destructive">刪除</MenuItem>
+                          </MenuPopup>
+                        </Menu>
+                      </div>
+                    </li>
+                  ))}
+                  {filteredMcpServers.length === 0 && (
+                    <li>
+                      <Empty className="rounded-lg border border-dashed bg-background px-3 py-8 md:py-8">
+                        <EmptyHeader>
+                          <EmptyMedia variant="icon">
+                            <ServerIcon aria-hidden="true" />
+                          </EmptyMedia>
+                          <EmptyTitle className="text-sm">沒有符合的服務器</EmptyTitle>
+                          <EmptyDescription className="text-xs">請換個關鍵字或新增服務器。</EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
+                    </li>
+                  )}
+                </ul>
+
+                <div>
+                  <Button onClick={openAddMcpServer} size="sm" variant="outline">
+                    <PlusIcon aria-hidden="true" />
+                    添加服務器
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-4 px-6 pb-6">
+                <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
+                  <label className="grid gap-2 text-muted-foreground text-sm">
+                    服務器 URL
+                    <Input
+                      aria-label="服務器 URL"
+                      onChange={(event) => setMcpForm((current) => ({ ...current, url: event.target.value }))}
+                      placeholder="http://localhost:4096"
+                      value={mcpForm.url}
+                    />
+                  </label>
+                  <label className="grid gap-2 text-muted-foreground text-sm">
+                    服務器名稱（可選）
+                    <Input
+                      aria-label="服務器名稱"
+                      onChange={(event) => setMcpForm((current) => ({ ...current, name: event.target.value }))}
+                      placeholder="Localhost"
+                      value={mcpForm.name}
+                    />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-2 text-muted-foreground text-sm">
+                      用戶名（可選）
+                      <Input
+                        aria-label="用戶名"
+                        onChange={(event) => setMcpForm((current) => ({ ...current, username: event.target.value }))}
+                        placeholder="用戶名"
+                        value={mcpForm.username}
+                      />
+                    </label>
+                    <label className="grid gap-2 text-muted-foreground text-sm">
+                      密碼（可選）
+                      <Input
+                        aria-label="密碼"
+                        onChange={(event) => setMcpForm((current) => ({ ...current, password: event.target.value }))}
+                        placeholder="密碼"
+                        type="password"
+                        value={mcpForm.password}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <Button disabled={!mcpForm.url.trim()} onClick={submitMcpServer}>
+                    {mcpDialogView === "add" ? "添加服務器" : "保存"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       )}
