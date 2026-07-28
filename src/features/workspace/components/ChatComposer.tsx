@@ -66,9 +66,9 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
                 <PaperclipIcon aria-hidden="true" />
               </Button>
               {uploadOpen && (
-                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-20 min-w-50 rounded-xl border bg-popover p-1.5 shadow-[0_14px_40px_color-mix(in_oklch,var(--foreground)_10%,transparent)]">
+                <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-20 grid w-[234px] gap-1 rounded-lg border bg-popover p-1.5 text-left text-sm text-popover-foreground shadow-[0_14px_40px_color-mix(in_oklch,var(--foreground)_10%,transparent)]">
                   <button
-                    className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => {
                       onAddAttachment()
                       setUploadOpen(false)
@@ -76,9 +76,23 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
                     type="button"
                   >
                     <UploadIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                    <span className="grid gap-0.5">
-                      <strong>從本地檔案庫</strong>
-                      <span className="text-muted-foreground text-xs">加入 mock 附件到對話</span>
+                    <span className="grid min-w-0 gap-0.5 leading-none">
+                      <strong className="truncate font-semibold leading-5">從檔案庫選取</strong>
+                      <span className="text-muted-foreground text-xs leading-5">引用專案其他檔案作為參考。</span>
+                    </span>
+                  </button>
+                  <button
+                    className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      onAddAttachment()
+                      setUploadOpen(false)
+                    }}
+                    type="button"
+                  >
+                    <PaperclipIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
+                    <span className="grid min-w-0 gap-0.5 leading-none">
+                      <strong className="truncate font-semibold leading-5">上傳本機檔案</strong>
+                      <span className="text-muted-foreground text-xs leading-5">加入額外文件或截圖。</span>
                     </span>
                   </button>
                 </div>

@@ -425,27 +425,27 @@ function FilePreviewDialogContent({
                     </Button>
 
                     {attachMenuOpen && (
-                      <div className="absolute bottom-full left-0 z-20 mb-2 grid min-w-[230px] gap-1 rounded-lg border bg-popover p-1.5 text-left text-sm text-popover-foreground shadow-[0_16px_44px_rgb(0_0_0_/_18%)]">
+                      <div className="absolute bottom-full left-0 z-20 mb-2 grid w-[234px] gap-1 rounded-lg border bg-popover p-1.5 text-left text-sm text-popover-foreground shadow-[0_16px_44px_rgb(0_0_0_/_18%)]">
                         <button
-                          className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={handleLibraryUpload}
                           type="button"
                         >
                           <UploadIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                          <span className="grid gap-0.5">
-                            <strong>從檔案庫選取</strong>
-                            <span className="text-muted-foreground text-xs">引用專案內其他檔案作為參考。</span>
+                          <span className="grid min-w-0 gap-0.5 leading-none">
+                            <strong className="truncate font-semibold leading-5">從檔案庫選取</strong>
+                            <span className="text-muted-foreground text-xs leading-5">引用專案其他檔案作為參考。</span>
                           </span>
                         </button>
                         <button
-                          className="flex w-full items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={handleLocalUpload}
                           type="button"
                         >
                           <PaperclipIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                          <span className="grid gap-0.5">
-                            <strong>上傳本機檔案</strong>
-                            <span className="text-muted-foreground text-xs">加入額外文件或截圖。</span>
+                          <span className="grid min-w-0 gap-0.5 leading-none">
+                            <strong className="truncate font-semibold leading-5">上傳本機檔案</strong>
+                            <span className="text-muted-foreground text-xs leading-5">加入額外文件或截圖。</span>
                           </span>
                         </button>
                       </div>
