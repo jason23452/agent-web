@@ -1,11 +1,28 @@
 import { CheckIcon, Clock3Icon, PinIcon, SparklesIcon } from "lucide-react"
 import { Badge } from "@/shared/components/ui/badge"
 import { Card, CardPanel } from "@/shared/components/ui/card"
-import { messages } from "@/features/workspace/data/mockWorkspace"
-import type { Agent, PlanStep } from "@/features/workspace/types/workspace"
+
+type ChatMessageListAgent = {
+  name: string
+}
+
+export type ChatMessagePlanStep = {
+  id: string
+  label: string
+  status: "done" | "running" | "pending"
+}
+
+export type ChatMessage = {
+  id: string
+  role: "user" | "agent"
+  title?: string
+  body: string
+  plan?: ChatMessagePlanStep[]
+}
 
 type ChatMessageListProps = {
-  activeAgent: Agent
+  activeAgent: ChatMessageListAgent
+  messages: ChatMessage[]
 }
 
 const quickActions = [
@@ -14,7 +31,7 @@ const quickActions = [
   { title: "整理檔案", description: "把 prototype 拆到正確分層" },
 ]
 
-function PlanStatus({ step }: { step: PlanStep }) {
+function PlanStatus({ step }: { step: ChatMessagePlanStep }) {
   if (step.status === "done") {
     return (
       <Badge variant="success">
@@ -36,17 +53,17 @@ function PlanStatus({ step }: { step: PlanStep }) {
   return <Badge variant="outline">等待</Badge>
 }
 
-export function ChatMessageList({ activeAgent }: ChatMessageListProps) {
+export function ChatMessageList({ activeAgent, messages }: ChatMessageListProps) {
   return (
     <div className="min-h-0 overflow-y-auto px-4 py-8 sm:px-8 lg:px-12">
       <div className="mx-auto grid max-w-[820px] gap-8">
-        <section className="grid min-h-48 place-items-center text-center" aria-labelledby="workspace-welcome-title">
+        <section className="grid min-h-48 place-items-center text-center" aria-labelledby="home-chat-welcome-title">
           <div className="grid gap-5">
             <div className="mx-auto grid size-11 place-items-center rounded-full bg-primary text-primary-foreground">
               <SparklesIcon aria-hidden="true" className="size-5" />
             </div>
             <div className="grid gap-2">
-              <h1 className="text-balance font-heading font-semibold text-3xl tracking-[-0.025em] sm:text-4xl" id="workspace-welcome-title">
+              <h1 className="text-balance font-heading font-semibold text-3xl tracking-[-0.025em] sm:text-4xl" id="home-chat-welcome-title">
                 今天要讓 {activeAgent.name} 做什麼？
               </h1>
               <p className="mx-auto max-w-[54ch] text-muted-foreground">

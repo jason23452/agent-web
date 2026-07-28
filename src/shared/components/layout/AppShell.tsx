@@ -1,0 +1,78 @@
+import type { ReactNode } from "react"
+import { cn } from "@/shared/utils/cn"
+
+type AppShellProps = {
+  ariaLabel?: string
+  aside?: ReactNode
+  asideOpen?: boolean
+  children: ReactNode
+  className?: string
+  mainClassName?: string
+  onCloseAside?: () => void
+  onCloseSidebar?: () => void
+  sidebar?: ReactNode
+  sidebarOpen?: boolean
+  topNav?: ReactNode
+}
+
+export function AppShell({
+  ariaLabel = "Application",
+  aside,
+  asideOpen = false,
+  children,
+  className,
+  mainClassName,
+  onCloseAside,
+  onCloseSidebar,
+  sidebar,
+  sidebarOpen = false,
+  topNav,
+}: AppShellProps) {
+  const hasAside = Boolean(aside)
+  const hasSidebar = Boolean(sidebar)
+
+  return (
+    <section
+      aria-label={ariaLabel}
+      className={cn(
+        "min-h-dvh bg-muted/40 text-foreground",
+        hasSidebar && !hasAside && "min-[761px]:grid min-[761px]:grid-cols-[240px_minmax(0,1fr)]",
+        hasSidebar && hasAside && "min-[761px]:grid min-[761px]:grid-cols-[240px_minmax(0,1fr)] min-[1181px]:grid-cols-[260px_minmax(0,1fr)_332px]",
+        !hasSidebar && hasAside && "min-[1181px]:grid min-[1181px]:grid-cols-[minmax(0,1fr)_332px]",
+        !hasSidebar && !hasAside && "grid",
+        className,
+      )}
+    >
+      {sidebar}
+      <div
+        className={cn(
+          "grid min-h-dvh min-w-0 bg-background",
+          topNav ? "grid-rows-[auto_minmax(0,1fr)]" : "grid-rows-[minmax(0,1fr)]",
+          mainClassName,
+        )}
+        data-region="app-main"
+      >
+        {topNav}
+        {children}
+      </div>
+      {aside}
+
+      {sidebarOpen && onCloseSidebar && (
+        <button
+          aria-label="Close sidebar overlay"
+          className="fixed inset-0 z-30 bg-black/20 min-[761px]:hidden"
+          onClick={onCloseSidebar}
+          type="button"
+        />
+      )}
+      {asideOpen && onCloseAside && (
+        <button
+          aria-label="Close side panel overlay"
+          className="fixed inset-0 z-30 bg-black/20 min-[1181px]:hidden"
+          onClick={onCloseAside}
+          type="button"
+        />
+      )}
+    </section>
+  )
+}

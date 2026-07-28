@@ -1,10 +1,16 @@
 import { CheckIcon, ChevronDownIcon, UserRoundIcon } from "lucide-react"
 import { useState } from "react"
-import type { Agent } from "@/features/workspace/types/workspace"
+
+type AgentSwitcherAgent = {
+  id: string
+  name: string
+  provider: string
+  status: "active" | "idle" | "review"
+}
 
 type AgentSwitcherProps = {
-  activeAgent: Agent
-  agents: Agent[]
+  activeAgent: AgentSwitcherAgent
+  agents: AgentSwitcherAgent[]
   onAgentChange: (agentId: string) => void
 }
 

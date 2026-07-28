@@ -1,4 +1,4 @@
-import type { Agent, Attachment, FileNode, Session, TokenUsage, WorkspaceMessage } from "@/features/workspace/types/workspace"
+import type { Agent, Attachment, FileNode, Project, Session, TokenUsage, WorkspaceMessage } from "@/features/workspace/types/workspace"
 
 export const agents: Agent[] = [
   { id: "opencode", name: "opencode-agent", provider: "OpenAI", status: "active" },
@@ -12,6 +12,12 @@ export const sessions: Session[] = [
   { id: "c", title: "Docker 容器進入流程", meta: "週二 · ops" },
   { id: "d", title: "HTMX 缺點分析", meta: "週一 · note" },
   { id: "e", title: "Opencode Web 介面選擇", meta: "7 月 18 日 · ui" },
+]
+
+export const recentProjects: Project[] = [
+  { id: "test-web", name: "test-web", path: "/workspace/test-web/" },
+  { id: "agent-web", name: "agent-web", path: "C:/Users/Bojii/Desktop/SDD/agent-web/" },
+  { id: "build-example", name: "build-example", path: "C:/Users/Bojii/Desktop/SDD/build-example/" },
 ]
 
 export const messages: WorkspaceMessage[] = [

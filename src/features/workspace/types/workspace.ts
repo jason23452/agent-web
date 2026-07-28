@@ -13,6 +13,12 @@ export type Session = {
   meta: string
 }
 
+export type Project = {
+  id: string
+  name: string
+  path: string
+}
+
 export type FileType = "folder" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
 
 export type FileNode = {

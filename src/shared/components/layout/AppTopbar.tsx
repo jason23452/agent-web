@@ -1,0 +1,72 @@
+import { HomeIcon, PanelLeftIcon, PanelRightIcon } from "lucide-react"
+import { AgentSwitcher } from "@/shared/components/layout/AgentSwitcher"
+import { ContextMeter } from "@/shared/components/layout/ContextMeter"
+import { TopNav } from "@/shared/components/layout/TopNav"
+import { Button } from "@/shared/components/ui/button"
+
+type AppTopbarAgent = {
+  id: string
+  name: string
+  provider: string
+  status: "active" | "idle" | "review"
+}
+
+type AppTopbarTokenUsage = {
+  label: string
+  used: number
+  limit: number
+}
+
+type AppTopbarProps = {
+  activeAgent: AppTopbarAgent
+  activeProjectPath: string
+  agents: AppTopbarAgent[]
+  onAgentChange: (agentId: string) => void
+  onOpenContextPanel: () => void
+  onOpenSidebar: () => void
+  tokenUsage: AppTopbarTokenUsage[]
+}
+
+function getProjectLabel(path: string) {
+  const segments = path.replace(/\\/g, "/").split("/").filter(Boolean)
+  return segments.at(-1) ?? path
+}
+
+export function AppTopbar({
+  activeAgent,
+  activeProjectPath,
+  agents,
+  onAgentChange,
+  onOpenContextPanel,
+  onOpenSidebar,
+  tokenUsage,
+}: AppTopbarProps) {
+  const projectLabel = getProjectLabel(activeProjectPath)
+
+  return (
+    <TopNav
+      center={
+        <div className="hidden min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs min-[760px]:flex" title={activeProjectPath}>
+          <HomeIcon aria-hidden="true" className="size-4 shrink-0" />
+          <span className="truncate">AICaht</span>
+          <span className="text-foreground">/</span>
+          <span className="truncate font-medium text-foreground">{projectLabel}</span>
+        </div>
+      }
+      end={
+        <>
+          <AgentSwitcher activeAgent={activeAgent} agents={agents} onAgentChange={onAgentChange} />
+          <ContextMeter usage={tokenUsage} />
+          <Button aria-label="Open context panel" className="min-[1181px]:hidden" onClick={onOpenContextPanel} size="icon" variant="ghost">
+            <PanelRightIcon aria-hidden="true" />
+          </Button>
+        </>
+      }
+      start={
+        <Button aria-label="Open sidebar" className="max-[760px]:inline-flex min-[761px]:hidden" onClick={onOpenSidebar} size="icon" variant="ghost">
+          <PanelLeftIcon aria-hidden="true" />
+        </Button>
+      }
+    />
+  )
+}

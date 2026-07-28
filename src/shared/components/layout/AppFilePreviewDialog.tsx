@@ -16,19 +16,35 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/shared/components/ui/tabs"
 import { cn } from "@/shared/utils/cn"
-import type { FileNode, PinContext } from "@/features/workspace/types/workspace"
 
-type FilePreviewDialogProps = {
-  file: FileNode | null
+type AppFilePreviewFileType = "folder" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
+
+type AppFilePreviewFile = {
+  id: string
+  name: string
+  type: AppFilePreviewFileType
+  size?: string
+  date?: string
+  children?: AppFilePreviewFile[]
+}
+
+type AppFilePreviewPinContext = {
+  label: string
+  meta: string
+  text: string
+}
+
+type AppFilePreviewDialogProps = {
+  file: AppFilePreviewFile | null
   onClose: () => void
-  onPin: (context: PinContext) => void
+  onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
 }
 
 type WorkTab = "edit" | "agent"
 
-type SelectionPin = PinContext & {
+type SelectionPin = AppFilePreviewPinContext & {
   left: number
   top: number
 }
@@ -38,7 +54,7 @@ type SelectionLineRange = {
   end: number
 }
 
-function getFileSample(file: FileNode) {
+function getFileSample(file: AppFilePreviewFile) {
   if (file.type === "html") {
     return '<!doctype html>\n<html lang="zh-Hant">\n  <head>\n    <meta charset="UTF-8" />\n    <title>AICaht</title>\n  </head>\n  <body>\n    <div id="app"></div>\n  </body>\n</html>'
   }
@@ -67,33 +83,37 @@ function summarizeText(text: string, limit = 240) {
   return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
 }
 
-export function FilePreviewDialog({
+export function AppFilePreviewDialog({
   file,
   onClose,
+  onPin,
   onLibraryUpload,
   onLocalUpload,
-}: FilePreviewDialogProps) {
+}: AppFilePreviewDialogProps) {
   if (!file) return null
 
   return (
-    <FilePreviewDialogContent
+    <AppFilePreviewDialogContent
       file={file}
       key={file.id}
       onClose={onClose}
+      onPin={onPin}
       onLibraryUpload={onLibraryUpload}
       onLocalUpload={onLocalUpload}
     />
   )
 }
 
-function FilePreviewDialogContent({
+function AppFilePreviewDialogContent({
   file,
   onClose,
+  onPin,
   onLibraryUpload,
   onLocalUpload,
 }: {
-  file: FileNode
+  file: AppFilePreviewFile
   onClose: () => void
+  onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
 }) {
@@ -105,7 +125,7 @@ function FilePreviewDialogContent({
   const [response, setResponse] = useState("")
   const [editStatus, setEditStatus] = useState("未修改")
   const [selectionPin, setSelectionPin] = useState<SelectionPin | null>(null)
-  const [dialogPins, setDialogPins] = useState<PinContext[]>([])
+  const [dialogPins, setDialogPins] = useState<AppFilePreviewPinContext[]>([])
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [selectionLineRange, setSelectionLineRange] = useState<SelectionLineRange | null>(null)
   const previewSectionRef = useRef<HTMLElement>(null)
@@ -287,6 +307,7 @@ function FilePreviewDialogContent({
                       text: selectionPin.text,
                     }
 
+                    onPin(nextPin)
                     setDialogPins((current) => {
                       const alreadyPinned = current.some((pin) => pin.meta === nextPin.meta && pin.text === nextPin.text)
                       return alreadyPinned ? current : [...current, nextPin]

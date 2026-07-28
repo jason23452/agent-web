@@ -23,14 +23,28 @@ import { Input } from "@/shared/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/shared/components/ui/input-group";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/shared/components/ui/menu";
 import { Textarea } from "@/shared/components/ui/textarea";
-import { sessions } from "@/features/workspace/data/mockWorkspace";
+import { Sidebar } from "@/shared/components/layout/Sidebar";
 
-type SessionSidebarProps = {
+type AppSidebarProject = {
+  id: string;
+  name: string;
+  path: string;
+};
+
+type AppSidebarSession = {
+  id: string;
+  title: string;
+  meta: string;
+};
+
+type AppSidebarProps = {
   activeProjectPath: string;
   onProjectChange: (path: string) => void;
   open: boolean;
   onClose: () => void;
   onSelectSession: () => void;
+  projects: AppSidebarProject[];
+  sessions: AppSidebarSession[];
 };
 
 const navItems = [
@@ -39,12 +53,6 @@ const navItems = [
   { icon: ServerIcon, label: "MCP Server" },
   { icon: PlugZapIcon, label: "外掛/技能" },
   { icon: HatGlasses, label: "智能體/工具" },
-];
-
-const initialRecentProjects = [
-  { id: "test-web", name: "test-web", path: "/workspace/test-web/" },
-  { id: "agent-web", name: "agent-web", path: "C:/Users/Bojii/Desktop/SDD/agent-web/" },
-  { id: "build-example", name: "build-example", path: "C:/Users/Bojii/Desktop/SDD/build-example/" },
 ];
 
 type McpServer = {
@@ -626,16 +634,18 @@ function agentToYaml(agent: Pick<AgentDefinition, "name" | "description"> & Part
   return `---\nname: ${agent.name || "my-agent"}\ndescription: ${agent.description || "Describe when this agent should be used."}\nmode: ${agent.mode ?? "subagent"}\nmodel: ${"model" in agent && agent.model ? agent.model : "openai/gpt-5.5"}\ntemperature: ${"temperature" in agent && agent.temperature ? agent.temperature : "0.3"}\ntop_p: ${"top_p" in agent && agent.top_p ? agent.top_p : "1"}\n${"variant" in agent && agent.variant ? `variant: ${agent.variant}\n` : ""}${"steps" in agent && agent.steps ? `steps: ${agent.steps}\n` : ""}${agent.disable ? "disable: true\n" : ""}${agent.hidden ? "hidden: true\n" : ""}${agent.color ? `color: ${agent.color}\n` : ""}${promptFile}${providerOptionsYaml ? `${providerOptionsYaml}\n` : ""}tools:\n${tools.map((tool) => `  ${tool}: true`).join("\n")}\nskills:\n${skills.map((skill) => `  - ${skill}`).join("\n")}\npermission:\n${permissionToYaml(effectivePermission)}\n---\n${agent.promptSource === "file" ? "" : systemPrompt}${guidanceText ? `\n\n## Tool usage guidance\n${guidanceText}` : ""}${skillGuidanceText ? `\n\n## Skill usage guidance\n${skillGuidanceText}` : ""}${subagentGuidanceText ? `\n\n## Subagent usage guidance\n${subagentGuidanceText}` : ""}\n`;
 }
 
-export function SessionSidebar({
+export function AppSidebar({
   activeProjectPath,
   onProjectChange,
   open,
   onClose,
   onSelectSession,
-}: SessionSidebarProps) {
+  projects: initialProjects,
+  sessions,
+}: AppSidebarProps) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectDialogView, setProjectDialogView] = useState<ProjectDialogView>("list");
-  const [projects, setProjects] = useState(initialRecentProjects);
+  const [projects, setProjects] = useState(initialProjects);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectCreateName, setProjectCreateName] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
@@ -1275,7 +1285,7 @@ export function SessionSidebar({
 
   return (
     <>
-      <aside
+      <Sidebar
         className={`z-40 flex min-h-dvh flex-col gap-4 border-border border-r bg-muted/35 px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
         data-region="session-sidebar"
       >
@@ -1426,7 +1436,7 @@ export function SessionSidebar({
           <SettingsIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </div>
-      </aside>
+      </Sidebar>
 
       {projectDialogOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">

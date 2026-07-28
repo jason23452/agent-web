@@ -1,13 +1,23 @@
 import { ChevronRightIcon, Code2Icon, FileIcon, FileImageIcon, FileJsonIcon, FolderIcon, FolderOpenIcon } from "lucide-react"
 import { useState } from "react"
-import type { FileNode, FileType } from "@/features/workspace/types/workspace"
 
-type FileTreeProps = {
-  nodes: FileNode[]
-  onPreviewFile: (file: FileNode) => void
+type FileTreeFileType = "folder" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
+
+export type FileTreeNode = {
+  id: string
+  name: string
+  type: FileTreeFileType
+  size?: string
+  date?: string
+  children?: FileTreeNode[]
 }
 
-function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileType }) {
+type FileTreeProps = {
+  nodes: FileTreeNode[]
+  onPreviewFile: (file: FileTreeNode) => void
+}
+
+function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileTreeFileType }) {
   if (type === "folder") return expanded ? <FolderOpenIcon aria-hidden="true" className="size-4 text-warning" /> : <FolderIcon aria-hidden="true" className="size-4 text-warning" />
   if (type === "img") return <FileImageIcon aria-hidden="true" className="size-4 text-primary" />
   if (type === "json") return <FileJsonIcon aria-hidden="true" className="size-4 text-muted-foreground" />
@@ -27,7 +37,7 @@ export function FileTree({ nodes, onPreviewFile }: FileTreeProps) {
     })
   }
 
-  function renderNodes(items: FileNode[], depth = 0) {
+  function renderNodes(items: FileTreeNode[], depth = 0) {
     return items.map((node) => {
       const isFolder = node.type === "folder"
       const expanded = expandedIds.has(node.id)

@@ -1,4 +1,8 @@
-import type { TokenUsage } from "@/features/workspace/types/workspace"
+type TokenUsage = {
+  label: string
+  used: number
+  limit: number
+}
 
 type ContextMeterProps = {
   usage: TokenUsage[]
