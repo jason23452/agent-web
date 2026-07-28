@@ -10,7 +10,10 @@ import {
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/shared/components/ui/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/shared/components/ui/input-group";
 import { sessions } from "@/features/workspace/data/mockWorkspace";
 
 type SessionSidebarProps = {
@@ -44,11 +47,19 @@ export function SessionSidebar({
 }: SessionSidebarProps) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
 
   const filteredProjects = recentProjects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
     if (!keyword) return true;
     return project.name.toLowerCase().includes(keyword) || project.path.toLowerCase().includes(keyword);
+  });
+
+  const filteredSessions = sessions.filter((session) => {
+    const keyword = historySearch.trim().toLowerCase();
+    if (!keyword) return true;
+    return session.title.toLowerCase().includes(keyword) || session.meta.toLowerCase().includes(keyword);
   });
 
   return (
@@ -96,16 +107,60 @@ export function SessionSidebar({
         className="min-h-0 flex-1"
         aria-labelledby="recent-sessions-title"
       >
-        <div className="mb-2 flex items-center justify-between gap-2 px-2">
-          <h2 className="font-semibold text-xs" id="recent-sessions-title">
-            最近
-          </h2>
-          <Button aria-label="搜尋對話" size="icon-xs" variant="ghost">
-            <SearchIcon aria-hidden="true" />
-          </Button>
+        <div className="mb-2 grid gap-2 px-2">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-semibold text-xs" id="recent-sessions-title">
+              最近
+            </h2>
+            <Button
+              aria-expanded={historySearchOpen}
+              aria-label="搜尋對話"
+              onClick={() => setHistorySearchOpen((current) => !current)}
+              size="icon-xs"
+              variant={historySearchOpen ? "secondary" : "ghost"}
+            >
+              <SearchIcon aria-hidden="true" />
+            </Button>
+          </div>
+
+          {historySearchOpen && (
+            <label className="block">
+              <span className="sr-only">搜尋最近對話</span>
+              <InputGroup data-size="sm">
+                <InputGroupAddon>
+                  <SearchIcon aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  autoFocus
+                  aria-label="搜尋最近對話"
+                  onChange={(event) => setHistorySearch(event.target.value)}
+                  placeholder="搜尋標題或標籤"
+                  value={historySearch}
+                />
+                {historySearch && (
+                  <InputGroupAddon align="inline-end">
+                    <button
+                      aria-label="清除搜尋"
+                      className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => setHistorySearch("")}
+                      type="button"
+                    >
+                      <XIcon aria-hidden="true" className="size-3.5" />
+                    </button>
+                  </InputGroupAddon>
+                )}
+              </InputGroup>
+              {historySearch && (
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-muted-foreground text-[11px]">
+                  <span className="truncate">搜尋「{historySearch}」</span>
+                  <Badge size="sm" variant={filteredSessions.length > 0 ? "info" : "warning"}>{filteredSessions.length} 筆</Badge>
+                </div>
+              )}
+            </label>
+          )}
         </div>
         <ul className="grid max-h-[calc(100dvh-250px)] gap-1 overflow-y-auto pr-1">
-          {sessions.map((session) => (
+          {filteredSessions.map((session) => (
             <li key={session.id}>
               <button
                 className="grid w-full gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring first:bg-accent"
@@ -119,6 +174,19 @@ export function SessionSidebar({
               </button>
             </li>
           ))}
+          {filteredSessions.length === 0 && (
+            <li>
+              <Empty className="rounded-lg border border-dashed bg-background px-3 py-7 md:py-7">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <SearchIcon aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyTitle className="text-sm">沒有符合的紀錄</EmptyTitle>
+                  <EmptyDescription className="text-xs">換個關鍵字搜尋標題或標籤。</EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </li>
+          )}
         </ul>
       </section>
 
