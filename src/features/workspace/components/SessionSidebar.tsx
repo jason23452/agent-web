@@ -3,12 +3,14 @@ import {
   CheckIcon,
   FolderIcon,
   HistoryIcon,
+  KeyRoundIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PlugZapIcon,
   PlusIcon,
   SearchIcon,
   ServerIcon,
+  SettingsIcon,
   SparklesIcon,
   HatGlasses,
   XIcon,
@@ -136,6 +138,16 @@ type AgentEditMode = "add" | "edit";
 type ToolEditMode = "add" | "edit";
 type AgentToolTab = "agents" | "tools";
 type AgentConfigMode = "interface" | "yaml";
+
+type ModelProvider = {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  defaultModel: string;
+};
 
 const initialMcpServers: McpServer[] = [
   {
@@ -306,6 +318,36 @@ const availableModels = [
   "anthropic/claude-sonnet-4-5-20250929",
   "google/gemini-3-pro",
   "minimax/minimax-m2.1",
+];
+
+const initialModelProviders: ModelProvider[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    description: "GPT 系列與相容 OpenAI API 的模型供應商。",
+    enabled: true,
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: "",
+    defaultModel: "openai/gpt-5.5",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    description: "Claude 系列模型供應商。",
+    enabled: true,
+    baseUrl: "https://api.anthropic.com",
+    apiKey: "",
+    defaultModel: "anthropic/claude-sonnet-4-5-20250929",
+  },
+  {
+    id: "google",
+    name: "Google Gemini",
+    description: "Gemini 模型與 Google AI API。",
+    enabled: false,
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    apiKey: "",
+    defaultModel: "google/gemini-3-pro",
+  },
 ];
 
 function getToolPermissionKey(tool: string) {
@@ -519,6 +561,8 @@ export function SessionSidebar({
   const [guidanceTool, setGuidanceTool] = useState<string | null>(null);
   const [guidanceSkill, setGuidanceSkill] = useState<string | null>(null);
   const [guidanceSubagent, setGuidanceSubagent] = useState<string | null>(null);
+  const [userSettingsOpen, setUserSettingsOpen] = useState(false);
+  const [modelProviders, setModelProviders] = useState<ModelProvider[]>(initialModelProviders);
 
   const filteredProjects = projects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
@@ -621,6 +665,10 @@ export function SessionSidebar({
     setPluginSkillTab("plugins");
     setPluginSkillSearch("");
     setPluginSkillDialogOpen(true);
+  }
+
+  function updateModelProvider(providerId: string, updates: Partial<ModelProvider>) {
+    setModelProviders((current) => current.map((provider) => provider.id === providerId ? { ...provider, ...updates } : provider));
   }
 
   function togglePlugin(pluginId: string) {
@@ -1231,16 +1279,24 @@ export function SessionSidebar({
         </ul>
       </section>
 
-      <div className="mt-auto flex items-center gap-3 border-border/70 border-t px-2 pt-3">
-        <div className="grid size-8 place-items-center rounded-full bg-accent font-bold text-xs">
-          吳
-        </div>
-        <div className="grid min-w-0 gap-0">
-          <strong className="truncate font-semibold text-sm">仲書 吳</strong>
-          <span className="truncate text-muted-foreground text-xs">
-            Pro · Agent API 待接
-          </span>
-        </div>
+      <div className="mt-auto border-border/70 border-t px-2 pt-3">
+        <button
+          aria-label="開啟使用者設定"
+          className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => setUserSettingsOpen(true)}
+          type="button"
+        >
+          <div className="grid size-8 shrink-0 place-items-center rounded-full bg-accent font-bold text-xs">
+            吳
+          </div>
+          <div className="grid min-w-0 flex-1 gap-0">
+            <strong className="truncate font-semibold text-sm">仲書 吳</strong>
+            <span className="truncate text-muted-foreground text-xs">
+              Pro · Agent API 待接
+            </span>
+          </div>
+          <SettingsIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        </button>
       </div>
       </aside>
 
@@ -1343,6 +1399,112 @@ export function SessionSidebar({
                   </div>
                 </div>
               )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {userSettingsOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
+          <section
+            aria-label="使用者設定"
+            className="flex max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[760px] flex-col overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+          >
+            <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-border/70 border-b px-5">
+              <div className="min-w-0">
+                <h2 className="font-semibold text-base">使用者設定</h2>
+                <p className="mt-0.5 text-muted-foreground text-xs">帳號、模型供應商與 Agent API 配置。</p>
+              </div>
+              <button
+                aria-label="關閉使用者設定"
+                className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setUserSettingsOpen(false)}
+                type="button"
+              >
+                <XIcon aria-hidden="true" className="size-4" />
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 overflow-hidden md:grid-cols-[210px_minmax(0,1fr)]">
+              <aside className="border-border/70 border-b bg-muted/30 p-3 md:border-r md:border-b-0">
+                <button
+                  className="flex w-full items-center gap-2.5 rounded-lg bg-background px-3 py-2 text-left font-medium text-sm shadow-xs/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  type="button"
+                >
+                  <KeyRoundIcon aria-hidden="true" className="size-4 text-primary" />
+                  模型供應商配置
+                </button>
+              </aside>
+
+              <div className="grid min-h-0 gap-4 overflow-y-auto p-5">
+                <div className="grid gap-1">
+                  <h3 className="font-semibold text-sm">模型供應商配置</h3>
+                  <p className="text-muted-foreground text-xs leading-5">設定各供應商的 API Key、Base URL 與預設模型；目前先保存在前端狀態，後續可接 OpenCode config 或後端 API。</p>
+                </div>
+
+                <ul className="grid gap-3">
+                  {modelProviders.map((provider) => {
+                    const providerModels = availableModels.filter((model) => model.startsWith(`${provider.id}/`));
+
+                    return (
+                      <li className="grid gap-3 rounded-lg border bg-muted/35 p-4" key={provider.id}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <strong className="truncate font-semibold text-sm">{provider.name}</strong>
+                              <Badge size="sm" variant={provider.enabled ? "success" : "secondary"}>{provider.enabled ? "enabled" : "disabled"}</Badge>
+                            </div>
+                            <p className="mt-1 text-muted-foreground text-xs leading-5">{provider.description}</p>
+                          </div>
+                          <Button onClick={() => updateModelProvider(provider.id, { enabled: !provider.enabled })} size="sm" variant={provider.enabled ? "outline" : "secondary"}>
+                            {provider.enabled ? "停用" : "啟用"}
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="grid gap-1.5 text-muted-foreground text-xs">
+                            Base URL
+                            <Input
+                              aria-label={`${provider.name} Base URL`}
+                              onChange={(event) => updateModelProvider(provider.id, { baseUrl: event.target.value })}
+                              placeholder="https://api.example.com/v1"
+                              value={provider.baseUrl}
+                            />
+                          </label>
+                          <label className="grid gap-1.5 text-muted-foreground text-xs">
+                            API Key
+                            <Input
+                              aria-label={`${provider.name} API Key`}
+                              onChange={(event) => updateModelProvider(provider.id, { apiKey: event.target.value })}
+                              placeholder="sk-..."
+                              type="password"
+                              value={provider.apiKey}
+                            />
+                          </label>
+                        </div>
+
+                        <label className="grid gap-1.5 text-muted-foreground text-xs">
+                          預設模型
+                          <select
+                            aria-label={`${provider.name} 預設模型`}
+                            className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+                            onChange={(event) => updateModelProvider(provider.id, { defaultModel: event.target.value })}
+                            value={provider.defaultModel}
+                          >
+                            {!providerModels.includes(provider.defaultModel) && <option value={provider.defaultModel}>{provider.defaultModel}</option>}
+                            {providerModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                          </select>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-5 py-4">
+              <p className="text-muted-foreground text-xs">API Key 不會在此原型中送出，僅用於展示配置流程。</p>
+              <Button onClick={() => setUserSettingsOpen(false)} size="lg">完成</Button>
             </div>
           </section>
         </div>
