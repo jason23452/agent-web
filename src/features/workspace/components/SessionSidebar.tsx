@@ -1,9 +1,9 @@
 import {
   ArrowLeftIcon,
   CheckIcon,
+  CopyIcon,
   FolderIcon,
   HistoryIcon,
-  KeyRoundIcon,
   MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PlugZapIcon,
@@ -143,10 +143,21 @@ type ModelProvider = {
   id: string;
   name: string;
   description: string;
+  icon: string;
+  badge?: string;
+  connected: boolean;
   enabled: boolean;
+  npm: string;
   baseUrl: string;
   apiKey: string;
+  headersJson: string;
   defaultModel: string;
+  modelDisplayName: string;
+  contextLimit: string;
+  outputLimit: string;
+  whitelist: string;
+  blacklist: string;
+  authMethods: string[];
 };
 
 const initialMcpServers: McpServer[] = [
@@ -324,29 +335,137 @@ const initialModelProviders: ModelProvider[] = [
   {
     id: "openai",
     name: "OpenAI",
-    description: "GPT 系列與相容 OpenAI API 的模型供應商。",
+    description: "使用 ChatGPT Pro/Plus 或 API 密鑰連接",
+    icon: "◎",
+    connected: true,
     enabled: true,
+    npm: "@ai-sdk/openai",
     baseUrl: "https://api.openai.com/v1",
-    apiKey: "",
+    apiKey: "{env:OPENAI_API_KEY}",
+    headersJson: "",
     defaultModel: "openai/gpt-5.5",
+    modelDisplayName: "GPT 5.5",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: ["ChatGPT Pro/Plus (browser)", "ChatGPT Pro/Plus (headless)", "API 密鑰"],
   },
   {
     id: "anthropic",
     name: "Anthropic",
-    description: "Claude 系列模型供應商。",
+    description: "使用 Claude Pro/Max 或 API 密鑰連接",
+    icon: "AI",
+    connected: false,
     enabled: true,
+    npm: "@ai-sdk/anthropic",
     baseUrl: "https://api.anthropic.com",
-    apiKey: "",
+    apiKey: "{env:ANTHROPIC_API_KEY}",
+    headersJson: "",
     defaultModel: "anthropic/claude-sonnet-4-5-20250929",
+    modelDisplayName: "Claude Sonnet 4.5",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "claude-opus-4-5-20251101",
+    authMethods: ["Claude Pro/Max (browser)", "Claude Pro/Max (headless)", "API 密鑰"],
   },
   {
     id: "google",
     name: "Google Gemini",
-    description: "Gemini 模型與 Google AI API。",
+    description: "使用 Google 帳號或 API 密鑰連接",
+    icon: "✦",
+    connected: false,
     enabled: false,
+    npm: "@ai-sdk/google",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    apiKey: "",
+    apiKey: "{env:GOOGLE_GENERATIVE_AI_API_KEY}",
+    headersJson: "",
     defaultModel: "google/gemini-3-pro",
+    modelDisplayName: "Gemini 3 Pro",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: ["Google OAuth (browser)", "Google OAuth (headless)", "API 密鑰"],
+  },
+  {
+    id: "opencode",
+    name: "OpenCode Zen",
+    description: "使用 OpenCode Zen 或 API 密鑰連接",
+    icon: "Z",
+    badge: "推薦",
+    connected: false,
+    enabled: false,
+    npm: "@ai-sdk/openai-compatible",
+    baseUrl: "https://api.opencode.ai/v1",
+    apiKey: "{env:OPENCODE_API_KEY}",
+    headersJson: "",
+    defaultModel: "opencode/gpt-5.1-codex",
+    modelDisplayName: "GPT 5.1 Codex",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: ["OpenCode Zen", "API 密鑰"],
+  },
+  {
+    id: "opencode-go",
+    name: "OpenCode Go",
+    description: "適合所有人的低成本訂閱",
+    icon: "G",
+    badge: "推薦",
+    connected: false,
+    enabled: false,
+    npm: "@ai-sdk/openai-compatible",
+    baseUrl: "https://api.opencode.ai/v1",
+    apiKey: "{env:OPENCODE_GO_API_KEY}",
+    headersJson: "",
+    defaultModel: "opencode/gpt-5.1-codex",
+    modelDisplayName: "GPT 5.1 Codex",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: ["OpenCode Go", "API 密鑰"],
+  },
+  {
+    id: "github-copilot",
+    name: "GitHub Copilot",
+    description: "使用 Copilot 或 API 密鑰連接",
+    icon: "⌘",
+    connected: false,
+    enabled: false,
+    npm: "@ai-sdk/openai-compatible",
+    baseUrl: "https://api.githubcopilot.com/v1",
+    apiKey: "{env:GITHUB_TOKEN}",
+    headersJson: "",
+    defaultModel: "github-copilot/gpt-4.1",
+    modelDisplayName: "GPT 4.1",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: ["GitHub OAuth (browser)", "Device code", "API 密鑰"],
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    description: "使用 OpenRouter 帳號或 API 密鑰連接",
+    icon: "↢",
+    connected: false,
+    enabled: false,
+    npm: "@ai-sdk/openai-compatible",
+    baseUrl: "https://openrouter.ai/api/v1",
+    apiKey: "{env:OPENROUTER_API_KEY}",
+    headersJson: "",
+    defaultModel: "openrouter/openai/gpt-4.1",
+    modelDisplayName: "GPT 4.1 via OpenRouter",
+    contextLimit: "",
+    outputLimit: "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: ["OpenRouter OAuth", "API 密鑰", "自訂 headers"],
   },
 ];
 
@@ -563,6 +682,8 @@ export function SessionSidebar({
   const [guidanceSubagent, setGuidanceSubagent] = useState<string | null>(null);
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
   const [modelProviders, setModelProviders] = useState<ModelProvider[]>(initialModelProviders);
+  const [selectedModelProviderId, setSelectedModelProviderId] = useState<string | null>(null);
+  const [selectedProviderAuthMethod, setSelectedProviderAuthMethod] = useState<string | null>(null);
 
   const filteredProjects = projects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
@@ -593,6 +714,7 @@ export function SessionSidebar({
   });
   const availableSkillNames = skillSettings.filter((skill) => skill.enabled).map((skill) => skill.name);
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const selectedModelProvider = modelProviders.find((provider) => provider.id === selectedModelProviderId) ?? null;
   const isCustomToolName = (toolName: string) => isCustomTool(toolName, toolDefinitions);
 
   function finishProjectOpen(path: string) {
@@ -669,6 +791,12 @@ export function SessionSidebar({
 
   function updateModelProvider(providerId: string, updates: Partial<ModelProvider>) {
     setModelProviders((current) => current.map((provider) => provider.id === providerId ? { ...provider, ...updates } : provider));
+  }
+
+  function closeUserSettings() {
+    setUserSettingsOpen(false);
+    setSelectedModelProviderId(null);
+    setSelectedProviderAuthMethod(null);
   }
 
   function togglePlugin(pluginId: string) {
@@ -1408,104 +1536,150 @@ export function SessionSidebar({
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
           <section
             aria-label="使用者設定"
-            className="flex max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[760px] flex-col overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+            className={`flex max-h-[calc(100dvh-2rem)] min-h-0 w-full flex-col overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)] ${selectedModelProvider ? "max-w-[640px]" : "max-w-[760px]"}`}
           >
-            <div className="flex h-14 shrink-0 items-center justify-between gap-4 border-border/70 border-b px-5">
-              <div className="min-w-0">
-                <h2 className="font-semibold text-base">使用者設定</h2>
-                <p className="mt-0.5 text-muted-foreground text-xs">帳號、模型供應商與 Agent API 配置。</p>
+            <div className="flex h-14 shrink-0 items-center justify-between gap-4 px-5">
+              <div className="flex min-w-0 items-center gap-2">
+                {selectedModelProvider && (
+                  <button
+                    aria-label="返回模型供應商列表"
+                    className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => {
+                      if (selectedProviderAuthMethod) {
+                        setSelectedProviderAuthMethod(null);
+                        return;
+                      }
+
+                      setSelectedModelProviderId(null);
+                    }}
+                    type="button"
+                  >
+                    <ArrowLeftIcon aria-hidden="true" className="size-4" />
+                  </button>
+                )}
+                {!selectedModelProvider && (
+                  <div className="min-w-0">
+                    <h2 className="font-semibold text-base">使用者設定</h2>
+                    <p className="mt-0.5 text-muted-foreground text-xs">帳號、模型供應商與 Agent API 配置。</p>
+                  </div>
+                )}
               </div>
               <button
                 aria-label="關閉使用者設定"
                 className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setUserSettingsOpen(false)}
+                onClick={closeUserSettings}
                 type="button"
               >
                 <XIcon aria-hidden="true" className="size-4" />
               </button>
             </div>
 
-            <div className="grid min-h-0 flex-1 gap-0 overflow-hidden md:grid-cols-[210px_minmax(0,1fr)]">
-              <aside className="border-border/70 border-b bg-muted/30 p-3 md:border-r md:border-b-0">
-                <button
-                  className="flex w-full items-center gap-2.5 rounded-lg bg-background px-3 py-2 text-left font-medium text-sm shadow-xs/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  type="button"
-                >
-                  <KeyRoundIcon aria-hidden="true" className="size-4 text-primary" />
-                  模型供應商配置
-                </button>
-              </aside>
-
-              <div className="grid min-h-0 gap-4 overflow-y-auto p-5">
-                <div className="grid gap-1">
-                  <h3 className="font-semibold text-sm">模型供應商配置</h3>
-                  <p className="text-muted-foreground text-xs leading-5">設定各供應商的 API Key、Base URL 與預設模型；目前先保存在前端狀態，後續可接 OpenCode config 或後端 API。</p>
-                </div>
-
-                <ul className="grid gap-3">
-                  {modelProviders.map((provider) => {
-                    const providerModels = availableModels.filter((model) => model.startsWith(`${provider.id}/`));
-
-                    return (
-                      <li className="grid gap-3 rounded-lg border bg-muted/35 p-4" key={provider.id}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <strong className="truncate font-semibold text-sm">{provider.name}</strong>
-                              <Badge size="sm" variant={provider.enabled ? "success" : "secondary"}>{provider.enabled ? "enabled" : "disabled"}</Badge>
-                            </div>
-                            <p className="mt-1 text-muted-foreground text-xs leading-5">{provider.description}</p>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {!selectedModelProvider ? (
+                <div className="mx-auto grid max-w-[680px] gap-8">
+                  <section className="grid gap-3" aria-labelledby="connected-provider-title">
+                    <h3 className="font-semibold text-sm" id="connected-provider-title">提供商</h3>
+                    <ul className="grid gap-2">
+                      {modelProviders.filter((provider) => provider.connected).map((provider) => (
+                        <li className="flex min-h-14 items-center justify-between gap-3 rounded-lg bg-muted/50 px-4 py-3" key={provider.id}>
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span className="grid size-5 shrink-0 place-items-center font-bold text-sm">{provider.icon}</span>
+                            <strong className="truncate font-semibold text-sm">{provider.name}</strong>
+                            <Badge size="sm" variant="secondary">API 密鑰</Badge>
                           </div>
-                          <Button onClick={() => updateModelProvider(provider.id, { enabled: !provider.enabled })} size="sm" variant={provider.enabled ? "outline" : "secondary"}>
-                            {provider.enabled ? "停用" : "啟用"}
-                          </Button>
-                        </div>
+                          <Button onClick={() => updateModelProvider(provider.id, { connected: false, enabled: false })} size="sm" variant="ghost">斷開連接</Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
 
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="grid gap-1.5 text-muted-foreground text-xs">
-                            Base URL
-                            <Input
-                              aria-label={`${provider.name} Base URL`}
-                              onChange={(event) => updateModelProvider(provider.id, { baseUrl: event.target.value })}
-                              placeholder="https://api.example.com/v1"
-                              value={provider.baseUrl}
-                            />
-                          </label>
-                          <label className="grid gap-1.5 text-muted-foreground text-xs">
-                            API Key
-                            <Input
-                              aria-label={`${provider.name} API Key`}
-                              onChange={(event) => updateModelProvider(provider.id, { apiKey: event.target.value })}
-                              placeholder="sk-..."
-                              type="password"
-                              value={provider.apiKey}
-                            />
-                          </label>
-                        </div>
+                  <section className="grid gap-3" aria-labelledby="popular-provider-title">
+                    <h3 className="font-semibold text-sm" id="popular-provider-title">熱門提供商</h3>
+                    <ul className="overflow-hidden rounded-lg bg-muted/45">
+                      {modelProviders.filter((provider) => !provider.connected).map((provider) => (
+                        <li className="border-border/70 border-b last:border-b-0" key={provider.id}>
+                          <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="grid size-5 shrink-0 place-items-center font-bold text-sm">{provider.icon}</span>
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <strong className="truncate font-semibold text-sm">{provider.name}</strong>
+                                  {provider.badge && <Badge size="sm" variant="secondary">{provider.badge}</Badge>}
+                                </div>
+                                <p className="mt-0.5 truncate text-muted-foreground text-xs">{provider.description}</p>
+                              </div>
+                            </div>
+                            <Button onClick={() => { setSelectedModelProviderId(provider.id); setSelectedProviderAuthMethod(null); }} size="sm" variant="outline">
+                              <PlusIcon aria-hidden="true" />
+                              連接
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                </div>
+              ) : selectedProviderAuthMethod ? (
+                <div className="grid gap-8 px-0 pt-1 pb-14">
+                  <div className="flex items-center gap-4">
+                    <span className="grid size-5 shrink-0 place-items-center font-bold text-sm">{selectedModelProvider.icon}</span>
+                    <h3 className="font-semibold text-base">連接 {selectedModelProvider.name}</h3>
+                  </div>
 
-                        <label className="grid gap-1.5 text-muted-foreground text-xs">
-                          預設模型
-                          <select
-                            aria-label={`${provider.name} 預設模型`}
-                            className="h-9 rounded-lg border border-input bg-background px-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
-                            onChange={(event) => updateModelProvider(provider.id, { defaultModel: event.target.value })}
-                            value={provider.defaultModel}
-                          >
-                            {!providerModels.includes(provider.defaultModel) && <option value={provider.defaultModel}>{provider.defaultModel}</option>}
-                            {providerModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                          </select>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+                  <section className="grid gap-6" aria-labelledby="provider-verification-title">
+                    <p className="text-muted-foreground text-sm leading-6" id="provider-verification-title">
+                      訪問 <button className="font-medium text-foreground underline underline-offset-4" type="button">此鏈接</button> 並輸入以下代碼，以連接你的帳戶並在 OpenCode 中使用 {selectedModelProvider.name} 模型。
+                    </p>
+                    <label className="grid gap-2 text-muted-foreground text-xs">
+                      確認碼
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border bg-muted/35">
+                        <input aria-label="確認碼" className="h-9 min-w-0 rounded-l-lg border-0 bg-transparent px-3 font-mono text-foreground text-sm outline-none" readOnly value="V58L-H67ZK" />
+                        <button aria-label="複製確認碼" className="grid size-9 place-items-center rounded-r-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" type="button">
+                          <CopyIcon aria-hidden="true" className="size-4" />
+                        </button>
+                      </div>
+                    </label>
+                    <div className="flex items-center gap-3 text-muted-foreground text-sm">
+                      <span aria-hidden="true" className="grid size-4 grid-cols-2 gap-0.5 opacity-60">
+                        <span className="rounded-[1px] bg-current" />
+                        <span className="rounded-[1px] bg-current/40" />
+                        <span className="rounded-[1px] bg-current/40" />
+                        <span className="rounded-[1px] bg-current" />
+                      </span>
+                      等待授權...
+                    </div>
+                  </section>
+                </div>
+              ) : (
+                <div className="grid gap-8 px-0 pt-1 pb-14">
+                  <div className="flex items-center gap-4">
+                    <span className="grid size-5 shrink-0 place-items-center font-bold text-sm">{selectedModelProvider.icon}</span>
+                    <h3 className="font-semibold text-base">連接 {selectedModelProvider.name}</h3>
+                  </div>
+
+                  <section className="grid gap-3" aria-labelledby="provider-auth-methods-title">
+                    <p className="text-muted-foreground text-sm" id="provider-auth-methods-title">選擇 {selectedModelProvider.name} 的登錄方式。</p>
+                    <div className="grid gap-1 pl-5">
+                      {selectedModelProvider.authMethods.map((method) => (
+                        <button
+                          className="flex min-h-8 w-fit items-center rounded-md px-1 text-left font-medium text-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          key={method}
+                          onClick={() => setSelectedProviderAuthMethod(method)}
+                          type="button"
+                        >
+                          {method}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              )}
             </div>
 
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-5 py-4">
-              <p className="text-muted-foreground text-xs">API Key 不會在此原型中送出，僅用於展示配置流程。</p>
+            {!selectedModelProvider && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-5 py-4">
+              <p className="text-muted-foreground text-xs">建議使用 `/connect` 或 {"{env:KEY}"}，避免把明文 API Key 寫入專案。</p>
               <Button onClick={() => setUserSettingsOpen(false)} size="lg">完成</Button>
-            </div>
+            </div>}
           </section>
         </div>
       )}
