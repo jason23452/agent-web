@@ -267,10 +267,6 @@ function FilePreviewDialogContent({
                 <span>{metadataText}</span>
               </div>
             </div>
-            <Button className="hidden sm:inline-flex" onClick={pinWholeFile} size="sm" variant="outline">
-              <PinIcon aria-hidden="true" />
-              Pin 檔案
-            </Button>
           </div>
         </DialogHeader>
 
@@ -374,16 +370,6 @@ function FilePreviewDialogContent({
 
               <TabsPanel className="min-h-0 pt-2" value="agent">
                 <section aria-label="使用 Agent 修改檔案" className="grid gap-4">
-                  <div className="flex items-start gap-3 rounded-lg border bg-background p-3">
-                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                      <BotIcon aria-hidden="true" className="size-4" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-sm">Agent 修改</h3>
-                      <p className="mt-1 text-muted-foreground text-xs">輸入修改目標；選取預覽文字後可指定範圍。</p>
-                    </div>
-                  </div>
-
                   {response && (
                     <div className="grid gap-3 rounded-lg border border-info/20 bg-info/5 p-3 text-sm leading-6">
                       <div className="flex items-center gap-2 font-semibold text-info-foreground">
