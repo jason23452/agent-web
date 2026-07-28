@@ -1,12 +1,5 @@
 import { ChatComposer } from "@/features/home/components/ChatComposer"
-import { ChatMessageList, type ChatMessage } from "@/features/home/components/ChatMessageList"
-
-export type ChatPaneAgent = {
-  id: string
-  name: string
-  provider: string
-  status: "active" | "idle" | "review"
-}
+import { ChatMessageList } from "@/features/home/components/ChatMessageList"
 
 export type ChatPaneAttachment = {
   id: string
@@ -21,30 +14,18 @@ export type ChatPanePinContext = {
   text: string
 }
 
-export type ChatPaneMessage = ChatMessage
-
 type ChatPaneProps = {
-  activeAgent: ChatPaneAgent
   attachments: ChatPaneAttachment[]
-  messages: ChatPaneMessage[]
   onAddAttachment: () => void
   onClearPin: () => void
   onRemoveAttachment: (id: string) => void
   pinContext: ChatPanePinContext | null
 }
 
-export function ChatPane({
-  activeAgent,
-  attachments,
-  messages,
-  onAddAttachment,
-  onClearPin,
-  onRemoveAttachment,
-  pinContext,
-}: ChatPaneProps) {
+export function ChatPane({ attachments, onAddAttachment, onClearPin, onRemoveAttachment, pinContext }: ChatPaneProps) {
   return (
     <main className="grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] bg-background" data-region="chat-main">
-      <ChatMessageList activeAgent={activeAgent} messages={messages} />
+      <ChatMessageList />
       <ChatComposer
         attachments={attachments}
         onAddAttachment={onAddAttachment}

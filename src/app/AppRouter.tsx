@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
-import { agents, fileTree, messages, recentProjects, sessions, starterAttachments, tokenUsage } from "@/features/workspace/data/mockWorkspace"
+import { agents, fileTree, recentProjects, sessions, starterAttachments, tokenUsage } from "@/features/workspace/data/mockWorkspace"
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
 import type { Attachment, FileNode, PinContext } from "@/features/workspace/types/workspace"
@@ -137,9 +137,7 @@ export function AppRouter() {
       <WorkspaceProjectRoute />
     ) : (
       <HomeRoute
-        activeAgent={activeAgent}
         attachments={attachments}
-        messages={messages}
         onAddAttachment={addAttachment}
         onClearPin={() => setPinContext(null)}
         onRemoveAttachment={removeAttachment}
@@ -169,7 +167,7 @@ export function AppRouter() {
       topNav={
         <AppTopbar
           activeAgent={activeAgent}
-          activeProjectPath={activeProjectPath}
+          activeProjectPath={route.name === "workspaceProject" ? activeProjectPath : null}
           agents={agents}
           onAgentChange={setActiveAgentId}
           onOpenContextPanel={() => setContextPanelOpen(true)}

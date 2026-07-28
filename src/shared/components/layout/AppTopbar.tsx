@@ -19,7 +19,7 @@ type AppTopbarTokenUsage = {
 
 type AppTopbarProps = {
   activeAgent: AppTopbarAgent
-  activeProjectPath: string
+  activeProjectPath?: string | null
   agents: AppTopbarAgent[]
   onAgentChange: (agentId: string) => void
   onOpenContextPanel: () => void
@@ -41,16 +41,20 @@ export function AppTopbar({
   onOpenSidebar,
   tokenUsage,
 }: AppTopbarProps) {
-  const projectLabel = getProjectLabel(activeProjectPath)
+  const projectLabel = activeProjectPath ? getProjectLabel(activeProjectPath) : null
 
   return (
     <TopNav
       center={
-        <div className="hidden min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs min-[760px]:flex" title={activeProjectPath}>
+        <div className="hidden min-w-0 items-center gap-1 font-mono text-muted-foreground text-xs min-[760px]:flex" title={activeProjectPath ?? undefined}>
           <HomeIcon aria-hidden="true" className="size-4 shrink-0" />
-          <span className="truncate">AICaht</span>
-          <span className="text-foreground">/</span>
-          <span className="truncate font-medium text-foreground">{projectLabel}</span>
+          <span className="truncate font-medium text-foreground">AICaht</span>
+          {projectLabel && (
+            <>
+              <span className="text-foreground">/</span>
+              <span className="truncate font-medium text-foreground">{projectLabel}</span>
+            </>
+          )}
         </div>
       }
       end={
