@@ -1,3 +1,6 @@
+import { Progress, ProgressIndicator, ProgressTrack } from "@/shared/components/ui/progress"
+import { Spinner } from "@/shared/components/ui/spinner"
+
 type TokenUsage = {
   label: string
   used: number
@@ -14,44 +17,53 @@ function formatToken(value: number) {
   return String(value)
 }
 
+function getUsagePercent(item: TokenUsage) {
+  if (item.limit <= 0) return 0
+  return Math.round(Math.min((item.used / item.limit) * 100, 100))
+}
+
+function getUsageClasses(percent: number) {
+  if (percent >= 95) {
+    return {
+      indicator: "bg-destructive",
+      text: "text-destructive",
+    }
+  }
+
+  if (percent >= 78) {
+    return {
+      indicator: "bg-warning",
+      text: "text-warning",
+    }
+  }
+
+  return {
+    indicator: "bg-success",
+    text: "text-success",
+  }
+}
+
 export function ContextMeter({ usage }: ContextMeterProps) {
-  const primary = usage[0]!
-  const pct = Math.round((primary.used / primary.limit) * 100)
-  const circumference = 47.12
-  const offset = circumference * (1 - Math.min(pct, 100) / 100)
-  const stateClass = pct >= 95 ? "text-destructive" : pct >= 78 ? "text-warning" : "text-success"
+  const primary = usage[0]
+  if (!primary) return null
+
+  const percent = getUsagePercent(primary)
+  const usageClasses = getUsageClasses(percent)
+  const spinnerRotation = `${Math.round(percent * 3.6)}deg`
 
   return (
     <div
       aria-describedby="context-token-popover"
-      className="group relative hidden items-center gap-1 rounded-full border border-border/70 bg-background px-1.5 py-1 focus-within:ring-2 focus-within:ring-ring sm:inline-flex"
+      className="group relative hidden items-center gap-2 rounded-full border border-border/70 bg-background px-2 py-1 focus-within:ring-2 focus-within:ring-ring sm:inline-flex"
       tabIndex={0}
-      title={`Token 用量：${primary.label} ${formatToken(primary.used)}/${formatToken(primary.limit)}`}
+      title={`Token 使用量：${primary.label} ${formatToken(primary.used)}/${formatToken(primary.limit)}`}
     >
-      <span
-        aria-label="Session context 使用量"
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={pct}
-        className="relative grid size-5 shrink-0 place-items-center"
-        role="meter"
-      >
-        <svg aria-hidden="true" className="absolute inset-0 size-5 -rotate-90" viewBox="0 0 20 20">
-          <circle className="fill-none stroke-muted" cx="10" cy="10" r="7.5" strokeWidth="2.5" />
-          <circle
-            className={`fill-none stroke-current transition-[stroke-dashoffset] ${stateClass}`}
-            cx="10"
-            cy="10"
-            r="7.5"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            strokeWidth="2.5"
-          />
-        </svg>
-        <span aria-hidden="true" className={`size-1.5 rounded-full ${pct >= 95 ? "bg-destructive" : pct >= 78 ? "bg-warning" : "bg-success"}`} />
-      </span>
-      <span className="font-mono font-semibold text-xs">{pct}%</span>
+      <Spinner
+        aria-hidden="true"
+        className={`size-3.5 animate-none transition-transform ${usageClasses.text}`}
+        style={{ transform: `rotate(${spinnerRotation})` }}
+      />
+      <span className="font-mono font-semibold text-xs">{percent}%</span>
 
       <div
         className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 translate-y-1 rounded-xl border bg-popover p-4 text-popover-foreground opacity-0 shadow-lg/5 transition-[opacity,translate] group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100"
@@ -59,21 +71,33 @@ export function ContextMeter({ usage }: ContextMeterProps) {
         role="region"
       >
         <div className="mb-3 flex items-center justify-between gap-3">
-          <strong className="text-sm">目前供應商 token</strong>
+          <strong className="text-sm">Context tokens</strong>
           <span className="font-mono text-muted-foreground text-xs">OpenAI</span>
         </div>
         <div className="grid gap-3">
           {usage.map((item) => {
-            const itemPct = Math.min((item.used / item.limit) * 100, 100)
+            const itemPercent = getUsagePercent(item)
+            const itemClasses = getUsageClasses(itemPercent)
+
             return (
               <div className="grid gap-1.5" key={item.label}>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="font-medium">{item.label}</span>
-                  <span className="font-mono text-xs">{formatToken(item.used)} / {formatToken(item.limit)}</span>
+                  <span className="font-mono text-xs">
+                    {formatToken(item.used)} / {formatToken(item.limit)}
+                  </span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <span className="block h-full rounded-full bg-primary" style={{ width: `${itemPct}%` }} />
-                </div>
+                <Progress
+                  aria-label={`${item.label} token usage`}
+                  className="gap-0"
+                  getAriaValueText={() => `${itemPercent}%`}
+                  max={100}
+                  value={itemPercent}
+                >
+                  <ProgressTrack className="h-1.5 bg-muted">
+                    <ProgressIndicator className={itemClasses.indicator} />
+                  </ProgressTrack>
+                </Progress>
               </div>
             )
           })}
