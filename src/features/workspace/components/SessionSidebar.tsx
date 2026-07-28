@@ -39,7 +39,7 @@ const navItems = [
   { icon: HatGlasses, label: "智能體/工具" },
 ];
 
-const recentProjects = [
+const initialRecentProjects = [
   { id: "test-web", name: "test-web", path: "/workspace/test-web/" },
   { id: "agent-web", name: "agent-web", path: "C:/Users/Bojii/Desktop/SDD/agent-web/" },
   { id: "build-example", name: "build-example", path: "C:/Users/Bojii/Desktop/SDD/build-example/" },
@@ -56,8 +56,40 @@ type McpServer = {
 };
 
 type McpDialogView = "list" | "add" | "edit";
+type ProjectDialogView = "list" | "create";
+type PluginSkillDialogView = "list" | "add-plugin" | "add-skill";
+type PluginSkillTab = "plugins" | "skills";
 type PermissionAction = "allow" | "ask" | "deny";
 type PermissionValue = PermissionAction | Record<string, PermissionAction>;
+
+type PluginDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  source: "npm" | "local" | "built-in" | "archive";
+  entry: string;
+  enabled: boolean;
+  config: string;
+  archiveName?: string;
+  installTarget?: "project" | "global";
+};
+
+type PluginInstallMethod = "npm" | "local" | "archive";
+
+type SkillDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  scope: "global" | "project" | "claude" | "agents" | "archive";
+  enabled: boolean;
+  path: string;
+  license?: string;
+  compatibility?: string;
+  archiveName?: string;
+  installTarget?: SkillInstallTarget;
+};
+
+type SkillInstallTarget = "project-opencode" | "global-opencode" | "project-claude" | "global-claude" | "project-agents" | "global-agents";
 
 type AgentDefinition = {
   id: string;
@@ -214,6 +246,54 @@ const availableSkills = [
   "responsive-design",
 ];
 
+const initialPlugins: PluginDefinition[] = [
+  {
+    id: "helicone-session",
+    name: "opencode-helicone-session",
+    description: "將 OpenCode session telemetry 送到 Helicone，方便追蹤模型呼叫與成本。",
+    source: "npm",
+    entry: "opencode-helicone-session",
+    enabled: true,
+    config: '{"sampleRate":1}',
+  },
+  {
+    id: "project-hooks",
+    name: "project-hooks",
+    description: "專案本地 plugin，可提供自訂 hooks、工具與整合流程。",
+    source: "local",
+    entry: "./.opencode/plugins/project-hooks.ts",
+    enabled: false,
+    config: '{}',
+  },
+];
+
+const emptyPluginForm = {
+  method: "npm" as PluginInstallMethod,
+  name: "",
+  description: "",
+  entry: "",
+  installTarget: "project" as "project" | "global",
+  archiveName: "",
+};
+
+const emptySkillForm = {
+  name: "",
+  description: "",
+  installTarget: "project-opencode" as SkillInstallTarget,
+  license: "",
+  compatibility: "opencode",
+  archiveName: "",
+};
+
+const initialSkillSettings: SkillDefinition[] = availableSkills.map((skill, index) => ({
+  id: skill,
+  name: skill,
+  description: index < 2 ? "目前專案常用技能，可被 Agent 載入並套用對應工作流。" : "可選技能，啟用後可提供給 Agent 設定使用。",
+  scope: index < 3 ? "project" : "global",
+  enabled: index < 4,
+  path: index < 3 ? `.opencode/skills/${skill}/SKILL.md` : `~/.config/opencode/skills/${skill}/SKILL.md`,
+}));
+
 const modelVariants = ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 const agentColors = ["", "primary", "secondary", "accent", "success", "warning", "error", "info"];
@@ -296,6 +376,28 @@ function taskPermissionFor(subagents: string[]) {
   return { "*": "deny" as const, ...Object.fromEntries(subagents.map((subagent) => [subagent, "allow" as const])) };
 }
 
+function getSkillBasePath(target: SkillInstallTarget) {
+  const paths: Record<SkillInstallTarget, string> = {
+    "project-opencode": ".opencode/skills",
+    "global-opencode": "~/.config/opencode/skills",
+    "project-claude": ".claude/skills",
+    "global-claude": "~/.claude/skills",
+    "project-agents": ".agents/skills",
+    "global-agents": "~/.agents/skills",
+  };
+  return paths[target];
+}
+
+function getSkillScope(target: SkillInstallTarget): SkillDefinition["scope"] {
+  if (target.includes("claude")) return "claude";
+  if (target.includes("agents")) return "agents";
+  return target.startsWith("global") ? "global" : "project";
+}
+
+function isValidSkillName(name: string) {
+  return /^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) && name.length <= 64;
+}
+
 const emptyAgentForm = {
   name: "",
   description: "",
@@ -371,7 +473,10 @@ export function SessionSidebar({
   onSelectSession,
 }: SessionSidebarProps) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectDialogView, setProjectDialogView] = useState<ProjectDialogView>("list");
+  const [projects, setProjects] = useState(initialRecentProjects);
   const [projectSearch, setProjectSearch] = useState("");
+  const [projectCreateName, setProjectCreateName] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
@@ -380,6 +485,18 @@ export function SessionSidebar({
   const [mcpServers, setMcpServers] = useState<McpServer[]>(initialMcpServers);
   const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
   const [mcpForm, setMcpForm] = useState(emptyMcpForm);
+  const [pluginSkillDialogOpen, setPluginSkillDialogOpen] = useState(false);
+  const [pluginSkillDialogView, setPluginSkillDialogView] = useState<PluginSkillDialogView>("list");
+  const [pluginSkillTab, setPluginSkillTab] = useState<PluginSkillTab>("plugins");
+  const [pluginSkillSearch, setPluginSkillSearch] = useState("");
+  const [plugins, setPlugins] = useState<PluginDefinition[]>(initialPlugins);
+  const [skillSettings, setSkillSettings] = useState<SkillDefinition[]>(initialSkillSettings);
+  const [pluginForm, setPluginForm] = useState(emptyPluginForm);
+  const [skillForm, setSkillForm] = useState(emptySkillForm);
+  const [pluginInstallResult, setPluginInstallResult] = useState<{ status: "success" | "error"; message: string } | null>(null);
+  const [skillInstallResult, setSkillInstallResult] = useState<{ status: "success" | "error"; message: string } | null>(null);
+  const [batchUpdateNotice, setBatchUpdateNotice] = useState("");
+  const [pluginSkillHasChanges, setPluginSkillHasChanges] = useState(false);
   const [agentsDialogOpen, setAgentsDialogOpen] = useState(false);
   const [agentDialogView, setAgentDialogView] = useState<AgentDialogView>("list");
   const [agentEditMode, setAgentEditMode] = useState<AgentEditMode>("add");
@@ -387,6 +504,7 @@ export function SessionSidebar({
   const [agentToolTab, setAgentToolTab] = useState<AgentToolTab>("agents");
   const [agents, setAgents] = useState<AgentDefinition[]>(agentDefinitions);
   const [toolDefinitions, setToolDefinitions] = useState<ToolDefinition[]>(initialToolDefinitions);
+  const [agentsToolsHasChanges, setAgentsToolsHasChanges] = useState(false);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
   const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
@@ -402,7 +520,7 @@ export function SessionSidebar({
   const [guidanceSkill, setGuidanceSkill] = useState<string | null>(null);
   const [guidanceSubagent, setGuidanceSubagent] = useState<string | null>(null);
 
-  const filteredProjects = recentProjects.filter((project) => {
+  const filteredProjects = projects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
     if (!keyword) return true;
     return project.name.toLowerCase().includes(keyword) || project.path.toLowerCase().includes(keyword);
@@ -419,8 +537,58 @@ export function SessionSidebar({
     if (!keyword) return true;
     return server.url.toLowerCase().includes(keyword) || server.name.toLowerCase().includes(keyword) || server.username.toLowerCase().includes(keyword);
   });
+  const filteredPlugins = plugins.filter((plugin) => {
+    const keyword = pluginSkillSearch.trim().toLowerCase();
+    if (!keyword || pluginSkillTab !== "plugins") return true;
+    return plugin.name.toLowerCase().includes(keyword) || plugin.description.toLowerCase().includes(keyword) || plugin.entry.toLowerCase().includes(keyword);
+  });
+  const filteredSkillSettings = skillSettings.filter((skill) => {
+    const keyword = pluginSkillSearch.trim().toLowerCase();
+    if (!keyword || pluginSkillTab !== "skills") return true;
+    return skill.name.toLowerCase().includes(keyword) || skill.description.toLowerCase().includes(keyword) || skill.path.toLowerCase().includes(keyword);
+  });
+  const availableSkillNames = skillSettings.filter((skill) => skill.enabled).map((skill) => skill.name);
   const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const isCustomToolName = (toolName: string) => isCustomTool(toolName, toolDefinitions);
+
+  function finishProjectOpen(path: string) {
+    onProjectChange(path);
+    setProjectDialogOpen(false);
+    setProjectDialogView("list");
+    onClose();
+  }
+
+  function confirmOpenProject(path: string) {
+    if (!path.trim()) return;
+    const confirmed = window.confirm(`是否開啟專案？\n${path}`);
+    if (!confirmed) return;
+    finishProjectOpen(path);
+  }
+
+  function confirmCreateProject() {
+    const name = projectCreateName.trim();
+    const path = `/workspace/${name}/`;
+    if (!name) return;
+    const confirmed = window.confirm(`是否建立專案？\n名稱：${name}\n路徑：${path}`);
+    if (!confirmed) return;
+    const nextProject = { id: `project-${Date.now()}`, name, path };
+    setProjects((current) => current.some((project) => project.path === path) ? current : [nextProject, ...current]);
+    setProjectDialogView("list");
+    setProjectCreateName("");
+    finishProjectOpen(path);
+  }
+
+  function confirmBatchUpdate(scope: "agents-tools" | "plugins-skills") {
+    const label = scope === "agents-tools" ? "智能體與工具" : "外掛與技能";
+    const confirmed = window.confirm(`${label} 是 build-time 設定，更新後需要重新載入 OpenCode 才會完整生效。是否要批次更新？`);
+    if (!confirmed) return;
+    if (scope === "agents-tools") {
+      setAgentsToolsHasChanges(false);
+    } else {
+      setPluginSkillHasChanges(false);
+    }
+    setBatchUpdateNotice(`${label} 已批次更新，請重新載入 OpenCode 讓 build-time 設定生效。`);
+  }
 
   function agentCanReach(fromAgentId: string, targetAgentId: string, visited = new Set<string>()): boolean {
     if (fromAgentId === targetAgentId) return true;
@@ -446,6 +614,116 @@ export function SessionSidebar({
   function openMcpList() {
     setMcpDialogView("list");
     setMcpDialogOpen(true);
+  }
+
+  function openPluginSkillSettings() {
+    setPluginSkillDialogView("list");
+    setPluginSkillTab("plugins");
+    setPluginSkillSearch("");
+    setPluginSkillDialogOpen(true);
+  }
+
+  function togglePlugin(pluginId: string) {
+    setPlugins((current) => current.map((plugin) => plugin.id === pluginId ? { ...plugin, enabled: !plugin.enabled } : plugin));
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
+  }
+
+  function addPluginFromOfficialSource() {
+    const method = pluginForm.method;
+    const archiveName = pluginForm.archiveName.trim();
+    const rawName = method === "archive" ? archiveName.replace(/\.(zip|tar|tgz|tar\.gz)$/i, "") : pluginForm.name.trim();
+    const pluginName = rawName.replace(/[^a-zA-Z0-9_@/-]+/g, "-").replace(/^-|-$/g, "");
+
+    if (!pluginName) {
+      setPluginInstallResult({ status: "error", message: method === "archive" ? "請先選擇 plugin 壓縮檔。" : "請輸入 plugin 名稱。" });
+      return;
+    }
+
+    if (method === "archive" && !/\.(zip|tar|tgz|tar\.gz)$/i.test(archiveName)) {
+      setPluginInstallResult({ status: "error", message: "只支援 .zip、.tar、.tgz、.tar.gz 壓縮檔。" });
+      return;
+    }
+
+    if (method === "local" && !pluginForm.entry.trim()) {
+      setPluginInstallResult({ status: "error", message: "Local plugin 需要指定 .js 或 .ts entry path。" });
+      return;
+    }
+
+    const targetDirectory = pluginForm.installTarget === "project" ? `.opencode/plugins/${pluginName}` : `~/.config/opencode/plugins/${pluginName}`;
+    const entry = method === "npm"
+      ? pluginName
+      : method === "local"
+        ? pluginForm.entry.trim()
+        : `${targetDirectory}/index.ts`;
+    const nextPlugin: PluginDefinition = {
+      id: `${method}-${Date.now()}`,
+      name: pluginName,
+      description: pluginForm.description.trim() || (method === "npm" ? "透過 opencode.json plugin array 載入的 npm plugin。" : "透過 OpenCode plugins directory 自動載入的本地 plugin。"),
+      source: method,
+      entry,
+      enabled: true,
+      config: method === "npm" ? JSON.stringify({ plugin: [pluginName] }, null, 2) : JSON.stringify({ directory: targetDirectory }, null, 2),
+      archiveName: method === "archive" ? archiveName : undefined,
+      installTarget: method === "npm" ? undefined : pluginForm.installTarget,
+    };
+
+    setPlugins((current) => current.some((plugin) => plugin.name === pluginName && plugin.source === method) ? current : [nextPlugin, ...current]);
+    setPluginInstallResult({ status: "success", message: method === "npm" ? `已新增 npm plugin：請寫入 opencode.json 的 plugin array。` : `已新增 local plugin：OpenCode 會從 ${entry} 載入。` });
+    setPluginForm(emptyPluginForm);
+    setPluginSkillTab("plugins");
+    setPluginSkillDialogView("list");
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
+  }
+
+  function toggleSkill(skillId: string) {
+    setSkillSettings((current) => current.map((skill) => skill.id === skillId ? { ...skill, enabled: !skill.enabled } : skill));
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
+  }
+
+  function addSkillFromOfficialSource() {
+    const archiveName = skillForm.archiveName.trim();
+    const rawName = archiveName ? archiveName.replace(/\.(zip|tar|tgz|tar\.gz)$/i, "") : skillForm.name.trim();
+    const skillName = rawName.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/--+/g, "-").replace(/^-|-$/g, "");
+
+    if (!isValidSkillName(skillName)) {
+      setSkillInstallResult({ status: "error", message: "Skill name 必須符合官方規則：小寫英數、單一 hyphen 分隔，1-64 字元。" });
+      return;
+    }
+
+    if (!skillForm.description.trim()) {
+      setSkillInstallResult({ status: "error", message: "Skill description 是官方必要欄位。" });
+      return;
+    }
+
+    if (archiveName && !/\.(zip|tar|tgz|tar\.gz)$/i.test(archiveName)) {
+      setSkillInstallResult({ status: "error", message: "壓縮檔只支援 .zip、.tar、.tgz、.tar.gz。" });
+      return;
+    }
+
+    const basePath = getSkillBasePath(skillForm.installTarget);
+    const nextSkill: SkillDefinition = {
+      id: skillName,
+      name: skillName,
+      description: skillForm.description.trim(),
+      scope: archiveName ? "archive" : getSkillScope(skillForm.installTarget),
+      enabled: true,
+      path: `${basePath}/${skillName}/SKILL.md`,
+      license: skillForm.license.trim() || undefined,
+      compatibility: skillForm.compatibility.trim() || undefined,
+      archiveName: archiveName || undefined,
+      installTarget: skillForm.installTarget,
+    };
+
+    setSkillSettings((current) => current.some((skill) => skill.id === skillName) ? current : [nextSkill, ...current]);
+    setSkillInstallResult({ status: "success", message: archiveName ? `已新增 archive skill：解壓後需包含 ${skillName}/SKILL.md。` : `已新增 skill：${nextSkill.path}` });
+    setSkillForm(emptySkillForm);
+    setPluginSkillTab("skills");
+    setPluginSkillDialogView("list");
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
   }
 
   function openAddMcpServer() {
@@ -645,6 +923,8 @@ export function SessionSidebar({
 
       return [...current, nextAgent];
     });
+    setAgentsToolsHasChanges(true);
+    setBatchUpdateNotice("");
     setAgentDialogView("list");
   }
 
@@ -654,6 +934,8 @@ export function SessionSidebar({
       delete nextSubagentGuidance[agentId];
       return { ...agent, subagents: agent.subagents.filter((subagentId) => subagentId !== agentId), subagentGuidance: nextSubagentGuidance };
     }));
+    setAgentsToolsHasChanges(true);
+    setBatchUpdateNotice("");
   }
 
   function submitToolConfig() {
@@ -679,6 +961,8 @@ export function SessionSidebar({
 
       return current.some((tool) => tool.name === name) ? current : [...current, nextTool];
     });
+    setAgentsToolsHasChanges(true);
+    setBatchUpdateNotice("");
     setToolToAdd(name);
     setAgentDialogView("list");
     setAgentToolTab("tools");
@@ -695,6 +979,8 @@ export function SessionSidebar({
       delete nextToolGuidance[tool.name];
       return { ...agent, tools: agent.tools.filter((item) => item !== tool.name), permission: nextPermission, toolGuidance: nextToolGuidance };
     }));
+    setAgentsToolsHasChanges(true);
+    setBatchUpdateNotice("");
   }
 
   function runToolCallTest() {
@@ -839,8 +1125,12 @@ export function SessionSidebar({
                 <button
                   className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${item.active ? "bg-accent text-accent-foreground" : "text-foreground"}`}
                   onClick={() => {
-                    if (item.label === "專案") setProjectDialogOpen(true);
+                    if (item.label === "專案") {
+                      setProjectDialogView("list");
+                      setProjectDialogOpen(true);
+                    }
                     if (item.label === "MCP Server") openMcpList();
+                    if (item.label === "外掛/技能") openPluginSkillSettings();
                     if (item.label === "智能體/工具") openAgentsList();
                   }}
                   type="button"
@@ -957,59 +1247,102 @@ export function SessionSidebar({
       {projectDialogOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
           <section
-            aria-label="打開項目"
+            aria-label={projectDialogView === "list" ? "打開項目" : "建立專案"}
             className="w-full max-w-[640px] overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
           >
             <div className="flex h-14 items-center justify-between gap-4 border-border/70 border-b px-4">
-              <h2 className="font-semibold text-base">打開項目</h2>
-              <button
-                aria-label="關閉打開項目"
-                className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setProjectDialogOpen(false)}
-                type="button"
-              >
-                <XIcon aria-hidden="true" className="size-4" />
-              </button>
+              <div className="flex min-w-0 items-center gap-2">
+                {projectDialogView === "create" && (
+                  <button
+                    aria-label="返回項目列表"
+                    className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setProjectDialogView("list")}
+                    type="button"
+                  >
+                    <ArrowLeftIcon aria-hidden="true" className="size-4" />
+                  </button>
+                )}
+                <h2 className="font-semibold text-base">{projectDialogView === "list" ? "打開項目" : "建立專案"}</h2>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {projectDialogView === "list" && <Button onClick={() => setProjectDialogView("create")} size="sm" variant="outline"><PlusIcon aria-hidden="true" />建立專案</Button>}
+                <button
+                  aria-label={projectDialogView === "list" ? "關閉打開項目" : "關閉建立專案"}
+                  className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setProjectDialogOpen(false);
+                    setProjectDialogView("list");
+                  }}
+                  type="button"
+                >
+                  <XIcon aria-hidden="true" className="size-4" />
+                </button>
+              </div>
             </div>
 
             <div className="p-3">
-              <label className="relative block">
-                <span className="sr-only">搜尋文件夾</span>
-                <SearchIcon aria-hidden="true" className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-3 size-4 text-muted-foreground" />
-                <input
-                  className="h-9 w-full rounded-md border-0 bg-muted/60 pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground focus:bg-muted focus:ring-2 focus:ring-ring"
-                  onChange={(event) => setProjectSearch(event.target.value)}
-                  placeholder="搜索文件夹"
-                  value={projectSearch}
-                />
-              </label>
+              {projectDialogView === "list" ? (
+                <>
+                  <label className="relative block">
+                    <span className="sr-only">搜尋文件夾</span>
+                    <SearchIcon aria-hidden="true" className="-translate-y-1/2 pointer-events-none absolute top-1/2 left-3 size-4 text-muted-foreground" />
+                    <input
+                      className="h-10 w-full rounded-lg border-0 bg-muted/60 pr-3 pl-10 text-sm outline-none placeholder:text-muted-foreground focus:bg-muted focus:ring-2 focus:ring-ring"
+                      onChange={(event) => setProjectSearch(event.target.value)}
+                      placeholder="搜尋文件夾"
+                      value={projectSearch}
+                    />
+                  </label>
 
-              <div className="mt-6 px-1">
-                <p className="mb-3 font-semibold text-muted-foreground text-xs">最近項目</p>
-                <ul className="grid min-h-28 gap-1">
-                  {filteredProjects.map((project) => (
-                    <li key={project.id}>
-                      <button
-                        className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${project.path === activeProjectPath ? "bg-accent" : ""}`}
-                        onClick={() => {
-                          onProjectChange(project.path);
-                          setProjectDialogOpen(false);
-                          onClose();
-                        }}
-                        type="button"
-                      >
-                        <FolderIcon aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-                        <span className="min-w-0 truncate text-muted-foreground text-sm">
-                          {project.path}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                  {filteredProjects.length === 0 && (
-                    <li className="px-2 py-8 text-center text-muted-foreground text-sm">找不到符合的項目</li>
-                  )}
-                </ul>
-              </div>
+                  <div className="mt-6 px-1">
+                    <p className="mb-3 font-semibold text-muted-foreground text-xs">最近項目</p>
+                    <ul className="grid min-h-28 gap-1">
+                      {filteredProjects.map((project) => (
+                        <li key={project.id}>
+                          <button
+                            className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${project.path === activeProjectPath ? "bg-accent" : ""}`}
+                            onClick={() => confirmOpenProject(project.path)}
+                            type="button"
+                          >
+                            <FolderIcon aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+                            <span className="min-w-0 truncate text-muted-foreground text-sm">
+                              {project.path}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                      {filteredProjects.length === 0 && (
+                        <li className="px-2 py-8 text-center text-muted-foreground text-sm">找不到符合的項目</li>
+                      )}
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+                  <div className="grid gap-1">
+                    <h3 className="font-semibold text-sm">建立新專案</h3>
+                    <p className="text-muted-foreground text-xs">輸入專案名稱，建立後會自動切換到新專案。</p>
+                  </div>
+                  <label className="grid gap-1.5">
+                    <span className="font-medium text-xs">專案名稱</span>
+                    <Input
+                      aria-label="新專案名稱"
+                      autoFocus
+                      onChange={(event) => setProjectCreateName(event.target.value)}
+                      placeholder="例如：agent-web"
+                      value={projectCreateName}
+                    />
+                    <span className="text-muted-foreground text-xs">系統會自動建立到 workspace 專案目錄。</span>
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setProjectDialogView("list")} size="sm" variant="outline">取消</Button>
+                    <Button className="sm:min-w-24" disabled={!projectCreateName.trim()} onClick={confirmCreateProject} size="sm">
+                      <PlusIcon aria-hidden="true" />
+                      建立專案
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -1177,13 +1510,172 @@ export function SessionSidebar({
         </div>
       )}
 
+      {pluginSkillDialogOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
+          <section
+            aria-label="外掛與技能設定"
+            className="flex max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[640px] flex-col overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+          >
+            <div className="flex h-14 shrink-0 items-center justify-between gap-4 px-5">
+              <div className="flex min-w-0 items-center gap-2">
+                {pluginSkillDialogView !== "list" && (
+                  <button
+                    aria-label="返回外掛與技能列表"
+                    className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setPluginSkillDialogView("list")}
+                    type="button"
+                  >
+                    <ArrowLeftIcon aria-hidden="true" className="size-4" />
+                  </button>
+                )}
+                <div className="min-w-0">
+                  <h2 className="font-semibold text-base">{pluginSkillDialogView === "add-plugin" ? "新增 Plugin" : pluginSkillDialogView === "add-skill" ? "新增 Skill" : "外掛/技能"}</h2>
+                  <p className="mt-0.5 text-muted-foreground text-xs">Plugins {plugins.length} · Skills {skillSettings.length}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {pluginSkillDialogView === "list" && (
+                  <Button onClick={() => setPluginSkillDialogView(pluginSkillTab === "plugins" ? "add-plugin" : "add-skill")} size="sm" variant="outline">
+                    <PlusIcon aria-hidden="true" />
+                    {pluginSkillTab === "plugins" ? "新增 Plugin" : "新增 Skill"}
+                  </Button>
+                )}
+                <button
+                  aria-label="關閉外掛與技能設定"
+                  className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setPluginSkillDialogOpen(false);
+                    setPluginSkillDialogView("list");
+                  }}
+                  type="button"
+                >
+                  <XIcon aria-hidden="true" className="size-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
+              {pluginSkillDialogView === "list" ? (
+                <>
+              <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
+                <button className={`h-8 rounded-md font-medium text-sm transition ${pluginSkillTab === "plugins" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`} onClick={() => { setPluginSkillTab("plugins"); setPluginSkillSearch(""); }} type="button">外掛</button>
+                <button className={`h-8 rounded-md font-medium text-sm transition ${pluginSkillTab === "skills" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`} onClick={() => { setPluginSkillTab("skills"); setPluginSkillSearch(""); }} type="button">技能</button>
+              </div>
+
+              <InputGroup data-size="sm">
+                <InputGroupAddon><SearchIcon aria-hidden="true" /></InputGroupAddon>
+                <InputGroupInput aria-label="搜尋外掛或技能" onChange={(event) => setPluginSkillSearch(event.target.value)} placeholder={pluginSkillTab === "plugins" ? "搜尋外掛名稱、描述或 entry" : "搜尋技能名稱、描述或路徑"} value={pluginSkillSearch} />
+                {pluginSkillSearch && <InputGroupAddon align="inline-end"><button aria-label="清除搜尋" className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => setPluginSkillSearch("")} type="button"><XIcon aria-hidden="true" className="size-3.5" /></button></InputGroupAddon>}
+              </InputGroup>
+
+              {pluginSkillTab === "plugins" && (
+                <section className="grid gap-2" aria-labelledby="plugins-settings-title">
+                  <div className="flex items-center justify-between gap-3"><h3 className="font-semibold text-sm" id="plugins-settings-title">Plugins</h3><Badge size="sm" variant="secondary">{plugins.filter((plugin) => plugin.enabled).length} enabled</Badge></div>
+                  <ul className="grid gap-2">
+                    {filteredPlugins.map((plugin) => (
+                      <li className="rounded-lg bg-muted/55 px-4 py-3" key={plugin.id}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="truncate font-semibold text-sm">{plugin.name}</span><Badge size="sm" variant={plugin.enabled ? "success" : "secondary"}>{plugin.enabled ? "enabled" : "disabled"}</Badge><Badge size="sm" variant="outline">{plugin.source}</Badge>{plugin.installTarget && <Badge size="sm" variant="info">{plugin.installTarget}</Badge>}</div>
+                            <p className="mt-1 text-muted-foreground text-xs leading-5">{plugin.description}</p>
+                            {plugin.archiveName && <p className="mt-1 truncate text-muted-foreground text-xs">Archive: {plugin.archiveName}</p>}
+                            <p className="mt-1 truncate font-mono text-muted-foreground text-xs">{plugin.entry}</p>
+                          </div>
+                          <Button onClick={() => togglePlugin(plugin.id)} size="sm" variant={plugin.enabled ? "outline" : "secondary"}>{plugin.enabled ? "停用" : "啟用"}</Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {filteredPlugins.length === 0 && <p className="rounded-md border border-dashed bg-background px-3 py-6 text-center text-muted-foreground text-sm">找不到符合的外掛。</p>}
+                </section>
+              )}
+
+              {pluginSkillTab === "skills" && (
+                <section className="grid gap-2" aria-labelledby="skills-settings-title">
+                  <div className="flex items-center justify-between gap-3"><h3 className="font-semibold text-sm" id="skills-settings-title">Skills</h3><Badge size="sm" variant="secondary">{skillSettings.filter((skill) => skill.enabled).length} enabled</Badge></div>
+                  <ul className="grid gap-2">
+                    {filteredSkillSettings.map((skill) => (
+                      <li className="flex items-start justify-between gap-3 rounded-lg bg-muted/55 px-4 py-3" key={skill.id}>
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2"><span className="truncate font-semibold text-sm">{skill.name}</span><Badge size="sm" variant={skill.enabled ? "success" : "secondary"}>{skill.enabled ? "enabled" : "disabled"}</Badge><Badge size="sm" variant="outline">{skill.scope}</Badge>{skill.installTarget && <Badge size="sm" variant="info">{skill.installTarget}</Badge>}</div>
+                          <p className="mt-1 text-muted-foreground text-xs leading-5">{skill.description}</p>
+                          {skill.archiveName && <p className="mt-1 truncate text-muted-foreground text-xs">Archive: {skill.archiveName}</p>}
+                          <p className="mt-1 truncate font-mono text-muted-foreground text-xs">{skill.path}</p>
+                        </div>
+                        <Button onClick={() => toggleSkill(skill.id)} size="sm" variant={skill.enabled ? "outline" : "secondary"}>{skill.enabled ? "停用" : "啟用"}</Button>
+                      </li>
+                    ))}
+                  </ul>
+                  {filteredSkillSettings.length === 0 && <p className="rounded-md border border-dashed bg-background px-3 py-6 text-center text-muted-foreground text-sm">找不到符合的技能。</p>}
+                </section>
+              )}
+                </>
+              ) : pluginSkillDialogView === "add-plugin" ? (
+                <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+                  <div className="grid gap-1">
+                    <h3 className="font-semibold text-sm">新增 Plugin</h3>
+                    <p className="text-muted-foreground text-xs leading-5">依 OpenCode 官方方式載入：npm 寫入 config，local/archive 放到 plugins 目錄。</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-1 text-muted-foreground text-xs">來源<select className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => { setPluginInstallResult(null); setPluginForm((current) => ({ ...current, method: event.target.value as PluginInstallMethod })); }} value={pluginForm.method}><option value="npm">npm package</option><option value="local">local file</option><option value="archive">archive</option></select></label>
+                    <label className="grid gap-1 text-muted-foreground text-xs">Install target<select className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" disabled={pluginForm.method === "npm"} onChange={(event) => setPluginForm((current) => ({ ...current, installTarget: event.target.value as "project" | "global" }))} value={pluginForm.installTarget}><option value="project">project</option><option value="global">global</option></select></label>
+                  </div>
+                  {pluginForm.method === "archive" ? <label className="grid gap-1 text-muted-foreground text-xs">Plugin archive<Input aria-label="Plugin 壓縮檔" onChange={(event) => { setPluginInstallResult(null); setPluginForm((current) => ({ ...current, archiveName: event.target.files?.[0]?.name ?? "" })); }} type="file" accept=".zip,.tar,.tgz,.gz" /></label> : <label className="grid gap-1 text-muted-foreground text-xs">{pluginForm.method === "npm" ? "NPM package" : "Plugin name"}<Input aria-label="Plugin 名稱" autoFocus onChange={(event) => { setPluginInstallResult(null); setPluginForm((current) => ({ ...current, name: event.target.value })); }} placeholder={pluginForm.method === "npm" ? "opencode-helicone-session" : "project-hooks"} value={pluginForm.name} /></label>}
+                  {pluginForm.method === "local" && <label className="grid gap-1 text-muted-foreground text-xs">Local entry<Input aria-label="Local plugin entry" onChange={(event) => { setPluginInstallResult(null); setPluginForm((current) => ({ ...current, entry: event.target.value })); }} placeholder="./.opencode/plugins/my-plugin.ts" value={pluginForm.entry} /></label>}
+                  <label className="grid gap-1 text-muted-foreground text-xs">描述<Input aria-label="Plugin 描述" onChange={(event) => setPluginForm((current) => ({ ...current, description: event.target.value }))} placeholder="可留空" value={pluginForm.description} /></label>
+                  {pluginForm.method === "archive" && pluginForm.archiveName && <p className="truncate text-muted-foreground text-xs">已選擇：{pluginForm.archiveName}</p>}
+                  {pluginInstallResult && <div className={`rounded-md border px-3 py-2 text-xs ${pluginInstallResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>{pluginInstallResult.message}</div>}
+                  <p className="text-muted-foreground text-xs">npm: `plugin` config array；local: `.opencode/plugins/` 或 `~/.config/opencode/plugins/`；archive: 解壓到 plugin directory。</p>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setPluginSkillDialogView("list")} size="sm" variant="outline">取消</Button>
+                    <Button onClick={addPluginFromOfficialSource} size="sm" type="button">新增 Plugin</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+                  <div className="grid gap-1">
+                    <h3 className="font-semibold text-sm">新增 Skill</h3>
+                    <p className="text-muted-foreground text-xs leading-5">依 OpenCode 官方方式建立 name/SKILL.md，可放在 OpenCode、Claude 或 Agents 相容目錄。</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-1 text-muted-foreground text-xs">Skill name<Input aria-label="Skill name" autoFocus onChange={(event) => { setSkillInstallResult(null); setSkillForm((current) => ({ ...current, name: event.target.value })); }} placeholder="git-release" value={skillForm.name} /></label>
+                    <label className="grid gap-1 text-muted-foreground text-xs">Install target<select className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setSkillForm((current) => ({ ...current, installTarget: event.target.value as SkillInstallTarget }))} value={skillForm.installTarget}><option value="project-opencode">project .opencode</option><option value="global-opencode">global opencode</option><option value="project-claude">project .claude</option><option value="global-claude">global claude</option><option value="project-agents">project .agents</option><option value="global-agents">global agents</option></select></label>
+                  </div>
+                  <label className="grid gap-1 text-muted-foreground text-xs">Description<Input aria-label="Skill description" onChange={(event) => { setSkillInstallResult(null); setSkillForm((current) => ({ ...current, description: event.target.value })); }} placeholder="Create consistent releases and changelogs" value={skillForm.description} /></label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="grid gap-1 text-muted-foreground text-xs">License<Input aria-label="Skill license" onChange={(event) => setSkillForm((current) => ({ ...current, license: event.target.value }))} placeholder="MIT" value={skillForm.license} /></label>
+                    <label className="grid gap-1 text-muted-foreground text-xs">Compatibility<Input aria-label="Skill compatibility" onChange={(event) => setSkillForm((current) => ({ ...current, compatibility: event.target.value }))} placeholder="opencode" value={skillForm.compatibility} /></label>
+                  </div>
+                  <label className="grid gap-1 text-muted-foreground text-xs">Archive import optional<Input aria-label="Skill archive" onChange={(event) => { setSkillInstallResult(null); setSkillForm((current) => ({ ...current, archiveName: event.target.files?.[0]?.name ?? "" })); }} type="file" accept=".zip,.tar,.tgz,.gz" /></label>
+                  {skillForm.archiveName && <p className="truncate text-muted-foreground text-xs">已選擇：{skillForm.archiveName}</p>}
+                  {skillInstallResult && <div className={`rounded-md border px-3 py-2 text-xs ${skillInstallResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>{skillInstallResult.message}</div>}
+                  <p className="text-muted-foreground text-xs">官方規則：名稱需符合 `^[a-z0-9]+(-[a-z0-9]+)*$`，目錄名需與 SKILL.md frontmatter 的 `name` 一致。</p>
+                  <div className="flex justify-end gap-2">
+                    <Button onClick={() => setPluginSkillDialogView("list")} size="sm" variant="outline">取消</Button>
+                    <Button onClick={addSkillFromOfficialSource} size="sm" type="button">新增 Skill</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-6 py-4">
+              <p className="text-muted-foreground text-xs">修改後需要更新並重新載入 OpenCode。</p>
+              <div className="flex items-center gap-2">
+                <Button onClick={() => setPluginSkillDialogOpen(false)} size="lg" variant="outline">關閉</Button>
+                <Button disabled={!pluginSkillHasChanges} onClick={() => confirmBatchUpdate("plugins-skills")} size="lg">更新</Button>
+              </div>
+              {batchUpdateNotice && <p className="basis-full text-emerald-700 text-xs">{batchUpdateNotice}</p>}
+            </div>
+          </section>
+        </div>
+      )}
+
       {agentsDialogOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4" role="presentation">
           <section
             aria-label="Agents"
-            className="w-full max-w-[640px] overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
+            className="flex max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[640px] flex-col overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
           >
-            <div className="flex h-14 items-center justify-between gap-4 px-5">
+            <div className="flex h-14 shrink-0 items-center justify-between gap-4 px-5">
               <div className="flex min-w-0 items-center gap-2">
                 {agentDialogView !== "list" && (
                   <button
@@ -1223,7 +1715,7 @@ export function SessionSidebar({
             </div>
 
             {agentDialogView === "list" && (
-              <div className="grid max-h-[500px] gap-5 overflow-y-auto px-6 pb-6">
+              <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
                 <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
                   <button
                     className={`h-8 rounded-md font-medium text-sm transition ${agentToolTab === "agents" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
@@ -1342,7 +1834,7 @@ export function SessionSidebar({
             )}
 
             {agentDialogView === "tool-config" && (
-              <div className="grid max-h-[500px] gap-4 overflow-y-auto px-6 pb-6">
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
                 <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="grid gap-2 text-muted-foreground text-sm">Tool 名稱<Input aria-label="Tool 名稱" onChange={(event) => { setToolTestResult(null); setToolForm((current) => ({ ...current, name: event.target.value })); }} placeholder="cms_publish" value={toolForm.name} /></label>
@@ -1374,7 +1866,7 @@ export function SessionSidebar({
             )}
 
             {agentDialogView === "detail" && selectedAgent && (
-              <div className="grid max-h-[500px] gap-4 overflow-y-auto px-6 pb-6">
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
                 <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
                   <button className={`h-8 rounded-md font-medium text-sm transition ${agentConfigMode === "interface" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`} onClick={() => switchAgentConfigMode("interface")} type="button">介面配置</button>
                   <button className={`h-8 rounded-md font-medium text-sm transition ${agentConfigMode === "yaml" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`} onClick={() => switchAgentConfigMode("yaml")} type="button">文字配置</button>
@@ -1502,7 +1994,7 @@ export function SessionSidebar({
             )}
 
             {agentDialogView === "config" && (
-              <div className="grid max-h-[500px] gap-4 overflow-y-auto px-6 pb-6">
+              <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
                 <div className="grid grid-cols-2 rounded-lg bg-muted p-1"><button className={`h-8 rounded-md font-medium text-sm transition ${agentConfigMode === "interface" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`} onClick={() => switchAgentConfigMode("interface")} type="button">介面配置</button><button className={`h-8 rounded-md font-medium text-sm transition ${agentConfigMode === "yaml" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`} onClick={() => switchAgentConfigMode("yaml")} type="button">文字配置</button></div>
                 {agentConfigMode === "interface" ? (
                   <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
@@ -1641,7 +2133,7 @@ export function SessionSidebar({
                         ))}
                       </div>
                       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                        <select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setSkillToAdd(event.target.value)} value={skillToAdd}>{availableSkills.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select>
+                        <select className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring" onChange={(event) => setSkillToAdd(event.target.value)} value={skillToAdd}>{availableSkillNames.map((skill) => <option key={skill} value={skill}>{skill}</option>)}</select>
                         <Button onClick={() => setAgentForm((current) => current.skills.includes(skillToAdd) ? current : { ...current, skills: [...current.skills, skillToAdd], skillGuidance: { ...current.skillGuidance, [skillToAdd]: current.skillGuidance[skillToAdd] ?? "" } })} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增 Skill</Button>
                       </div>
                     </section>
@@ -1653,6 +2145,15 @@ export function SessionSidebar({
                 <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-muted-foreground text-xs">介面配置適合快速新增；文字配置可直接編輯 opencode agent Markdown。</p><Button disabled={agentConfigMode === "interface" ? !agentForm.name.trim() : !agentYaml.trim()} onClick={submitAgentConfig}>{agentEditMode === "add" ? "新增 Agent" : "保存 Agent"}</Button></div>
               </div>
             )}
+
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-6 py-4">
+              <p className="text-muted-foreground text-xs">修改後需要更新並重新載入 OpenCode。</p>
+              <div className="flex items-center gap-2">
+                <Button onClick={() => setAgentsDialogOpen(false)} size="lg" variant="outline">關閉</Button>
+                <Button disabled={!agentsToolsHasChanges} onClick={() => confirmBatchUpdate("agents-tools")} size="lg">更新</Button>
+              </div>
+              {batchUpdateNotice && <p className="basis-full text-emerald-700 text-xs">{batchUpdateNotice}</p>}
+            </div>
 
           </section>
         </div>
