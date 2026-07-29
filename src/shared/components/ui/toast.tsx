@@ -23,6 +23,7 @@ const TOAST_ICONS = {
 type SwipeDirection = "up" | "down" | "left" | "right";
 
 type ToastData = {
+  cancelActionProps?: React.ComponentPropsWithoutRef<"button">;
   rootProps?: Omit<
     React.ComponentProps<typeof Toast.Root>,
     "children" | "className" | "swipeDirection" | "toast"
@@ -163,13 +164,34 @@ function Toasts({
                     />
                   </div>
                 </div>
-                {toast.actionProps && (
-                  <Toast.Action
-                    className={buttonVariants({ size: "xs" })}
-                    data-slot="toast-action"
-                  >
-                    {toast.actionProps.children}
-                  </Toast.Action>
+                {(toastData?.cancelActionProps || toast.actionProps) && (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {toastData?.cancelActionProps && (
+                      <button
+                        {...toastData.cancelActionProps}
+                        className={cn(
+                          buttonVariants({ size: "xs", variant: "ghost" }),
+                          toastData.cancelActionProps.className,
+                        )}
+                        data-slot="toast-cancel-action"
+                        type={toastData.cancelActionProps.type ?? "button"}
+                      >
+                        {toastData.cancelActionProps.children}
+                      </button>
+                    )}
+                    {toast.actionProps && (
+                      <Toast.Action
+                        {...toast.actionProps}
+                        className={cn(
+                          buttonVariants({ size: "xs" }),
+                          toast.actionProps.className,
+                        )}
+                        data-slot="toast-action"
+                      >
+                        {toast.actionProps.children}
+                      </Toast.Action>
+                    )}
+                  </div>
                 )}
               </Toast.Content>
             </Toast.Root>
@@ -252,13 +274,34 @@ function AnchoredToasts({
                         />
                       </div>
                     </div>
-                    {toast.actionProps && (
-                      <Toast.Action
-                        className={buttonVariants({ size: "xs" })}
-                        data-slot="toast-action"
-                      >
-                        {toast.actionProps.children}
-                      </Toast.Action>
+                    {(toastData?.cancelActionProps || toast.actionProps) && (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {toastData?.cancelActionProps && (
+                          <button
+                            {...toastData.cancelActionProps}
+                            className={cn(
+                              buttonVariants({ size: "xs", variant: "ghost" }),
+                              toastData.cancelActionProps.className,
+                            )}
+                            data-slot="toast-cancel-action"
+                            type={toastData.cancelActionProps.type ?? "button"}
+                          >
+                            {toastData.cancelActionProps.children}
+                          </button>
+                        )}
+                        {toast.actionProps && (
+                          <Toast.Action
+                            {...toast.actionProps}
+                            className={cn(
+                              buttonVariants({ size: "xs" }),
+                              toast.actionProps.className,
+                            )}
+                            data-slot="toast-action"
+                          >
+                            {toast.actionProps.children}
+                          </Toast.Action>
+                        )}
+                      </div>
                     )}
                   </Toast.Content>
                 )}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   UserSettingsModal,
   type ModelProvider,
@@ -9,6 +9,7 @@ import { AppSidebarPanel } from "@/shared/components/layout/app-sidebar/AppSideb
 import { McpServersDialog } from "@/shared/components/layout/app-sidebar/McpServersDialog";
 import { PluginSkillModal } from "@/shared/components/layout/app-sidebar/PluginSkillModal";
 import { ProjectDialog } from "@/shared/components/layout/app-sidebar/ProjectDialog";
+import { toastManager } from "@/shared/components/ui/toast";
 import {
   agentDefinitions,
   availableSkills,
@@ -197,6 +198,39 @@ export function AppSidebar({
   const isCustomToolName = (toolName: string) =>
     isCustomTool(toolName, toolDefinitions);
 
+  function showConfirmationToast({
+    description,
+    id,
+    onConfirm,
+    title,
+  }: {
+    description: ReactNode;
+    id: string;
+    onConfirm: () => void;
+    title: string;
+  }) {
+    toastManager.add({
+      id,
+      title,
+      description,
+      type: "warning",
+      timeout: 9000,
+      data: {
+        cancelActionProps: {
+          children: "取消",
+          onClick: () => toastManager.close(id),
+        },
+      },
+      actionProps: {
+        children: "確認",
+        onClick: () => {
+          toastManager.close(id);
+          onConfirm();
+        },
+      },
+    });
+  }
+
   function finishProjectOpen(path: string) {
     onProjectChange(path);
     setProjectDialogOpen(false);
@@ -206,44 +240,65 @@ export function AppSidebar({
 
   function confirmOpenProject(path: string) {
     if (!path.trim()) return;
-    const confirmed = window.confirm(`是否開啟專案？\n${path}`);
-    if (!confirmed) return;
-    finishProjectOpen(path);
+    showConfirmationToast({
+      id: `open-project-${path}`,
+      title: "是否開啟專案？",
+      description: (
+        <span className="grid gap-1">
+          <span className="font-mono text-xs">{path}</span>
+          <span className="text-xs">忽略此提示即取消操作。</span>
+        </span>
+      ),
+      onConfirm: () => finishProjectOpen(path),
+    });
   }
 
   function confirmCreateProject() {
     const name = projectCreateName.trim();
     const path = `/workspace/${name}/`;
     if (!name) return;
-    const confirmed = window.confirm(
-      `是否建立專案？\n名稱：${name}\n路徑：${path}`,
-    );
-    if (!confirmed) return;
-    const nextProject = { id: `project-${Date.now()}`, name, path };
-    setProjects((current) =>
-      current.some((project) => project.path === path)
-        ? current
-        : [nextProject, ...current],
-    );
-    setProjectDialogView("list");
-    setProjectCreateName("");
-    finishProjectOpen(path);
+    showConfirmationToast({
+      id: `create-project-${path}`,
+      title: "是否建立專案？",
+      description: (
+        <span className="grid gap-1">
+          <span>名稱：{name}</span>
+          <span className="font-mono text-xs">{path}</span>
+          <span className="text-xs">忽略此提示即取消操作。</span>
+        </span>
+      ),
+      onConfirm: () => {
+        const nextProject = { id: `project-${Date.now()}`, name, path };
+        setProjects((current) =>
+          current.some((project) => project.path === path)
+            ? current
+            : [nextProject, ...current],
+        );
+        setProjectDialogView("list");
+        setProjectCreateName("");
+        finishProjectOpen(path);
+      },
+    });
   }
 
   function confirmBatchUpdate(scope: "agents-tools" | "plugins-skills") {
     const label = scope === "agents-tools" ? "智能體與工具" : "外掛與技能";
-    const confirmed = window.confirm(
-      `${label} 是 build-time 設定，更新後需要重新載入 OpenCode 才會完整生效。是否要批次更新？`,
-    );
-    if (!confirmed) return;
-    if (scope === "agents-tools") {
-      setAgentsToolsHasChanges(false);
-    } else {
-      setPluginSkillHasChanges(false);
-    }
-    setBatchUpdateNotice(
-      `${label} 已批次更新，請重新載入 OpenCode 讓 build-time 設定生效。`,
-    );
+    showConfirmationToast({
+      id: `batch-update-${scope}`,
+      title: `是否更新${label}？`,
+      description:
+        "這是 build-time 設定，更新後需要重新載入 OpenCode 才會完整生效。",
+      onConfirm: () => {
+        if (scope === "agents-tools") {
+          setAgentsToolsHasChanges(false);
+        } else {
+          setPluginSkillHasChanges(false);
+        }
+        setBatchUpdateNotice(
+          `${label} 已批次更新，請重新載入 OpenCode 讓 build-time 設定生效。`,
+        );
+      },
+    });
   }
 
   function agentCanReach(
