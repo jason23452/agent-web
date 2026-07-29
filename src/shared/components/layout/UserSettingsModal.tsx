@@ -1,10 +1,15 @@
 import {
   ArrowLeftIcon,
+  ChevronRightIcon,
   CopyIcon,
+  GlobeIcon,
+  KeyRoundIcon,
   PlusIcon,
+  RocketIcon,
   SearchIcon,
   ServerIcon,
   SettingsIcon,
+  TerminalIcon,
   XIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -17,7 +22,10 @@ import {
 } from "@/shared/components/ui/input-group";
 import { ModalShell } from "@/shared/components/layout/ModalShell";
 
-export type UserSettingsSection = "model-providers" | "platform-management";
+export type UserSettingsSection =
+  | "model-providers"
+  | "platform-management"
+  | "deployment-platforms";
 
 export type ModelProvider = {
   id: string;
@@ -112,8 +120,10 @@ export function UserSettingsModal({
               selectedAuthMethod={selectedAuthMethod}
               selectedProvider={selectedProvider}
             />
-          ) : (
+          ) : section === "platform-management" ? (
             <PlatformManagementPanel />
+          ) : (
+            <DeploymentPlatformsPanel />
           )}
         </main>
       </div>
@@ -129,13 +139,15 @@ function SettingsSidebar({
   onSectionChange: (section: UserSettingsSection) => void;
 }) {
   return (
-    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-border/70 border-r bg-muted/25 px-3 py-5 max-sm:border-r-0 max-sm:border-b">
-      <div className="mb-5 px-2">
+    <aside className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-border/70 border-r bg-muted/20 px-3 py-5 max-sm:border-r-0 max-sm:border-b">
+      <div className="mb-6 px-2">
         <h2 className="font-semibold text-base">設定</h2>
-        <p className="mt-1 text-muted-foreground text-xs">模型商與平台管理。</p>
+        <p className="mt-1 text-muted-foreground text-xs">
+          模型商、平台與部署管理。
+        </p>
       </div>
 
-      <nav aria-label="使用者設定分類" className="grid content-start gap-1">
+      <nav aria-label="使用者設定分類" className="grid content-start gap-1.5">
         <SettingsNavButton
           active={activeSection === "model-providers"}
           icon={<SettingsIcon aria-hidden="true" className="size-4" />}
@@ -148,11 +160,17 @@ function SettingsSidebar({
           label="平台管理"
           onClick={() => onSectionChange("platform-management")}
         />
+        <SettingsNavButton
+          active={activeSection === "deployment-platforms"}
+          icon={<RocketIcon aria-hidden="true" className="size-4" />}
+          label="自動部屬平台"
+          onClick={() => onSectionChange("deployment-platforms")}
+        />
       </nav>
 
-      <div className="px-2 pt-6 text-muted-foreground text-xs">
+      <div className="px-2 pt-6 text-muted-foreground text-xs leading-5">
         <p className="font-semibold">OpenCode Desktop</p>
-        <p className="mt-1">v1.16.0</p>
+        <p>v1.16.0</p>
       </div>
     </aside>
   );
@@ -171,7 +189,7 @@ function SettingsNavButton({
 }) {
   return (
     <button
-      className={`flex h-9 items-center gap-2 rounded-md px-3 text-left font-medium text-sm transition ${active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"}`}
+      className={`flex h-9 items-center gap-2 rounded-md px-3 text-left font-medium text-sm transition ${active ? "bg-accent text-foreground shadow-sm/5" : "text-muted-foreground hover:bg-accent/70 hover:text-foreground"}`}
       onClick={onClick}
       type="button"
     >
@@ -203,7 +221,7 @@ function ModelProvidersPanel({
   selectedProvider: ModelProvider | null;
 }) {
   return (
-    <div className="mx-auto grid max-w-[680px] gap-7">
+    <div className="mx-auto grid max-w-[680px] gap-8">
       <ModelProvidersHeader
         modelProviderSearch={modelProviderSearch}
         onProviderSearchChange={onProviderSearchChange}
@@ -253,7 +271,7 @@ function ModelProvidersHeader({
             <ArrowLeftIcon aria-hidden="true" className="size-4" />
           </button>
         )}
-        <h3 className="font-semibold text-lg">
+        <h3 className="font-semibold text-lg tracking-[-0.01em]">
           {selectedProvider ? `連接 ${selectedProvider.name}` : "模型商"}
         </h3>
       </div>
@@ -478,26 +496,78 @@ function ProviderAuthMethodsPanel({
 }) {
   return (
     <section
-      className="grid gap-3 pr-8"
+      className="grid pr-8"
       aria-labelledby="provider-auth-methods-title"
     >
-      <p className="text-muted-foreground text-sm" id="provider-auth-methods-title">
-        選擇 {selectedProvider.name} 的登錄方式。
-      </p>
-      <div className="grid gap-1 pl-4">
-        {selectedProvider.authMethods.map((method) => (
-          <button
-            className="flex min-h-9 w-full items-center rounded-lg px-3 text-left font-medium text-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            key={method}
-            onClick={() => onProviderAuthMethodChange(method)}
-            type="button"
-          >
-            {method}
-          </button>
-        ))}
+      <div className="grid max-w-[560px] gap-4 pt-0">
+        <p
+          className="text-muted-foreground text-sm leading-6"
+          id="provider-auth-methods-title"
+        >
+          選擇登入方式，稍後可在模型商設定中切換或重新驗證。
+        </p>
+
+        <div className="overflow-hidden rounded-2xl border bg-background shadow-sm/5">
+          {selectedProvider.authMethods.map((method) => {
+            const detail = getAuthMethodDetail(method);
+            const Icon = detail.icon;
+
+            return (
+              <button
+                className="group grid w-full grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-3 border-border/70 border-b px-4 py-3.5 text-left transition last:border-b-0 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                key={method}
+                onClick={() => onProviderAuthMethodChange(method)}
+                type="button"
+              >
+                <span className="grid size-9 place-items-center rounded-xl border bg-muted/35 text-muted-foreground transition group-hover:border-foreground/20 group-hover:bg-background group-hover:text-foreground">
+                  <Icon aria-hidden="true" className="size-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold text-sm">
+                    {method}
+                  </span>
+                  <span className="mt-0.5 block truncate text-muted-foreground text-xs">
+                    {detail.description}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-1 font-medium text-muted-foreground text-xs transition group-hover:bg-background group-hover:text-foreground">
+                  選擇
+                  <ChevronRightIcon aria-hidden="true" className="size-3.5" />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="text-muted-foreground text-xs leading-5">
+          建議本機開發使用 browser，伺服器或 Docker 環境使用 headless，正式環境使用 API 密鑰。
+        </p>
       </div>
     </section>
   );
+}
+
+function getAuthMethodDetail(method: string) {
+  const normalized = method.toLowerCase();
+
+  if (normalized.includes("headless")) {
+    return {
+      description: "適合遠端主機、Docker 與無瀏覽器環境。",
+      icon: TerminalIcon,
+    };
+  }
+
+  if (normalized.includes("api")) {
+    return {
+      description: "使用環境變數或密鑰連線，適合正式部署。",
+      icon: KeyRoundIcon,
+    };
+  }
+
+  return {
+    description: "透過瀏覽器授權，最適合本機快速連接。",
+    icon: GlobeIcon,
+  };
 }
 
 function PlatformManagementPanel() {
@@ -527,6 +597,45 @@ function PlatformManagementPanel() {
               </strong>
               <p className="mt-0.5 truncate text-muted-foreground text-xs">
                 連接組織、專案、Repos 與 Boards。
+              </p>
+            </div>
+          </div>
+          <Badge size="sm" variant="secondary">
+            尚未連接
+          </Badge>
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function DeploymentPlatformsPanel() {
+  return (
+    <div className="mx-auto grid max-w-[680px] gap-6">
+      <div className="grid gap-1 pr-8">
+        <h3 className="font-semibold text-lg">自動部屬平台</h3>
+        <p className="text-muted-foreground text-sm">
+          管理 CI/CD、環境變數、Build hooks 與發佈狀態。
+        </p>
+      </div>
+      <section className="grid gap-3" aria-labelledby="deployment-platforms-title">
+        <h4 className="font-semibold text-sm" id="deployment-platforms-title">
+          可用平台
+        </h4>
+        <button
+          className="flex min-h-16 items-center justify-between gap-4 rounded-lg bg-muted/50 px-4 py-3 text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          type="button"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-emerald-600 font-semibold text-sm text-white">
+              CD
+            </span>
+            <div className="min-w-0">
+              <strong className="truncate font-semibold text-sm">
+                自動部屬平台
+              </strong>
+              <p className="mt-0.5 truncate text-muted-foreground text-xs">
+                連接部署流程、環境變數、Build hooks 與發佈狀態。
               </p>
             </div>
           </div>
