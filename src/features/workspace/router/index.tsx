@@ -1,9 +1,9 @@
 import { useEffect } from "react"
-import { recentProjects } from "@/features/workspace/data/mockWorkspace"
 
 export const WORKSPACE_ROUTE_PATH = "/workspace"
 
 type WorkspaceRouteProps = {
+  defaultProjectPath: string
   onProjectNameChange: (projectName: string, options?: { replace?: boolean }) => void
 }
 
@@ -14,10 +14,10 @@ function getProjectRouteName(projectPath: string) {
   return name || "project"
 }
 
-export function WorkspaceRoute({ onProjectNameChange }: WorkspaceRouteProps) {
+export function WorkspaceRoute({ defaultProjectPath, onProjectNameChange }: WorkspaceRouteProps) {
   useEffect(() => {
-    onProjectNameChange(getProjectRouteName(recentProjects[0]?.path ?? "/workspace/test-web/"), { replace: true })
-  }, [onProjectNameChange])
+    onProjectNameChange(getProjectRouteName(defaultProjectPath), { replace: true })
+  }, [defaultProjectPath, onProjectNameChange])
 
   return null
 }

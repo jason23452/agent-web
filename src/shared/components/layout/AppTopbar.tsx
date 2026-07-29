@@ -3,28 +3,16 @@ import { AgentSwitcher } from "@/shared/components/layout/AgentSwitcher"
 import { ContextMeter } from "@/shared/components/layout/ContextMeter"
 import { TopNav } from "@/shared/components/layout/TopNav"
 import { Button } from "@/shared/components/ui/button"
-
-type AppTopbarAgent = {
-  id: string
-  name: string
-  provider: string
-  status: "active" | "idle" | "review"
-}
-
-type AppTopbarTokenUsage = {
-  label: string
-  used: number
-  limit: number
-}
+import type { Agent, TokenUsage } from "@/shared/types/workspace"
 
 type AppTopbarProps = {
-  activeAgent: AppTopbarAgent
+  activeAgent: Agent
   activeProjectPath?: string | null
-  agents: AppTopbarAgent[]
+  agents: Agent[]
   onAgentChange: (agentId: string) => void
   onOpenContextPanel: () => void
   onOpenSidebar: () => void
-  tokenUsage: AppTopbarTokenUsage[]
+  tokenUsage: TokenUsage[]
 }
 
 function getProjectLabel(path: string) {

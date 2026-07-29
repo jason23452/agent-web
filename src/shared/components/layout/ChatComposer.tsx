@@ -1,26 +1,14 @@
 import { FileTextIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, UploadIcon, XIcon } from "lucide-react"
 import { useState } from "react"
 import { Button } from "@/shared/components/ui/button"
-
-type ChatComposerAttachment = {
-  id: string
-  name: string
-  meta: string
-  isImage?: boolean
-}
-
-type ChatComposerPinContext = {
-  label: string
-  meta: string
-  text: string
-}
+import type { Attachment, PinContext } from "@/shared/types/workspace"
 
 type ChatComposerProps = {
-  attachments: ChatComposerAttachment[]
+  attachments: Attachment[]
   onAddAttachment: () => void
   onClearPin: () => void
   onRemoveAttachment: (id: string) => void
-  pinContext: ChatComposerPinContext | null
+  pinContext: PinContext | null
 }
 
 export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemoveAttachment, pinContext }: ChatComposerProps) {

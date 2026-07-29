@@ -1,11 +1,6 @@
 import { Progress, ProgressIndicator, ProgressTrack } from "@/shared/components/ui/progress"
 import { Spinner } from "@/shared/components/ui/spinner"
-
-type TokenUsage = {
-  label: string
-  used: number
-  limit: number
-}
+import type { TokenUsage } from "@/shared/types/workspace"
 
 type ContextMeterProps = {
   usage: TokenUsage[]

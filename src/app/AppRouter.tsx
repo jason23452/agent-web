@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
-import { agents, fileTree, recentProjects, sessions, starterAttachments, tokenUsage } from "@/features/workspace/data/mockWorkspace"
+import { agents, fileTree, recentProjects, sessions, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
-import type { Attachment, FileNode, PinContext } from "@/features/workspace/types/workspace"
+import type { Attachment, FileNode, PinContext } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
 import { AppShell } from "@/shared/components/layout/AppShell"
@@ -133,7 +133,7 @@ export function AppRouter() {
 
   const mainRoute =
     route.name === "workspace" ? (
-      <WorkspaceRoute onProjectNameChange={navigateToWorkspaceProject} />
+      <WorkspaceRoute defaultProjectPath={recentProjects[0]?.path ?? "/workspace/test-web/"} onProjectNameChange={navigateToWorkspaceProject} />
     ) : route.name === "workspaceProject" ? (
       <WorkspaceProjectRoute />
     ) : (

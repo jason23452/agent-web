@@ -1,23 +1,15 @@
 import { ChevronRightIcon, Code2Icon, FileIcon, FileImageIcon, FileJsonIcon, FolderIcon, FolderOpenIcon } from "lucide-react"
 import { useState } from "react"
+import type { FileNode, FileType } from "@/shared/types/workspace"
 
-type FileTreeFileType = "folder" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
-
-export type FileTreeNode = {
-  id: string
-  name: string
-  type: FileTreeFileType
-  size?: string
-  date?: string
-  children?: FileTreeNode[]
-}
+export type FileTreeNode = FileNode
 
 type FileTreeProps = {
   nodes: FileTreeNode[]
   onPreviewFile: (file: FileTreeNode) => void
 }
 
-function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileTreeFileType }) {
+function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileType }) {
   if (type === "folder") return expanded ? <FolderOpenIcon aria-hidden="true" className="size-4 text-warning" /> : <FolderIcon aria-hidden="true" className="size-4 text-warning" />
   if (type === "img") return <FileImageIcon aria-hidden="true" className="size-4 text-primary" />
   if (type === "json") return <FileJsonIcon aria-hidden="true" className="size-4 text-muted-foreground" />

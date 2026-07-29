@@ -15,24 +15,11 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/shared/components/ui/tabs"
+import type { FileNode, PinContext } from "@/shared/types/workspace"
 import { cn } from "@/shared/utils/cn"
 
-type AppFilePreviewFileType = "folder" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
-
-type AppFilePreviewFile = {
-  id: string
-  name: string
-  type: AppFilePreviewFileType
-  size?: string
-  date?: string
-  children?: AppFilePreviewFile[]
-}
-
-type AppFilePreviewPinContext = {
-  label: string
-  meta: string
-  text: string
-}
+type AppFilePreviewFile = FileNode
+type AppFilePreviewPinContext = PinContext
 
 type AppFilePreviewDialogProps = {
   file: AppFilePreviewFile | null

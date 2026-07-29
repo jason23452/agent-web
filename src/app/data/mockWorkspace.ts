@@ -1,4 +1,4 @@
-import type { Agent, Attachment, FileNode, Project, Session, TokenUsage, WorkspaceMessage } from "@/features/workspace/types/workspace"
+import type { Agent, Attachment, FileNode, Project, Session, TokenUsage, WorkspaceMessage } from "@/shared/types/workspace"
 
 export const agents: Agent[] = [
   { id: "opencode", name: "opencode-agent", provider: "OpenAI", status: "active" },
