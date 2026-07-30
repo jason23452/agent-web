@@ -1,27 +1,20 @@
-import { apiRequest, type ApiRequestConfig } from "@/shared/api";
+import type { ApiRequestConfig } from "@/shared/api";
+import { listProjectAgents, type OpenCodeAgent } from "@/shared/api/opencodeAgents";
 import type { Agent } from "@/shared/types/workspace";
 
-export type OpenCodeAgent = {
-  builtIn?: boolean;
-  color?: string;
-  description?: string;
-  hidden?: boolean;
-  mode: "all" | "primary" | "subagent";
-  model?: {
-    modelID: string;
-    providerID: string;
-  };
-  name: string;
-  native?: boolean;
-};
+export {
+  listProjectAgents,
+  type OpenCodeAgent,
+  type OpenCodePermissionAction,
+  type OpenCodePermissionRule,
+} from "@/shared/api/opencodeAgents";
 
 const INTERNAL_PRIMARY_AGENT_NAMES = new Set(["compaction", "summary", "title"]);
 
 export function listProjectPrimaryAgents(directory: string, config?: ApiRequestConfig) {
-  return apiRequest<OpenCodeAgent[]>("/bff/opencode-proxy/agent", {
-    ...config,
-    query: { ...config?.query, directory },
-  }).then((agents) => agents.filter(isSelectablePrimaryAgent).sort(sortPrimaryAgents).map(toWorkspaceAgent));
+  return listProjectAgents(directory, config).then((agents) =>
+    agents.filter(isSelectablePrimaryAgent).sort(sortPrimaryAgents).map(toWorkspaceAgent),
+  );
 }
 
 function isSelectablePrimaryAgent(agent: OpenCodeAgent): boolean {

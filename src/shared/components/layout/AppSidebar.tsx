@@ -1,4 +1,9 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  listProjectAgents,
+  type OpenCodeAgent,
+} from "@/shared/api/opencodeAgents";
+import { listProjectToolIds } from "@/shared/api/opencodeTools";
 import {
   UserSettingsModal,
   type ModelProvider,
@@ -12,7 +17,6 @@ import { ProjectDialog } from "@/shared/components/layout/app-sidebar/ProjectDia
 import { getApiErrorMessage } from "@/shared/api";
 import { toastManager } from "@/shared/components/ui/toast";
 import {
-  agentDefinitions,
   availableSkills,
   emptyAgentForm,
   emptyMcpForm,
@@ -55,6 +59,255 @@ import {
 } from "@/shared/components/layout/app-sidebar/utils";
 
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+const AGENT_MODE_ORDER: Record<AgentDefinition["mode"], number> = {
+  primary: 0,
+  all: 1,
+  subagent: 2,
+};
+const AGENT_SCOPE_ORDER: Record<AgentDefinition["scope"], number> = {
+  system: 0,
+  custom: 1,
+};
+const SYSTEM_TOOL_METADATA: Record<
+  string,
+  Pick<ToolDefinition, "category" | "description" | "source">
+> = Object.fromEntries(
+  [
+    ...initialToolDefinitions.filter((tool) => tool.source === "built-in"),
+    {
+      id: "list",
+      name: "list",
+      description: "List files and directories in the current workspace.",
+      category: "Files",
+      source: "built-in" as const,
+    },
+    {
+      id: "write",
+      name: "write",
+      description: "Write or create files in the current workspace.",
+      category: "Edit",
+      source: "built-in" as const,
+    },
+    {
+      id: "edit",
+      name: "edit",
+      description: "Edit files in the current workspace.",
+      category: "Edit",
+      source: "built-in" as const,
+    },
+    {
+      id: "patch",
+      name: "patch",
+      description: "Apply patch-style edits to files.",
+      category: "Edit",
+      source: "built-in" as const,
+    },
+    {
+      id: "todowrite",
+      name: "todowrite",
+      description: "Create and maintain an in-session task list.",
+      category: "Planning",
+      source: "built-in" as const,
+    },
+    {
+      id: "webfetch",
+      name: "webfetch",
+      description: "Fetch and inspect content from a URL.",
+      category: "Web",
+      source: "built-in" as const,
+    },
+    {
+      id: "websearch",
+      name: "websearch",
+      description: "Search the web for up-to-date information.",
+      category: "Web",
+      source: "built-in" as const,
+    },
+    {
+      id: "lsp",
+      name: "lsp",
+      description: "Use language-server information for code intelligence.",
+      category: "Code Intelligence",
+      source: "built-in" as const,
+    },
+    {
+      id: "question",
+      name: "question",
+      description: "Ask the user for clarification or choices.",
+      category: "Interaction",
+      source: "built-in" as const,
+    },
+    {
+      id: "skill",
+      name: "skill",
+      description: "Load specialized instructions and workflows.",
+      category: "Agent",
+      source: "built-in" as const,
+    },
+  ].map((tool) => [
+    tool.name,
+    {
+      category: tool.category,
+      description: tool.description,
+      source: tool.source,
+    },
+  ]),
+);
+
+type AgentPermission = AgentDefinition["permission"];
+type AgentPermissionValue = AgentPermission[string];
+
+function toAgentDefinition(agent: OpenCodeAgent): AgentDefinition {
+  const permission = normalizeOpenCodePermission(agent.permission);
+
+  return {
+    id: agent.name,
+    name: agent.name,
+    description: agent.description ?? "OpenCode agent.",
+    scope: isSystemOpenCodeAgent(agent) ? "system" : "custom",
+    mode: agent.mode,
+    model: agent.model
+      ? `${agent.model.providerID}/${agent.model.modelID}`
+      : "opencode/default",
+    tools: Object.keys(permission)
+      .filter((permissionName) => permissionName !== "task")
+      .sort((a, b) => a.localeCompare(b)),
+    toolGuidance: {},
+    skillGuidance: {},
+    skills: [],
+    subagents: getAllowedTaskAgents(permission),
+    subagentGuidance: {},
+    permission,
+    systemPrompt: agent.prompt ?? "",
+    temperature:
+      agent.temperature === undefined ? undefined : String(agent.temperature),
+    top_p: agent.topP === undefined ? undefined : String(agent.topP),
+    variant: agent.variant,
+    steps: agent.steps === undefined ? undefined : String(agent.steps),
+    hidden: agent.hidden,
+    color: agent.color,
+    promptSource: "inline",
+    promptFile: "",
+    providerOptionsJson: stringifyJson(agent.options),
+    permissionRulesJson: Array.isArray(agent.permission)
+      ? stringifyJson(agent.permission)
+      : "",
+  };
+}
+
+function toToolDefinition(toolId: string): ToolDefinition {
+  const metadata = SYSTEM_TOOL_METADATA[toolId];
+  if (metadata) {
+    return {
+      id: toolId,
+      name: toolId,
+      ...metadata,
+    };
+  }
+
+  return {
+    id: toolId,
+    name: toolId,
+    description: "OpenCode project/global custom or dynamically registered tool.",
+    category: "Custom",
+    source: "custom",
+  };
+}
+
+function sortToolDefinitions(a: ToolDefinition, b: ToolDefinition) {
+  if (a.source !== b.source) return a.source === "built-in" ? -1 : 1;
+  return a.name.localeCompare(b.name);
+}
+
+function sortAgentDefinitions(a: AgentDefinition, b: AgentDefinition) {
+  const scopeDiff = AGENT_SCOPE_ORDER[a.scope] - AGENT_SCOPE_ORDER[b.scope];
+  if (scopeDiff !== 0) return scopeDiff;
+
+  const modeDiff = AGENT_MODE_ORDER[a.mode] - AGENT_MODE_ORDER[b.mode];
+  if (modeDiff !== 0) return modeDiff;
+
+  return a.name.localeCompare(b.name);
+}
+
+function isSystemOpenCodeAgent(agent: OpenCodeAgent) {
+  return Boolean(agent.builtIn ?? agent.native);
+}
+
+function normalizeOpenCodePermission(
+  permission: OpenCodeAgent["permission"],
+): AgentPermission {
+  if (Array.isArray(permission)) {
+    return permission.reduce<AgentPermission>((normalized, rule) => {
+      if (!rule.permission) return normalized;
+
+      const pattern = rule.pattern || "*";
+      const currentValue = normalized[rule.permission];
+      if (pattern === "*" && currentValue === undefined) {
+        normalized[rule.permission] = rule.action;
+        return normalized;
+      }
+
+      const currentRules = isPermissionRuleMap(currentValue)
+        ? { ...currentValue }
+        : currentValue
+          ? { "*": currentValue }
+          : {};
+      normalized[rule.permission] = {
+        ...currentRules,
+        [pattern]: rule.action,
+      };
+      return normalized;
+    }, {});
+  }
+
+  if (!isRecord(permission)) return {};
+
+  return Object.fromEntries(
+    Object.entries(permission).filter(([, value]) => isPermissionValue(value)),
+  ) as AgentPermission;
+}
+
+function getAllowedTaskAgents(permission: AgentPermission) {
+  const taskPermission = permission.task;
+  if (!isPermissionRuleMap(taskPermission)) return [];
+
+  return Object.entries(taskPermission)
+    .filter(([agentName, action]) => agentName !== "*" && action === "allow")
+    .map(([agentName]) => agentName)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function isPermissionValue(value: unknown): value is AgentPermissionValue {
+  return isPermissionAction(value) || isPermissionRuleMap(value);
+}
+
+function isPermissionRuleMap(
+  value: unknown,
+): value is Record<string, "allow" | "ask" | "deny"> {
+  if (!isRecord(value)) return false;
+
+  return Object.values(value).every(isPermissionAction);
+}
+
+function isPermissionAction(value: unknown): value is "allow" | "ask" | "deny" {
+  return value === "allow" || value === "ask" || value === "deny";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringifyJson(value: unknown) {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value) && value.length === 0) return "";
+  if (isRecord(value) && Object.keys(value).length === 0) return "";
+
+  try {
+    return JSON.stringify(value, null, 2) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export function AppSidebar({
   activeProjectPath,
@@ -119,10 +372,12 @@ export function AppSidebar({
   const [agentConfigMode, setAgentConfigMode] =
     useState<AgentConfigMode>("interface");
   const [agentToolTab, setAgentToolTab] = useState<AgentToolTab>("agents");
-  const [agents, setAgents] = useState<AgentDefinition[]>(agentDefinitions);
-  const [toolDefinitions, setToolDefinitions] = useState<ToolDefinition[]>(
-    initialToolDefinitions,
-  );
+  const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [agentsLoading, setAgentsLoading] = useState(false);
+  const [toolDefinitions, setToolDefinitions] = useState<ToolDefinition[]>([]);
+  const [toolsError, setToolsError] = useState<string | null>(null);
+  const [toolsLoading, setToolsLoading] = useState(false);
   const [agentsToolsHasChanges, setAgentsToolsHasChanges] = useState(false);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
@@ -220,6 +475,86 @@ export function AppSidebar({
   });
   const isCustomToolName = (toolName: string) =>
     isCustomTool(toolName, toolDefinitions);
+
+  useEffect(() => {
+    if (!agentsDialogOpen) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      if (!activeProjectPath) {
+        setAgents([]);
+        setSelectedAgentId(null);
+        setAgentsError("請先開啟專案後再查看 OpenCode agents。");
+        setAgentsLoading(false);
+        setToolDefinitions([]);
+        setToolsError("請先開啟專案後再查看 OpenCode tools。");
+        setToolsLoading(false);
+        return;
+      }
+
+      if (agentsToolsHasChanges) return;
+
+      setAgentsLoading(true);
+      setAgentsError(null);
+      setToolsLoading(true);
+      setToolsError(null);
+
+      void listProjectAgents(activeProjectPath, { signal: controller.signal })
+        .then((response) => {
+          if (controller.signal.aborted) return;
+
+          const nextAgents = response
+            .map(toAgentDefinition)
+            .sort(sortAgentDefinitions);
+          setAgents(nextAgents);
+          setSelectedAgentId((current) =>
+            current && nextAgents.some((agent) => agent.id === current)
+              ? current
+              : null,
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+
+          setAgents([]);
+          setSelectedAgentId(null);
+          setAgentsError(getApiErrorMessage(error));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setAgentsLoading(false);
+        });
+
+      void listProjectToolIds(activeProjectPath, { signal: controller.signal })
+        .then((response) => {
+          if (controller.signal.aborted) return;
+
+          const nextTools = [...new Set(response)]
+            .map(toToolDefinition)
+            .sort(sortToolDefinitions);
+          setToolDefinitions(nextTools);
+          setToolToAdd((current) =>
+            current && nextTools.some((tool) => tool.name === current)
+              ? current
+              : nextTools[0]?.name ?? "",
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+
+          setToolDefinitions([]);
+          setToolToAdd("");
+          setToolsError(getApiErrorMessage(error));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setToolsLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [activeProjectPath, agentsDialogOpen, agentsToolsHasChanges]);
 
   function showConfirmationToast({
     description,
@@ -1319,6 +1654,8 @@ export function AppSidebar({
         agentToolTab={agentToolTab}
         agentYaml={agentYaml}
         agents={agents}
+        agentsError={agentsError}
+        agentsLoading={agentsLoading}
         agentsToolsHasChanges={agentsToolsHasChanges}
         availableSkillNames={availableSkillNames}
         batchUpdateNotice={batchUpdateNotice}
@@ -1364,6 +1701,8 @@ export function AppSidebar({
         subagentToAdd={subagentToAdd}
         toolDefinitions={toolDefinitions}
         toolEditMode={toolEditMode}
+        toolsError={toolsError}
+        toolsLoading={toolsLoading}
         toolForm={toolForm}
         toolTestResult={toolTestResult}
         toolToAdd={toolToAdd}

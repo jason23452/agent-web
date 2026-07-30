@@ -41,6 +41,8 @@ type AgentsToolsModalProps = {
   agentToolTab: AgentToolTab;
   agentYaml: string;
   agents: AgentDefinition[];
+  agentsError?: string | null;
+  agentsLoading?: boolean;
   agentsToolsHasChanges: boolean;
   availableSkillNames: string[];
   batchUpdateNotice: string;
@@ -89,6 +91,8 @@ type AgentsToolsModalProps = {
   subagentToAdd: string;
   toolDefinitions: ToolDefinition[];
   toolEditMode: ToolEditMode;
+  toolsError?: string | null;
+  toolsLoading?: boolean;
   toolForm: ToolForm;
   toolTestResult: InstallResult | null;
   toolToAdd: string;
@@ -102,6 +106,8 @@ export function AgentsToolsModal({
   agentToolTab,
   agentYaml,
   agents,
+  agentsError,
+  agentsLoading = false,
   agentsToolsHasChanges,
   availableSkillNames,
   batchUpdateNotice,
@@ -147,6 +153,8 @@ export function AgentsToolsModal({
   subagentToAdd,
   toolDefinitions,
   toolEditMode,
+  toolsError,
+  toolsLoading = false,
   toolForm,
   toolTestResult,
   toolToAdd,
@@ -167,7 +175,11 @@ export function AgentsToolsModal({
       closeAriaLabel="關閉 Agents"
       description={
         view === "list"
-          ? `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}`
+          ? agentsLoading && agentToolTab === "agents"
+            ? "正在讀取 OpenCode agents"
+            : toolsLoading && agentToolTab === "tools"
+              ? "正在讀取 OpenCode tools"
+            : `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}`
           : view === "tool-config"
             ? "Python / JS / TS custom tool"
             : "介面配置 / 文字配置 YAML"
@@ -225,6 +237,8 @@ export function AgentsToolsModal({
       {view === "list" && (
         <AgentsToolsList
           agents={agents}
+          agentsError={agentsError}
+          agentsLoading={agentsLoading}
           agentToolTab={agentToolTab}
           onAgentToolTabChange={onAgentToolTabChange}
           onDeleteAgent={onDeleteAgent}
@@ -233,6 +247,8 @@ export function AgentsToolsModal({
           onOpenEditAgentMode={onOpenEditAgentMode}
           onOpenEditToolMode={onOpenEditToolMode}
           toolDefinitions={toolDefinitions}
+          toolsError={toolsError}
+          toolsLoading={toolsLoading}
         />
       )}
 
@@ -304,8 +320,32 @@ export function AgentsToolsModal({
   );
 }
 
+function getAgentScopeLabel(scope: AgentDefinition["scope"]) {
+  return scope === "system" ? "系統" : "自訂";
+}
+
+function getAgentModeLabel(mode: AgentDefinition["mode"]) {
+  if (mode === "primary") return "主 agent";
+  if (mode === "subagent") return "子 agent";
+  return "全部";
+}
+
+function getAgentModeVariant(
+  mode: AgentDefinition["mode"],
+): "default" | "secondary" | "warning" {
+  if (mode === "primary") return "default";
+  if (mode === "subagent") return "warning";
+  return "secondary";
+}
+
+function getToolSourceLabel(source: ToolDefinition["source"]) {
+  return source === "built-in" ? "系統預設" : "自訂";
+}
+
 function AgentsToolsList({
   agents,
+  agentsError,
+  agentsLoading = false,
   agentToolTab,
   onAgentToolTabChange,
   onDeleteAgent,
@@ -314,8 +354,12 @@ function AgentsToolsList({
   onOpenEditAgentMode,
   onOpenEditToolMode,
   toolDefinitions,
+  toolsError,
+  toolsLoading = false,
 }: {
   agents: AgentDefinition[];
+  agentsError?: string | null;
+  agentsLoading?: boolean;
   agentToolTab: AgentToolTab;
   onAgentToolTabChange: Dispatch<SetStateAction<AgentToolTab>>;
   onDeleteAgent: (agentId: string) => void;
@@ -324,7 +368,14 @@ function AgentsToolsList({
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
   toolDefinitions: ToolDefinition[];
+  toolsError?: string | null;
+  toolsLoading?: boolean;
 }) {
+  const systemAgents = agents.filter((agent) => agent.scope === "system");
+  const customAgents = agents.filter((agent) => agent.scope === "custom");
+  const systemTools = toolDefinitions.filter((tool) => tool.source === "built-in");
+  const customTools = toolDefinitions.filter((tool) => tool.source === "custom");
+
   return (
     <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
       <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
@@ -346,17 +397,41 @@ function AgentsToolsList({
 
       {agentToolTab === "agents" && (
         <>
+          {agentsLoading && (
+            <div
+              className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm"
+              role="status"
+            >
+              正在讀取 OpenCode agents...
+            </div>
+          )}
+
+          {!agentsLoading && agentsError && (
+            <div
+              className="rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm"
+              role="alert"
+            >
+              {agentsError}
+            </div>
+          )}
+
+          {!agentsLoading && !agentsError && agents.length === 0 && (
+            <div className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm">
+              目前沒有可顯示的 OpenCode agent。
+            </div>
+          )}
+
+          {!agentsLoading && !agentsError && agents.length > 0 && (
+            <>
           <section aria-labelledby="built-in-agents-title">
             <h3
               className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
               id="built-in-agents-title"
             >
-              Built-in Agents
+              系統 Agents
             </h3>
             <ul className="grid gap-1">
-              {agents
-                .filter((agent) => agent.scope === "system")
-                .map((agent) => (
+              {systemAgents.map((agent) => (
                   <li key={agent.id}>
                     <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
                       <div className="min-w-0 flex-1">
@@ -365,8 +440,16 @@ function AgentsToolsList({
                             {agent.name}
                           </span>
                           <Badge size="sm" variant="info">
-                            system
+                            系統
                           </Badge>
+                          <Badge size="sm" variant={getAgentModeVariant(agent.mode)}>
+                            {getAgentModeLabel(agent.mode)}
+                          </Badge>
+                          {agent.hidden && (
+                            <Badge size="sm" variant="outline">
+                              hidden
+                            </Badge>
+                          )}
                         </div>
                         <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
                           {agent.description}
@@ -386,6 +469,11 @@ function AgentsToolsList({
                     </div>
                   </li>
                 ))}
+              {systemAgents.length === 0 && (
+                <li className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-muted-foreground text-sm">
+                  沒有系統 agent。
+                </li>
+              )}
             </ul>
           </section>
 
@@ -394,12 +482,10 @@ function AgentsToolsList({
               className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
               id="custom-agents-title"
             >
-              Custom Agents
+              自訂 Agents
             </h3>
             <ul className="grid gap-1">
-              {agents
-                .filter((agent) => agent.scope === "custom")
-                .map((agent) => (
+              {customAgents.map((agent) => (
                   <li key={agent.id}>
                     <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
                       <div className="min-w-0 flex-1">
@@ -408,8 +494,16 @@ function AgentsToolsList({
                             {agent.name}
                           </span>
                           <Badge size="sm" variant="success">
-                            custom
+                            自訂
                           </Badge>
+                          <Badge size="sm" variant={getAgentModeVariant(agent.mode)}>
+                            {getAgentModeLabel(agent.mode)}
+                          </Badge>
+                          {agent.hidden && (
+                            <Badge size="sm" variant="outline">
+                              hidden
+                            </Badge>
+                          )}
                         </div>
                         <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
                           {agent.description}
@@ -439,76 +533,154 @@ function AgentsToolsList({
                     </div>
                   </li>
                 ))}
+              {customAgents.length === 0 && (
+                <li className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-muted-foreground text-sm">
+                  沒有自訂 agent。
+                </li>
+              )}
             </ul>
           </section>
+            </>
+          )}
         </>
       )}
 
       {agentToolTab === "tools" && (
-        <section aria-labelledby="available-tools-title">
-          <h3
-            className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
-            id="available-tools-title"
-          >
-            Available Tools
-          </h3>
-          <ul className="grid gap-1">
-            {toolDefinitions.map((tool) => (
-              <li key={tool.id}>
-                <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-semibold text-sm">
-                        {tool.name}
-                      </span>
-                      <Badge size="sm" variant="outline">
-                        {tool.category}
-                      </Badge>
-                      <Badge
-                        size="sm"
-                        variant={tool.source === "custom" ? "success" : "secondary"}
-                      >
-                        {tool.source}
-                      </Badge>
-                      {tool.runtime && (
-                        <Badge size="sm" variant="info">
-                          {tool.runtime === "python" ? "Python" : "JS/TS"}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
-                      {tool.description}
-                    </p>
-                  </div>
-                  <Menu>
-                    <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      <MoreHorizontalIcon aria-hidden="true" className="size-4" />
-                    </MenuTrigger>
-                    <MenuPopup align="end" className="min-w-36">
-                      <MenuItem>查看工具說明</MenuItem>
-                      {tool.source === "custom" && (
-                        <MenuItem onClick={() => onOpenEditToolMode(tool)}>
-                          編輯
-                        </MenuItem>
-                      )}
-                      <MenuItem>複製工具名稱</MenuItem>
-                      {tool.source === "custom" && <MenuSeparator />}
-                      {tool.source === "custom" && (
-                        <MenuItem
-                          onClick={() => onDeleteTool(tool)}
-                          variant="destructive"
-                        >
-                          刪除
-                        </MenuItem>
-                      )}
-                    </MenuPopup>
-                  </Menu>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <>
+          {toolsLoading && (
+            <div
+              className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm"
+              role="status"
+            >
+              正在讀取 OpenCode tools...
+            </div>
+          )}
+
+          {!toolsLoading && toolsError && (
+            <div
+              className="rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm"
+              role="alert"
+            >
+              {toolsError}
+            </div>
+          )}
+
+          {!toolsLoading && !toolsError && toolDefinitions.length === 0 && (
+            <div className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm">
+              目前沒有可顯示的 OpenCode tool。
+            </div>
+          )}
+
+          {!toolsLoading && !toolsError && toolDefinitions.length > 0 && (
+            <>
+              <section aria-labelledby="built-in-tools-title">
+                <h3
+                  className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
+                  id="built-in-tools-title"
+                >
+                  系統預設工具
+                </h3>
+                <ul className="grid gap-1">
+                  {systemTools.map((tool) => (
+                    <li key={tool.id}>
+                      <ToolListItem
+                        onDeleteTool={onDeleteTool}
+                        onOpenEditToolMode={onOpenEditToolMode}
+                        tool={tool}
+                      />
+                    </li>
+                  ))}
+                  {systemTools.length === 0 && (
+                    <li className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-muted-foreground text-sm">
+                      沒有系統預設工具。
+                    </li>
+                  )}
+                </ul>
+              </section>
+
+              <section aria-labelledby="custom-tools-title">
+                <h3
+                  className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
+                  id="custom-tools-title"
+                >
+                  自訂工具
+                </h3>
+                <ul className="grid gap-1">
+                  {customTools.map((tool) => (
+                    <li key={tool.id}>
+                      <ToolListItem
+                        onDeleteTool={onDeleteTool}
+                        onOpenEditToolMode={onOpenEditToolMode}
+                        tool={tool}
+                      />
+                    </li>
+                  ))}
+                  {customTools.length === 0 && (
+                    <li className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-muted-foreground text-sm">
+                      沒有自訂工具。
+                    </li>
+                  )}
+                </ul>
+              </section>
+            </>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+function ToolListItem({
+  onDeleteTool,
+  onOpenEditToolMode,
+  tool,
+}: {
+  onDeleteTool: (tool: ToolDefinition) => void;
+  onOpenEditToolMode: (tool: ToolDefinition) => void;
+  tool: ToolDefinition;
+}) {
+  return (
+    <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-semibold text-sm">{tool.name}</span>
+          <Badge size="sm" variant="outline">
+            {tool.category}
+          </Badge>
+          <Badge
+            size="sm"
+            variant={tool.source === "custom" ? "success" : "secondary"}
+          >
+            {getToolSourceLabel(tool.source)}
+          </Badge>
+          {tool.runtime && (
+            <Badge size="sm" variant="info">
+              {tool.runtime === "python" ? "Python" : "JS/TS"}
+            </Badge>
+          )}
+        </div>
+        <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
+          {tool.description}
+        </p>
+      </div>
+      <Menu>
+        <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+        </MenuTrigger>
+        <MenuPopup align="end" className="min-w-36">
+          <MenuItem>查看工具說明</MenuItem>
+          {tool.source === "custom" && (
+            <MenuItem onClick={() => onOpenEditToolMode(tool)}>編輯</MenuItem>
+          )}
+          <MenuItem>複製工具名稱</MenuItem>
+          {tool.source === "custom" && <MenuSeparator />}
+          {tool.source === "custom" && (
+            <MenuItem onClick={() => onDeleteTool(tool)} variant="destructive">
+              刪除
+            </MenuItem>
+          )}
+        </MenuPopup>
+      </Menu>
     </div>
   );
 }
@@ -765,11 +937,16 @@ function AgentDetailPanel({
             size="sm"
             variant={selectedAgent.scope === "system" ? "info" : "success"}
           >
-            {selectedAgent.scope}
+            {getAgentScopeLabel(selectedAgent.scope)}
           </Badge>
-          <Badge size="sm" variant="outline">
-            {selectedAgent.mode}
+          <Badge size="sm" variant={getAgentModeVariant(selectedAgent.mode)}>
+            {getAgentModeLabel(selectedAgent.mode)}
           </Badge>
+          {selectedAgent.hidden && (
+            <Badge size="sm" variant="outline">
+              hidden
+            </Badge>
+          )}
         </div>
         <p className="mt-2 text-muted-foreground text-sm leading-6">
           {selectedAgent.description}
@@ -1518,9 +1695,17 @@ function AgentConfigPanel({
             <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
               <select
                 className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                disabled={toolDefinitions.length === 0}
                 onChange={(event) => onToolToAddChange(event.target.value)}
-                value={toolToAdd}
+                value={
+                  toolDefinitions.some((tool) => tool.name === toolToAdd)
+                    ? toolToAdd
+                    : ""
+                }
               >
+                {toolDefinitions.length === 0 && (
+                  <option value="">沒有可用工具</option>
+                )}
                 {toolDefinitions.map((tool) => (
                   <option key={tool.id} value={tool.name}>
                     {tool.name} · {tool.category}
@@ -1528,6 +1713,7 @@ function AgentConfigPanel({
                 ))}
               </select>
               <Button
+                disabled={!toolToAdd || toolDefinitions.length === 0}
                 onClick={() =>
                   onAgentFormChange((current) => {
                     const permissionKey = getToolPermissionKey(toolToAdd);
