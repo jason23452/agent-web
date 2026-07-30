@@ -7,6 +7,7 @@ import { listProjectSessions, toWorkspaceSession } from "@/features/workspace/ap
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
+import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
 import type { Agent, Attachment, FileNode, PinContext, Project, Session } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
@@ -81,6 +82,8 @@ export function AppRouter() {
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [previewFile, setPreviewFile] = useState<FileNode | null>(null)
+  const [layoutLoading, setLayoutLoading] = useState(false)
+  const [layoutLoadingLabel, setLayoutLoadingLabel] = useState("Loading...")
   const [projects, setProjects] = useState<Project[]>(recentProjects)
   const [projectsError, setProjectsError] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
@@ -290,6 +293,28 @@ export function AppRouter() {
     setContextPanelOpen(false)
   }, [activeProjectPath, checkedProjectName, navigateToRoute, navigateToWorkspaceProject])
 
+  const restartOpenCodeServer = useCallback(async (reason: string) => {
+    setLayoutLoadingLabel("正在重新啟動 OpenCode server...")
+    setLayoutLoading(true)
+
+    try {
+      await restartOpenCodeRuntime({ reason, wait: true })
+
+      if (!activeProjectPath) return
+
+      const nextAgents = await listProjectPrimaryAgents(activeProjectPath).catch((error) => {
+        setAgentsError(getApiErrorMessage(error))
+        return null
+      })
+      if (!nextAgents) return
+
+      setAvailableAgents(nextAgents)
+      setActiveAgentId((current) => current && nextAgents.some((agent) => agent.id === current) ? current : nextAgents[0]?.id ?? "")
+    } finally {
+      setLayoutLoading(false)
+    }
+  }, [activeProjectPath])
+
   function addAttachment() {
     const next = starterAttachments.find((item) => !attachments.some((attachment) => attachment.id === item.id))
     if (next) setAttachments((current) => [...current, next])
@@ -341,6 +366,8 @@ export function AppRouter() {
           pinContext={pinContext}
         />
       }
+      loading={layoutLoading}
+      loadingLabel={layoutLoadingLabel}
       onCloseAside={() => setContextPanelOpen(false)}
       onCloseSidebar={() => setSidebarOpen(false)}
       sidebar={
@@ -353,6 +380,7 @@ export function AppRouter() {
           onClose={() => setSidebarOpen(false)}
           onProjectChange={changeProject}
           onRefreshProjects={refreshProjects}
+          onRestartOpenCode={restartOpenCodeServer}
           onSelectSession={selectSession}
           open={sidebarOpen}
           projects={projects}

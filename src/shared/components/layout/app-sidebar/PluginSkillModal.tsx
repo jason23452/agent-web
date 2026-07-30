@@ -101,7 +101,7 @@ export function PluginSkillModal({
       footer={
         <>
           <p className="text-muted-foreground text-xs">
-            修改後需要更新並重新載入 OpenCode。
+            按下更新會重新啟動 OpenCode server。
           </p>
           <div className="flex items-center gap-2">
             <Button onClick={() => onOpenChange(false)} size="lg" variant="outline">

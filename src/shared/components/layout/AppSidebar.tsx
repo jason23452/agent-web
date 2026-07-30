@@ -386,6 +386,7 @@ export function AppSidebar({
   onDeleteProject,
   onProjectChange,
   onRefreshProjects,
+  onRestartOpenCode,
   open,
   onClose,
   onSelectSession,
@@ -653,7 +654,7 @@ export function AppSidebar({
   }: {
     description: ReactNode;
     id: string;
-    onConfirm: () => void;
+    onConfirm: () => Promise<void> | void;
     title: string;
   }) {
     toastManager.add({
@@ -672,7 +673,7 @@ export function AppSidebar({
         children: "確認",
         onClick: () => {
           toastManager.close(id);
-          onConfirm();
+          void onConfirm();
         },
       },
     });
@@ -814,18 +815,42 @@ export function AppSidebar({
       id: `batch-update-${scope}`,
       title: `是否更新${label}？`,
       description:
-        "這是 build-time 設定，更新後需要重新載入 OpenCode 才會完整生效。",
-      onConfirm: () => {
-        if (scope === "agents-tools") {
-          setAgentsToolsHasChanges(false);
-        } else {
-          setPluginSkillHasChanges(false);
-        }
-        setBatchUpdateNotice(
-          `${label} 已批次更新，請重新載入 OpenCode 讓 build-time 設定生效。`,
-        );
-      },
+        "按下確認後會套用更新並重新啟動 OpenCode server，完成前會顯示全域 loading。",
+      onConfirm: () => applyBatchUpdate(scope, label),
     });
+  }
+
+  async function applyBatchUpdate(
+    scope: "agents-tools" | "plugins-skills",
+    label: string,
+  ) {
+    setBatchUpdateNotice(`${label} 更新中，正在重新啟動 OpenCode server...`);
+
+    try {
+      await onRestartOpenCode(`Apply ${label} modal updates`);
+
+      if (scope === "agents-tools") {
+        setAgentsToolsHasChanges(false);
+      } else {
+        setPluginSkillHasChanges(false);
+      }
+      setBatchUpdateNotice(`${label} 已更新，OpenCode server 已重新啟動。`);
+      toastManager.add({
+        id: `batch-update-success-${scope}-${Date.now()}`,
+        title: "OpenCode 已重新啟動",
+        description: `${label} 更新已生效。`,
+        type: "success",
+      });
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      setBatchUpdateNotice(`${label} 更新失敗：${message}`);
+      toastManager.add({
+        id: `batch-update-error-${scope}-${Date.now()}`,
+        title: "OpenCode 重新啟動失敗",
+        description: message,
+        type: "error",
+      });
+    }
   }
 
   function agentCanReach(

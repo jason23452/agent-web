@@ -16,6 +16,7 @@ export type AppSidebarProps = {
   onDeleteProject: (project: AppSidebarProject) => Promise<void>;
   onProjectChange: (path: string) => void;
   onRefreshProjects: () => Promise<void>;
+  onRestartOpenCode: (reason: string) => Promise<void>;
   open: boolean;
   onClose: () => void;
   onSelectSession: (sessionId: string) => void;

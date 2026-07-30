@@ -8,6 +8,8 @@ type AppShellProps = {
   children: ReactNode
   className?: string
   composer?: ReactNode
+  loading?: boolean
+  loadingLabel?: string
   mainClassName?: string
   onCloseAside?: () => void
   onCloseSidebar?: () => void
@@ -23,6 +25,8 @@ export function AppShell({
   children,
   className,
   composer,
+  loading = false,
+  loadingLabel = "Loading...",
   mainClassName,
   onCloseAside,
   onCloseSidebar,
@@ -46,6 +50,7 @@ export function AppShell({
   return (
     <section
       aria-label={ariaLabel}
+      aria-busy={loading}
       className={cn(
         "min-h-dvh bg-muted/40 text-foreground",
         hasSidebar && !hasAside && "min-[761px]:grid min-[761px]:grid-cols-[240px_minmax(0,1fr)]",
@@ -86,6 +91,26 @@ export function AppShell({
           type="button"
         />
       )}
+      {loading && <AppLayoutLoadingOverlay label={loadingLabel} />}
     </section>
+  )
+}
+
+function AppLayoutLoadingOverlay({ label }: { label: string }) {
+  return (
+    <div
+      aria-live="polite"
+      className="fixed inset-0 z-[90] grid place-items-center bg-background/72 backdrop-blur-sm"
+      role="status"
+    >
+      <div className="grid min-w-60 gap-3 rounded-2xl border bg-background px-5 py-4 text-center shadow-lg/10">
+        <span
+          aria-hidden="true"
+          className="mx-auto size-8 animate-spin rounded-full border-2 border-muted border-t-primary"
+        />
+        <span className="font-medium text-sm">{label}</span>
+        <span className="text-muted-foreground text-xs">請稍候，完成前不要關閉頁面。</span>
+      </div>
+    </div>
   )
 }
