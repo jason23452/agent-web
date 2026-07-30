@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import {
   UserSettingsModal,
   type ModelProvider,
@@ -84,6 +84,7 @@ export function AppSidebar({
   const [deletingProjectName, setDeletingProjectName] = useState<string | null>(
     null,
   );
+  const deletingProjectRef = useRef<string | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
   const [projectCreateName, setProjectCreateName] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
@@ -335,6 +336,8 @@ export function AppSidebar({
   }
 
   function confirmDeleteProject(project: AppSidebarProject) {
+    if (deletingProjectRef.current) return;
+
     const label = project.displayName || project.name;
 
     showConfirmationToast({
@@ -352,6 +355,9 @@ export function AppSidebar({
   }
 
   async function deleteProject(project: AppSidebarProject) {
+    if (deletingProjectRef.current) return;
+
+    deletingProjectRef.current = project.name;
     setDeletingProjectName(project.name);
     setProjectActionError(null);
 
@@ -373,6 +379,7 @@ export function AppSidebar({
         type: "error",
       });
     } finally {
+      deletingProjectRef.current = null;
       setDeletingProjectName(null);
     }
   }
