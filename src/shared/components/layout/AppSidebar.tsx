@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import {
   installOpenCodeNpmPackages,
   listOpenCodeNpmPackages,
+  uninstallOpenCodeNpmPackages,
   type NpmPackageEntry,
   type NpmPackageScope,
   type NpmPackageListResponse,
@@ -475,7 +476,8 @@ export function AppSidebar({
   const [npmPackageJsonPath, setNpmPackageJsonPath] = useState("");
   const [npmPackagesError, setNpmPackagesError] = useState<string | null>(null);
   const [npmPackagesLoading, setNpmPackagesLoading] = useState(false);
-  const [npmPackagesInstalling, setNpmPackagesInstalling] = useState(false);
+  const [npmPackagesApplying, setNpmPackagesApplying] = useState(false);
+  const [npmPackagesToDelete, setNpmPackagesToDelete] = useState<string[]>([]);
   const [modelProviderSearch, setModelProviderSearch] = useState("");
   const [modelProviders, setModelProviders] = useState<ModelProvider[]>(
     initialModelProviders,
@@ -564,12 +566,17 @@ export function AppSidebar({
     setNpmPackages(response.packages);
     setNpmPackageRoot(response.root);
     setNpmPackageJsonPath(response.packageJsonPath);
+    setNpmPackagesToDelete((current) => {
+      const packageNames = new Set(response.packages.map((item) => item.name));
+      return current.filter((packageName) => packageNames.has(packageName));
+    });
     setNpmPackagesError(null);
   }, []);
 
   const loadNpmPackages = useCallback(async () => {
     if (npmPackageTarget === "project" && !activeProjectName) {
       setNpmPackages([]);
+      setNpmPackagesToDelete([]);
       setNpmPackageRoot("");
       setNpmPackageJsonPath("");
       setNpmPackagesError("請先開啟一個 project，才能讀取 project npm packages。");
@@ -588,6 +595,7 @@ export function AppSidebar({
       applyNpmPackageResponse(response);
     } catch (error) {
       setNpmPackages([]);
+      setNpmPackagesToDelete([]);
       setNpmPackageRoot("");
       setNpmPackageJsonPath("");
       setNpmPackagesError(getApiErrorMessage(error));
@@ -606,48 +614,82 @@ export function AppSidebar({
     return () => window.clearTimeout(timeoutId);
   }, [loadNpmPackages, userSettingsOpen, userSettingsSection]);
 
-  async function installNpmPackages() {
+  async function applyNpmPackageChanges() {
     const packageSpecs = parseNpmPackageInput(npmPackageInput);
-    if (packageSpecs.length === 0) {
-      setNpmPackagesError("請輸入至少一個 npm package。即使多個套件也可用空白或逗號分隔。");
+    const packageNamesToDelete = npmPackagesToDelete;
+
+    if (packageSpecs.length === 0 && packageNamesToDelete.length === 0) {
+      setNpmPackagesError("請輸入要新增的 npm package，或先選取要刪除的套件。");
       return;
     }
 
     if (npmPackageTarget === "project" && !activeProjectName) {
-      setNpmPackagesError("請先開啟一個 project，才能安裝到當前 Project。");
+      setNpmPackagesError("請先開啟一個 project，才能修改當前 Project 的 npm packages。");
       return;
     }
 
-    setNpmPackagesInstalling(true);
+    if (packageNamesToDelete.length > 0 && !window.confirm(`確定要刪除 ${packageNamesToDelete.length} 個套件？OpenCode server 會在套用完成後重新啟動一次。`)) {
+      return;
+    }
+
+    setNpmPackagesApplying(true);
     setNpmPackagesError(null);
 
     try {
-      const response = await installOpenCodeNpmPackages({
-        packages: packageSpecs,
-        project: npmPackageTarget === "project" ? activeProjectName : undefined,
-        scope: npmPackageTarget,
-      });
-      applyNpmPackageResponse(response);
+      let response: NpmPackageListResponse | null = null;
+
+      if (packageSpecs.length > 0) {
+        response = await installOpenCodeNpmPackages({
+          packages: packageSpecs,
+          project: npmPackageTarget === "project" ? activeProjectName : undefined,
+          scope: npmPackageTarget,
+        });
+      }
+
+      if (packageNamesToDelete.length > 0) {
+        response = await uninstallOpenCodeNpmPackages({
+          packages: packageNamesToDelete,
+          project: npmPackageTarget === "project" ? activeProjectName : undefined,
+          scope: npmPackageTarget,
+        });
+      }
+
+      if (response) {
+        applyNpmPackageResponse(response);
+      }
       setNpmPackageInput("");
+      setNpmPackagesToDelete([]);
       toastManager.add({
-        id: `npm-packages-installed-${Date.now()}`,
-        title: "NPM 套件已安裝",
-        description: packageSpecs.join(", "),
+        id: `npm-packages-applied-${Date.now()}`,
+        title: "NPM 套件變更已套用",
+        description: `新增 ${packageSpecs.length} 個，刪除 ${packageNamesToDelete.length} 個`,
         type: "success",
       });
-      await onRestartOpenCode(`Install ${npmPackageTarget} npm packages`);
+      await onRestartOpenCode(`Apply ${npmPackageTarget} npm package changes`);
     } catch (error) {
       const message = getApiErrorMessage(error);
       setNpmPackagesError(message);
       toastManager.add({
-        id: `npm-packages-install-error-${Date.now()}`,
-        title: "NPM 套件安裝失敗",
+        id: `npm-packages-apply-error-${Date.now()}`,
+        title: "NPM 套件變更失敗",
         description: message,
         type: "error",
       });
     } finally {
-      setNpmPackagesInstalling(false);
+      setNpmPackagesApplying(false);
     }
+  }
+
+  function toggleNpmPackageDelete(packageName: string) {
+    setNpmPackagesToDelete((current) => current.includes(packageName)
+      ? current.filter((item) => item !== packageName)
+      : [...current, packageName]);
+  }
+
+  function changeNpmPackageTarget(target: NpmPackageScope) {
+    setNpmPackageTarget(target);
+    setNpmPackagesToDelete([]);
+    setNpmPackagesError(null);
   }
 
   function parseNpmPackageInput(input: string) {
@@ -1894,15 +1936,17 @@ export function AppSidebar({
         npmPackageJsonPath={npmPackageJsonPath}
         npmPackageRoot={npmPackageRoot}
         npmPackages={npmPackages}
+        npmPackagesApplying={npmPackagesApplying}
         npmPackagesError={npmPackagesError}
-        npmPackagesInstalling={npmPackagesInstalling}
         npmPackagesLoading={npmPackagesLoading}
+        npmPackagesToDelete={npmPackagesToDelete}
         npmPackageTarget={npmPackageTarget}
         onClose={closeUserSettings}
-        onInstallNpmPackages={installNpmPackages}
+        onApplyNpmPackageChanges={applyNpmPackageChanges}
+        onClearNpmPackageDelete={() => setNpmPackagesToDelete([])}
         onModelProviderSearchChange={setModelProviderSearch}
         onNpmPackageInputChange={setNpmPackageInput}
-        onNpmPackageTargetChange={setNpmPackageTarget}
+        onNpmPackageTargetChange={changeNpmPackageTarget}
         onOpenChange={(settingsOpen) => {
           if (!settingsOpen) closeUserSettings();
         }}
@@ -1921,6 +1965,7 @@ export function AppSidebar({
           setSelectedModelProviderId(null);
         }}
         onRefreshNpmPackages={loadNpmPackages}
+        onToggleNpmPackageDelete={toggleNpmPackageDelete}
         onSectionChange={(nextSection) => {
           setUserSettingsSection(nextSection);
           setSelectedModelProviderId(null);

@@ -21,6 +21,12 @@ export type NpmPackageInstallResponse = NpmPackageListResponse & {
   stdout: string;
 };
 
+export type NpmPackageUninstallResponse = NpmPackageListResponse & {
+  stderr: string;
+  stdout: string;
+  uninstalled: string[];
+};
+
 export function listOpenCodeNpmPackages(
   scope: NpmPackageScope,
   project?: string,
@@ -37,6 +43,17 @@ export function installOpenCodeNpmPackages(
   config?: ApiRequestConfig,
 ) {
   return apiRequest<NpmPackageInstallResponse>("/bff/opencode-npm-packages/install", {
+    ...config,
+    body,
+    method: "POST",
+  });
+}
+
+export function uninstallOpenCodeNpmPackages(
+  body: { packages: string[]; project?: string; scope: NpmPackageScope },
+  config?: ApiRequestConfig,
+) {
+  return apiRequest<NpmPackageUninstallResponse>("/bff/opencode-npm-packages/uninstall", {
     ...config,
     body,
     method: "POST",

@@ -11,6 +11,7 @@ import {
   ServerIcon,
   SettingsIcon,
   TerminalIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -23,6 +24,7 @@ import {
   InputGroupInput,
 } from "@/shared/components/ui/input-group";
 import { ModalShell } from "@/shared/components/layout/ModalShell";
+import { cn } from "@/shared/utils/cn";
 
 export type UserSettingsSection =
   | "model-providers"
@@ -59,12 +61,14 @@ type UserSettingsModalProps = {
   npmPackageJsonPath?: string;
   npmPackageRoot?: string;
   npmPackages: NpmPackageEntry[];
+  npmPackagesApplying?: boolean;
   npmPackagesError?: string | null;
-  npmPackagesInstalling?: boolean;
   npmPackagesLoading?: boolean;
+  npmPackagesToDelete: string[];
   npmPackageTarget: NpmPackageScope;
   onClose: () => void;
-  onInstallNpmPackages: () => Promise<void> | void;
+  onApplyNpmPackageChanges: () => Promise<void> | void;
+  onClearNpmPackageDelete: () => void;
   onModelProviderSearchChange: (value: string) => void;
   onNpmPackageInputChange: (value: string) => void;
   onNpmPackageTargetChange: (target: NpmPackageScope) => void;
@@ -75,6 +79,7 @@ type UserSettingsModalProps = {
   onProviderViewBack: () => void;
   onRefreshNpmPackages: () => Promise<void> | void;
   onSectionChange: (section: UserSettingsSection) => void;
+  onToggleNpmPackageDelete: (packageName: string) => void;
   open: boolean;
   section: UserSettingsSection;
   selectedAuthMethod: string | null;
@@ -89,12 +94,14 @@ export function UserSettingsModal({
   npmPackageJsonPath,
   npmPackageRoot,
   npmPackages,
+  npmPackagesApplying = false,
   npmPackagesError,
-  npmPackagesInstalling = false,
   npmPackagesLoading = false,
+  npmPackagesToDelete,
   npmPackageTarget,
   onClose,
-  onInstallNpmPackages,
+  onApplyNpmPackageChanges,
+  onClearNpmPackageDelete,
   onModelProviderSearchChange,
   onNpmPackageInputChange,
   onNpmPackageTargetChange,
@@ -105,6 +112,7 @@ export function UserSettingsModal({
   onProviderViewBack,
   onRefreshNpmPackages,
   onSectionChange,
+  onToggleNpmPackageDelete,
   open,
   section,
   selectedAuthMethod,
@@ -152,15 +160,18 @@ export function UserSettingsModal({
           ) : section === "npm-packages" ? (
             <NpmPackagesPanel
               activeProjectName={activeProjectName}
+              applying={npmPackagesApplying}
               input={npmPackageInput}
-              installing={npmPackagesInstalling}
               loading={npmPackagesLoading}
+              onApplyChanges={onApplyNpmPackageChanges}
+              onClearDeleteSelection={onClearNpmPackageDelete}
               onInputChange={onNpmPackageInputChange}
-              onInstall={onInstallNpmPackages}
               onRefresh={onRefreshNpmPackages}
               onTargetChange={onNpmPackageTargetChange}
+              onToggleDeletePackage={onToggleNpmPackageDelete}
               packageJsonPath={npmPackageJsonPath}
               packages={npmPackages}
+              packagesToDelete={npmPackagesToDelete}
               root={npmPackageRoot}
               error={npmPackagesError}
               target={npmPackageTarget}
@@ -623,34 +634,43 @@ function getAuthMethodDetail(method: string) {
 
 function NpmPackagesPanel({
   activeProjectName,
+  applying,
   error,
   input,
-  installing,
   loading,
+  onApplyChanges,
+  onClearDeleteSelection,
   onInputChange,
-  onInstall,
   onRefresh,
   onTargetChange,
+  onToggleDeletePackage,
   packageJsonPath,
   packages,
+  packagesToDelete,
   root,
   target,
 }: {
   activeProjectName?: string;
+  applying: boolean;
   error?: string | null;
   input: string;
-  installing: boolean;
   loading: boolean;
+  onApplyChanges: () => Promise<void> | void;
+  onClearDeleteSelection: () => void;
   onInputChange: (value: string) => void;
-  onInstall: () => Promise<void> | void;
   onRefresh: () => Promise<void> | void;
   onTargetChange: (target: NpmPackageScope) => void;
+  onToggleDeletePackage: (packageName: string) => void;
   packageJsonPath?: string;
   packages: NpmPackageEntry[];
+  packagesToDelete: string[];
   root?: string;
   target: NpmPackageScope;
 }) {
   const projectTargetUnavailable = target === "project" && !activeProjectName;
+  const pendingInstallCount = new Set(input.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)).size;
+  const pendingDeleteCount = packagesToDelete.length;
+  const hasPendingChanges = pendingInstallCount > 0 || pendingDeleteCount > 0;
 
   return (
     <div className="mx-auto grid max-w-[680px] gap-6">
@@ -665,13 +685,13 @@ function NpmPackagesPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h4 className="font-semibold text-sm" id="npm-package-install-title">
-              安裝套件
+              批次套件變更
             </h4>
             <p className="mt-0.5 text-muted-foreground text-xs">
               支援 registry package，例如 zod、lodash@latest、@scope/pkg@1.2.3。
             </p>
           </div>
-          <Button disabled={loading || installing} onClick={() => void onRefresh()} size="sm" variant="outline">
+          <Button disabled={loading || applying} onClick={() => void onRefresh()} size="sm" variant="outline">
             重新整理
           </Button>
         </div>
@@ -692,7 +712,7 @@ function NpmPackagesPanel({
             套件名稱
             <InputGroup>
               <InputGroupInput
-                disabled={installing}
+                disabled={applying}
                 onChange={(event) => onInputChange(event.target.value)}
                 placeholder="zod lodash@latest @scope/pkg"
                 value={input}
@@ -700,16 +720,29 @@ function NpmPackagesPanel({
             </InputGroup>
           </label>
           <Button
-            disabled={installing || projectTargetUnavailable || !input.trim()}
-            onClick={() => void onInstall()}
+            disabled={loading || applying || projectTargetUnavailable || !hasPendingChanges}
+            loading={applying}
+            onClick={() => void onApplyChanges()}
           >
-            {installing ? "安裝中..." : "安裝"}
+            {applying ? "套用中..." : "套用變更並重啟"}
           </Button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Badge size="sm" variant={pendingInstallCount > 0 ? "secondary" : "outline"}>
+            新增 {pendingInstallCount}
+          </Badge>
+          <Badge size="sm" variant={pendingDeleteCount > 0 ? "secondary" : "outline"}>
+            刪除 {pendingDeleteCount}
+          </Badge>
+          <span className="text-muted-foreground">
+            新增與刪除會一起套用，完成後只重啟 OpenCode 一次。
+          </span>
         </div>
 
         {projectTargetUnavailable && (
           <p className="rounded-lg border border-dashed bg-background px-3 py-2 text-muted-foreground text-xs">
-            請先開啟一個 project，才能安裝到當前 Project。
+            請先開啟一個 project，才能修改當前 Project。
           </p>
         )}
 
@@ -730,13 +763,20 @@ function NpmPackagesPanel({
               {target === "global" ? "Global" : activeProjectName ? `Project: ${activeProjectName}` : "Project"}
             </p>
           </div>
-          <Badge size="sm" variant="secondary">
-            {packages.length}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {pendingDeleteCount > 0 && (
+              <Button disabled={applying} onClick={onClearDeleteSelection} size="xs" variant="ghost">
+                清除刪除選取
+              </Button>
+            )}
+            <Badge size="sm" variant="secondary">
+              {packages.length}
+            </Badge>
+          </div>
         </div>
 
         {(root || packageJsonPath) && (
-          <div className="grid gap-1 rounded-lg border bg-background px-3 py-2 text-xs">
+          <div className="grid gap-1 rounded-2xl border border-border/70 bg-gradient-to-r from-muted/60 to-background px-4 py-3 text-xs shadow-sm">
             {root && <p className="break-all text-muted-foreground">root: <span className="font-mono text-foreground">{root}</span></p>}
             {packageJsonPath && <p className="break-all text-muted-foreground">package.json: <span className="font-mono text-foreground">{packageJsonPath}</span></p>}
           </div>
@@ -751,15 +791,53 @@ function NpmPackagesPanel({
             目前沒有 dependencies。
           </p>
         ) : (
-          <ul className="grid gap-1.5">
-            {packages.map((item) => (
-              <li className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2" key={item.name}>
-                <span className="min-w-0 truncate font-mono text-sm">{item.name}</span>
-                <Badge size="sm" variant="outline">
-                  {item.version}
-                </Badge>
-              </li>
-            ))}
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {packages.map((item) => {
+              const selectedForDelete = packagesToDelete.includes(item.name);
+
+              return (
+                <li
+                  className={cn(
+                    "group relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-background via-background to-muted/55 p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md",
+                    selectedForDelete && "border-destructive/50 from-destructive/6 to-destructive/10",
+                  )}
+                  key={item.name}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/10 font-semibold text-primary text-xs">
+                      npm
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="break-all font-mono font-semibold text-sm leading-5">
+                        {item.name}
+                      </p>
+                      <p className="mt-1 text-muted-foreground text-xs">
+                        {target === "global" ? "Global dependency" : "Project dependency"}
+                      </p>
+                    </div>
+                    <Button
+                      aria-pressed={selectedForDelete}
+                      className={selectedForDelete ? undefined : "text-destructive hover:text-destructive"}
+                      disabled={applying}
+                      onClick={() => onToggleDeletePackage(item.name)}
+                      size="xs"
+                      variant={selectedForDelete ? "destructive" : "destructive-outline"}
+                    >
+                      <Trash2Icon aria-hidden="true" className="size-4" />
+                      {selectedForDelete ? "已選" : "刪除"}
+                    </Button>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <Badge size="sm" variant="outline">
+                      {item.version}
+                    </Badge>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-[11px] uppercase tracking-wide">
+                      package.json
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
