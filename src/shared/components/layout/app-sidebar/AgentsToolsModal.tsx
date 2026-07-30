@@ -924,7 +924,7 @@ function ToolConfigPanel({
             value={toolForm.description}
           />
         </label>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-2 text-muted-foreground text-sm">
             建立位置
             <select
@@ -965,27 +965,6 @@ function ToolConfigPanel({
             >
               <option value="js-ts">JS / TS</option>
             </select>
-          </label>
-          <label className="grid gap-2 text-muted-foreground text-sm">
-            背景服務檔案
-            <Input
-              aria-label="Tool background service file"
-              onChange={(event) => {
-                onToolTestResultChange(null);
-                onToolFormChange((current) => ({
-                  ...current,
-                  entry: event.target.value,
-                }));
-              }}
-              placeholder={
-                getToolFormEntryPath("my-tool", toolForm.installTarget)
-              }
-              readOnly
-              value={toolForm.entry}
-            />
-            <span className="text-muted-foreground text-xs">
-              這個檔案由背景服務自動管理；Tool Call 會載入此檔案匯出的 tool definition。
-            </span>
           </label>
         </div>
         <label className="grid gap-2 text-muted-foreground text-sm">
