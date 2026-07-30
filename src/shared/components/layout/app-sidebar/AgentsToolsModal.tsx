@@ -967,9 +967,9 @@ function ToolConfigPanel({
             </select>
           </label>
           <label className="grid gap-2 text-muted-foreground text-sm">
-            Entry file
+            背景服務檔案
             <Input
-              aria-label="Tool entry file"
+              aria-label="Tool background service file"
               onChange={(event) => {
                 onToolTestResultChange(null);
                 onToolFormChange((current) => ({
@@ -980,8 +980,12 @@ function ToolConfigPanel({
               placeholder={
                 getToolFormEntryPath("my-tool", toolForm.installTarget)
               }
+              readOnly
               value={toolForm.entry}
             />
+            <span className="text-muted-foreground text-xs">
+              這個檔案由背景服務自動管理；Tool Call 會載入此檔案匯出的 tool definition。
+            </span>
           </label>
         </div>
         <label className="grid gap-2 text-muted-foreground text-sm">
@@ -1014,7 +1018,7 @@ function ToolConfigPanel({
                 Tool Call Test
               </h4>
               <p className="mt-0.5 text-muted-foreground text-xs">
-                保存前先檢查 tool call 的基本設定，避免執行時才失敗。
+                保存前會在 backend 背景服務執行 tool definition，驗證 args 並呼叫 execute。
               </p>
             </div>
             <Button

@@ -1808,6 +1808,14 @@ export function AppSidebar({
       return;
     }
 
+    if (toolForm.installTarget === "project" && !activeProjectName) {
+      setToolTestResult({
+        status: "error",
+        message: "請先開啟有效 project，才能測試 project-local tool 背景服務。",
+      });
+      return;
+    }
+
     try {
       JSON.parse(toolForm.testInput || "{}");
     } catch {
@@ -1835,13 +1843,21 @@ export function AppSidebar({
       const result = await testToolScript({
         code: toolForm.code,
         entry: toolForm.entry,
+        project: toolForm.installTarget === "project" ? activeProjectName : undefined,
         runtime: "js-ts",
+        scope: toolForm.installTarget,
         testInput: toolForm.testInput || "{}",
       });
+      const details = [
+        ...(result.diagnostics?.length ? result.diagnostics : []),
+        result.output ? `Output:\n${result.output}` : "",
+        result.stdout ? `stdout:\n${result.stdout}` : "",
+        result.stderr ? `stderr:\n${result.stderr}` : "",
+      ].filter(Boolean);
       setToolTestResult({
         status: result.status,
-        message: result.diagnostics?.length
-          ? `${result.message}\n${result.diagnostics.join("\n")}`
+        message: details.length
+          ? `${result.message}\n${details.join("\n")}`
           : result.message,
       });
     } catch (error) {

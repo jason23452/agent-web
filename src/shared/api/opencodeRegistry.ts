@@ -47,14 +47,19 @@ export type OpenCodeRegistryUpsertBody = {
 export type ToolScriptTestResponse = {
   diagnostics?: string[];
   message: string;
+  output?: string;
   runtime: "js-ts";
+  stderr?: string;
   status: "success" | "error";
+  stdout?: string;
 };
 
 export type ToolScriptTestBody = {
   code: string;
   entry?: string;
+  project?: string;
   runtime: "js-ts";
+  scope?: OpenCodeRegistryScope;
   testInput?: string;
 };
 

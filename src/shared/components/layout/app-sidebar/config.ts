@@ -525,6 +525,21 @@ export const emptyToolForm: ToolForm = {
   installTarget: "project",
   runtime: "js-ts",
   entry: "./.opencode/tools/my-tool.ts",
-  code: "",
+  code: `import { tool } from "@opencode-ai/plugin";
+
+export default tool({
+  description: "Echo the provided input.",
+  args: {
+    input: tool.schema.string().describe("Text to echo"),
+  },
+  async execute(args, context) {
+    context.metadata({ title: "Echo tool" });
+    return {
+      title: "Echo result",
+      output: \`Echo: \${args.input}\`,
+    };
+  },
+});
+`,
   testInput: '{"input":"hello"}',
 };
