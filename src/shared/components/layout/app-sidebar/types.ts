@@ -167,7 +167,7 @@ export type ToolDefinition = {
   inherited?: boolean;
   registryPath?: string;
   registryType?: "file" | "directory";
-  runtime?: "python" | "js-ts";
+  runtime?: "js-ts";
   entry?: string;
   code?: string;
   testInput?: string;

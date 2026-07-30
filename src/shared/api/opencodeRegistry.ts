@@ -44,6 +44,20 @@ export type OpenCodeRegistryUpsertBody = {
   wait?: boolean;
 };
 
+export type ToolScriptTestResponse = {
+  diagnostics?: string[];
+  message: string;
+  runtime: "js-ts";
+  status: "success" | "error";
+};
+
+export type ToolScriptTestBody = {
+  code: string;
+  entry?: string;
+  runtime: "js-ts";
+  testInput?: string;
+};
+
 export function listEffectiveProjectTools(
   project: string,
   config?: ApiRequestConfig,
@@ -84,5 +98,13 @@ export function upsertToolRegistryEntry(
     body,
     method: "PUT",
     query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function testToolScript(body: ToolScriptTestBody, config?: ApiRequestConfig) {
+  return apiRequest<ToolScriptTestResponse>("/bff/opencode-registry/tools/test", {
+    ...config,
+    body,
+    method: "POST",
   });
 }

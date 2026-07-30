@@ -75,7 +75,7 @@ type AgentsToolsModalProps = {
   onOpenEditToolMode: (tool: ToolDefinition) => void;
   onOpenToolDetail: (tool: ToolDefinition) => void;
   onRemoveFormSubagent: (subagentId: string) => void;
-  onRunToolCallTest: () => void;
+  onRunToolCallTest: () => Promise<void> | void;
   onSkillToAddChange: (value: string) => void;
   onSubagentToAddChange: (value: string) => void;
   onSubmitAgentConfig: () => void;
@@ -185,7 +185,7 @@ export function AgentsToolsModal({
               ? "正在讀取 OpenCode tools"
             : `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}`
           : view === "tool-config"
-            ? "Python / JS / TS custom tool"
+            ? "JS / TS custom tool"
             : view === "tool-detail"
               ? "OpenCode tool 說明"
             : "介面配置 / 文字配置 YAML"
@@ -366,18 +366,17 @@ function getToolTargetLabel(target?: ToolDefinition["installTarget"]) {
 
 function getToolFormEntryPath(
   name: string,
-  runtime: ToolDefinition["runtime"] = "js-ts",
   installTarget: NonNullable<ToolDefinition["installTarget"]> = "project",
 ) {
   const safeName = name.trim().replace(/\s+/g, "_") || "my-tool";
-  const relativePath = runtime === "python" ? `${safeName}/${safeName}.py` : `${safeName}.ts`;
+  const relativePath = `${safeName}.ts`;
   const prefix = installTarget === "global" ? "~/.config/opencode/tools" : "./.opencode/tools";
 
   return `${prefix}/${relativePath}`;
 }
 
 function isDefaultToolEntry(form: ToolForm) {
-  return !form.entry || form.entry === getToolFormEntryPath(form.name, form.runtime, form.installTarget);
+  return !form.entry || form.entry === getToolFormEntryPath(form.name, form.installTarget);
 }
 
 function AgentsToolsList({
@@ -719,7 +718,7 @@ function ToolListItem({
           )}
           {tool.runtime && (
             <Badge size="sm" variant="info">
-              {tool.runtime === "python" ? "Python" : "JS/TS"}
+              JS/TS
             </Badge>
           )}
         </div>
@@ -772,7 +771,7 @@ function ToolDetailPanel({
           </Badge>
           {tool.runtime && (
             <Badge size="sm" variant="info">
-              {tool.runtime === "python" ? "Python" : "JS/TS"}
+              JS/TS
             </Badge>
           )}
         </div>
@@ -799,7 +798,7 @@ function ToolDetailPanel({
           {tool.runtime && (
             <ToolMetadataItem
               label="Runtime"
-              value={tool.runtime === "python" ? "Python" : "JS/TS"}
+              value="JS/TS"
             />
           )}
           {tool.entry && <ToolMetadataItem label="Entry" value={tool.entry} />}
@@ -864,7 +863,7 @@ function ToolConfigPanel({
   toolForm,
   toolTestResult,
 }: {
-  onRunToolCallTest: () => void;
+  onRunToolCallTest: () => Promise<void> | void;
   onSubmitToolConfig: () => void;
   onToolFormChange: Dispatch<SetStateAction<ToolForm>>;
   onToolTestResultChange: Dispatch<SetStateAction<InstallResult | null>>;
@@ -887,7 +886,7 @@ function ToolConfigPanel({
                   ...current,
                   name: nextName,
                   entry: isDefaultToolEntry(current)
-                    ? getToolFormEntryPath(nextName, current.runtime, current.installTarget)
+                    ? getToolFormEntryPath(nextName, current.installTarget)
                     : current.entry,
                 }));
               }}
@@ -937,7 +936,7 @@ function ToolConfigPanel({
                   ...current,
                   installTarget,
                   entry: isDefaultToolEntry(current)
-                    ? getToolFormEntryPath(current.name, current.runtime, installTarget)
+                    ? getToolFormEntryPath(current.name, installTarget)
                     : current.entry,
                 }));
               }}
@@ -958,14 +957,13 @@ function ToolConfigPanel({
                   ...current,
                   runtime,
                   entry: isDefaultToolEntry(current)
-                    ? getToolFormEntryPath(current.name, runtime, current.installTarget)
+                    ? getToolFormEntryPath(current.name, current.installTarget)
                     : current.entry,
                 }));
               }}
               value={toolForm.runtime}
             >
               <option value="js-ts">JS / TS</option>
-              <option value="python">Python</option>
             </select>
           </label>
           <label className="grid gap-2 text-muted-foreground text-sm">
@@ -980,9 +978,7 @@ function ToolConfigPanel({
                 }));
               }}
               placeholder={
-                toolForm.runtime === "python"
-                  ? getToolFormEntryPath("my-tool", "python", toolForm.installTarget)
-                  : getToolFormEntryPath("my-tool", "js-ts", toolForm.installTarget)
+                getToolFormEntryPath("my-tool", toolForm.installTarget)
               }
               value={toolForm.entry}
             />
@@ -1001,9 +997,7 @@ function ToolConfigPanel({
               }));
             }}
             placeholder={
-              toolForm.runtime === "python"
-                ? "# Python tool implementation"
-                : "// JS/TS tool implementation"
+              "// JS/TS tool implementation"
             }
             rows={10}
             spellCheck={false}
@@ -1024,7 +1018,7 @@ function ToolConfigPanel({
               </p>
             </div>
             <Button
-              onClick={onRunToolCallTest}
+              onClick={() => void onRunToolCallTest()}
               size="sm"
               type="button"
               variant="outline"
@@ -1052,7 +1046,7 @@ function ToolConfigPanel({
           </label>
           {toolTestResult && (
             <div
-              className={`rounded-md border px-3 py-2 text-xs ${toolTestResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
+              className={`whitespace-pre-line rounded-md border px-3 py-2 text-xs ${toolTestResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
             >
               {toolTestResult.message}
             </div>
@@ -1066,7 +1060,7 @@ function ToolConfigPanel({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-xs">
-          Runtime 目前支援 Python 與 JS/TS；請先通過 Tool Call Test 再保存。
+          Runtime 目前只支援 JS/TS；請先通過 Tool Call Test 再保存。
         </p>
         <Button
           disabled={!toolForm.name.trim() || toolTestResult?.status !== "success"}

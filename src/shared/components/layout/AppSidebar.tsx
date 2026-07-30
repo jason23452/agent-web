@@ -6,6 +6,7 @@ import {
 import {
   listEffectiveProjectTools,
   readToolRegistryEntry,
+  testToolScript,
   upsertToolRegistryEntry,
   type OpenCodeRegistryEntry,
 } from "@/shared/api/opencodeRegistry";
@@ -20,7 +21,7 @@ import { AppSidebarPanel } from "@/shared/components/layout/app-sidebar/AppSideb
 import { McpServersDialog } from "@/shared/components/layout/app-sidebar/McpServersDialog";
 import { PluginSkillModal } from "@/shared/components/layout/app-sidebar/PluginSkillModal";
 import { ProjectDialog } from "@/shared/components/layout/app-sidebar/ProjectDialog";
-import { getApiErrorMessage } from "@/shared/api";
+import { ApiError, getApiErrorMessage } from "@/shared/api";
 import { toastManager } from "@/shared/components/ui/toast";
 import {
   availableSkills,
@@ -224,26 +225,18 @@ function toToolDefinition(
     inherited: registryEntry?.inherited,
     registryPath: registryEntry?.path,
     registryType: registryEntry?.type,
-    runtime: inferToolRuntime(registryEntry),
-    entry: getToolEntryPath(toolId, inferToolRuntime(registryEntry), registryEntry?.scope ?? "project", registryEntry),
+    runtime: "js-ts",
+    entry: getToolEntryPath(toolId, registryEntry?.scope ?? "project", registryEntry),
   };
-}
-
-function inferToolRuntime(registryEntry?: OpenCodeRegistryEntry): ToolDefinition["runtime"] {
-  if (!registryEntry) return "js-ts";
-  const normalizedPath = registryEntry.path.replace(/\\/g, "/");
-  if (normalizedPath.endsWith(".py")) return "python";
-  return "js-ts";
 }
 
 function getToolEntryPath(
   name: string,
-  runtime: ToolDefinition["runtime"] = "js-ts",
   installTarget: NonNullable<ToolDefinition["installTarget"]> = "project",
   registryEntry?: OpenCodeRegistryEntry,
 ) {
   const relativePath = registryEntry ? getRegistryToolRelativePath(name, registryEntry) : undefined;
-  const defaultRelativePath = runtime === "python" ? `${name}/${name}.py` : `${name}.ts`;
+  const defaultRelativePath = `${name}.ts`;
   const path = relativePath || defaultRelativePath;
   const prefix = installTarget === "global" ? "~/.config/opencode/tools" : "./.opencode/tools";
 
@@ -266,7 +259,6 @@ function getProjectNameFromPath(path: string) {
 
 function getRegistryFilenameFromEntry(
   name: string,
-  runtime: ToolDefinition["runtime"] = "js-ts",
   entry: string,
 ) {
   const normalizedEntry = entry.replace(/\\/g, "/").trim();
@@ -276,7 +268,7 @@ function getRegistryFilenameFromEntry(
     ? normalizedEntry.replace(/^\.\/\.opencode\/tools\//, "").replace(/^~\/\.config\/opencode\/tools\//, "")
     : normalizedEntry.slice(markerIndex + marker.length);
 
-  if (!relativePath || (runtime === "js-ts" && relativePath === `${name}.ts`)) {
+  if (!relativePath || relativePath === `${name}.ts`) {
     return undefined;
   }
 
@@ -1204,7 +1196,6 @@ export function AppSidebar({
         tool.entry ??
         getToolEntryPath(
           tool.name,
-          tool.runtime ?? "js-ts",
           tool.installTarget ?? "project",
         ),
       code: tool.code ?? "",
@@ -1237,7 +1228,7 @@ export function AppSidebar({
               code: content,
               entry:
                 response.file
-                  ? getToolEntryPath(tool.name, current.runtime, current.installTarget, {
+                  ? getToolEntryPath(tool.name, current.installTarget, {
                       kind: "tools",
                       name: tool.name,
                       path: `${response.root.replace(/\\/g, "/")}/${response.file}`,
@@ -1249,6 +1240,8 @@ export function AppSidebar({
           : current,
       );
     } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return;
+
       setToolTestResult({
         status: "error",
         message: `讀取 tool 內容失敗：${getApiErrorMessage(error)}`,
@@ -1465,8 +1458,8 @@ export function AppSidebar({
     const installTarget = toolForm.installTarget;
     const entry =
       toolForm.entry.trim() ||
-      getToolEntryPath(name, toolForm.runtime, installTarget);
-    const filename = getRegistryFilenameFromEntry(name, toolForm.runtime, entry);
+      getToolEntryPath(name, installTarget);
+    const filename = getRegistryFilenameFromEntry(name, entry);
 
     const nextTool: ToolDefinition = {
       id: editingToolId ?? name,
@@ -1549,7 +1542,7 @@ export function AppSidebar({
     setBatchUpdateNotice("");
   }
 
-  function runToolCallTest() {
+  async function runToolCallTest() {
     if (!toolForm.name.trim()) {
       setToolTestResult({ status: "error", message: "Tool 名稱必填。" });
       return;
@@ -1566,7 +1559,7 @@ export function AppSidebar({
     if (!toolForm.code.trim()) {
       setToolTestResult({
         status: "error",
-        message: "Tool code 不能為空，請先填入 Python 或 JS/TS 實作。",
+        message: "Tool code 不能為空，請先填入 JS/TS 實作。",
       });
       return;
     }
@@ -1581,26 +1574,38 @@ export function AppSidebar({
       return;
     }
 
-    const expectedExtension =
-      toolForm.runtime === "python" ? ".py" : ".ts 或 .js";
-    const extensionValid =
-      toolForm.runtime === "python"
-        ? toolForm.entry.endsWith(".py")
-        : toolForm.entry.endsWith(".ts") || toolForm.entry.endsWith(".js");
+    const expectedExtension = ".ts 或 .js";
+    const extensionValid = toolForm.entry.endsWith(".ts") || toolForm.entry.endsWith(".js");
 
     if (!extensionValid) {
       setToolTestResult({
         status: "error",
-        message: `${toolForm.runtime === "python" ? "Python" : "JS/TS"} tool 的 entry 建議使用 ${expectedExtension}。`,
+        message: `JS/TS tool 的 entry 必須使用 ${expectedExtension}。`,
       });
       return;
     }
 
-    setToolTestResult({
-      status: "success",
-      message:
-        "Tool call test passed：基本設定、entry 副檔名、code 與 JSON 測試參數都有效。",
-    });
+    setToolTestResult(null);
+
+    try {
+      const result = await testToolScript({
+        code: toolForm.code,
+        entry: toolForm.entry,
+        runtime: "js-ts",
+        testInput: toolForm.testInput || "{}",
+      });
+      setToolTestResult({
+        status: result.status,
+        message: result.diagnostics?.length
+          ? `${result.message}\n${result.diagnostics.join("\n")}`
+          : result.message,
+      });
+    } catch (error) {
+      setToolTestResult({
+        status: "error",
+        message: `Tool Call Test 失敗：${getApiErrorMessage(error)}`,
+      });
+    }
   }
 
   function updateAgentConfig(
