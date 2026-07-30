@@ -73,6 +73,7 @@ type AgentsToolsModalProps = {
   onOpenAgentDetail: (agent: AgentDefinition) => void;
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
+  onOpenToolDetail: (tool: ToolDefinition) => void;
   onRemoveFormSubagent: (subagentId: string) => void;
   onRunToolCallTest: () => void;
   onSkillToAddChange: (value: string) => void;
@@ -87,6 +88,7 @@ type AgentsToolsModalProps = {
   onUpdateToolGuidance: (tool: string, value: string) => void;
   open: boolean;
   selectedAgent: AgentDefinition | null;
+  selectedTool: ToolDefinition | null;
   skillToAdd: string;
   subagentToAdd: string;
   toolDefinitions: ToolDefinition[];
@@ -135,6 +137,7 @@ export function AgentsToolsModal({
   onOpenAgentDetail,
   onOpenEditAgentMode,
   onOpenEditToolMode,
+  onOpenToolDetail,
   onRemoveFormSubagent,
   onRunToolCallTest,
   onSkillToAddChange,
@@ -149,6 +152,7 @@ export function AgentsToolsModal({
   onUpdateToolGuidance,
   open,
   selectedAgent,
+  selectedTool,
   skillToAdd,
   subagentToAdd,
   toolDefinitions,
@@ -182,6 +186,8 @@ export function AgentsToolsModal({
             : `Total ${agentToolTab === "agents" ? agents.length : toolDefinitions.length}`
           : view === "tool-config"
             ? "Python / JS / TS custom tool"
+            : view === "tool-detail"
+              ? "OpenCode tool 說明"
             : "介面配置 / 文字配置 YAML"
       }
       footer={
@@ -229,9 +235,11 @@ export function AgentsToolsModal({
               ? toolEditMode === "add"
                 ? "新增 Tool"
                 : "編輯 Tool"
-              : agentEditMode === "add"
-                ? "新增 Agent"
-                : "編輯 Agent"
+              : view === "tool-detail"
+                ? "工具說明"
+                : agentEditMode === "add"
+                  ? "新增 Agent"
+                  : "編輯 Agent"
       }
     >
       {view === "list" && (
@@ -246,6 +254,7 @@ export function AgentsToolsModal({
           onOpenAgentDetail={onOpenAgentDetail}
           onOpenEditAgentMode={onOpenEditAgentMode}
           onOpenEditToolMode={onOpenEditToolMode}
+          onOpenToolDetail={onOpenToolDetail}
           toolDefinitions={toolDefinitions}
           toolsError={toolsError}
           toolsLoading={toolsLoading}
@@ -261,6 +270,13 @@ export function AgentsToolsModal({
           toolEditMode={toolEditMode}
           toolForm={toolForm}
           toolTestResult={toolTestResult}
+        />
+      )}
+
+      {view === "tool-detail" && selectedTool && (
+        <ToolDetailPanel
+          onOpenEditToolMode={onOpenEditToolMode}
+          tool={selectedTool}
         />
       )}
 
@@ -353,6 +369,7 @@ function AgentsToolsList({
   onOpenAgentDetail,
   onOpenEditAgentMode,
   onOpenEditToolMode,
+  onOpenToolDetail,
   toolDefinitions,
   toolsError,
   toolsLoading = false,
@@ -367,6 +384,7 @@ function AgentsToolsList({
   onOpenAgentDetail: (agent: AgentDefinition) => void;
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
+  onOpenToolDetail: (tool: ToolDefinition) => void;
   toolDefinitions: ToolDefinition[];
   toolsError?: string | null;
   toolsLoading?: boolean;
@@ -586,6 +604,7 @@ function AgentsToolsList({
                       <ToolListItem
                         onDeleteTool={onDeleteTool}
                         onOpenEditToolMode={onOpenEditToolMode}
+                        onOpenToolDetail={onOpenToolDetail}
                         tool={tool}
                       />
                     </li>
@@ -611,6 +630,7 @@ function AgentsToolsList({
                       <ToolListItem
                         onDeleteTool={onDeleteTool}
                         onOpenEditToolMode={onOpenEditToolMode}
+                        onOpenToolDetail={onOpenToolDetail}
                         tool={tool}
                       />
                     </li>
@@ -633,10 +653,12 @@ function AgentsToolsList({
 function ToolListItem({
   onDeleteTool,
   onOpenEditToolMode,
+  onOpenToolDetail,
   tool,
 }: {
   onDeleteTool: (tool: ToolDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
+  onOpenToolDetail: (tool: ToolDefinition) => void;
   tool: ToolDefinition;
 }) {
   return (
@@ -668,7 +690,7 @@ function ToolListItem({
           <MoreHorizontalIcon aria-hidden="true" className="size-4" />
         </MenuTrigger>
         <MenuPopup align="end" className="min-w-36">
-          <MenuItem>查看工具說明</MenuItem>
+          <MenuItem onClick={() => onOpenToolDetail(tool)}>查看工具說明</MenuItem>
           {tool.source === "custom" && (
             <MenuItem onClick={() => onOpenEditToolMode(tool)}>編輯</MenuItem>
           )}
@@ -681,6 +703,103 @@ function ToolListItem({
           )}
         </MenuPopup>
       </Menu>
+    </div>
+  );
+}
+
+function ToolDetailPanel({
+  onOpenEditToolMode,
+  tool,
+}: {
+  onOpenEditToolMode: (tool: ToolDefinition) => void;
+  tool: ToolDefinition;
+}) {
+  return (
+    <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
+      <div className="rounded-lg bg-muted/55 p-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="truncate font-semibold text-base">{tool.name}</h3>
+          <Badge size="sm" variant="outline">
+            {tool.category}
+          </Badge>
+          <Badge
+            size="sm"
+            variant={tool.source === "custom" ? "success" : "secondary"}
+          >
+            {getToolSourceLabel(tool.source)}
+          </Badge>
+          {tool.runtime && (
+            <Badge size="sm" variant="info">
+              {tool.runtime === "python" ? "Python" : "JS/TS"}
+            </Badge>
+          )}
+        </div>
+        <p className="mt-2 text-muted-foreground text-sm leading-6">
+          {tool.description}
+        </p>
+      </div>
+
+      <section className="grid gap-2" aria-labelledby="tool-metadata-title">
+        <h4 className="font-semibold text-sm" id="tool-metadata-title">
+          基本資訊
+        </h4>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          <ToolMetadataItem label="Tool ID" value={tool.id} />
+          <ToolMetadataItem label="名稱" value={tool.name} />
+          <ToolMetadataItem label="分類" value={tool.category} />
+          <ToolMetadataItem label="來源" value={getToolSourceLabel(tool.source)} />
+          {tool.runtime && (
+            <ToolMetadataItem
+              label="Runtime"
+              value={tool.runtime === "python" ? "Python" : "JS/TS"}
+            />
+          )}
+          {tool.entry && <ToolMetadataItem label="Entry" value={tool.entry} />}
+        </div>
+      </section>
+
+      {tool.testInput && (
+        <section className="grid gap-2" aria-labelledby="tool-test-input-title">
+          <h4 className="font-semibold text-sm" id="tool-test-input-title">
+            Test input
+          </h4>
+          <pre className="max-h-36 overflow-auto rounded-lg border bg-muted/45 p-3 font-mono text-muted-foreground text-xs leading-5">
+            {tool.testInput}
+          </pre>
+        </section>
+      )}
+
+      {tool.code && (
+        <section className="grid gap-2" aria-labelledby="tool-code-title">
+          <h4 className="font-semibold text-sm" id="tool-code-title">
+            Code preview
+          </h4>
+          <pre className="max-h-48 overflow-auto rounded-lg border bg-muted/45 p-3 font-mono text-muted-foreground text-xs leading-5">
+            {tool.code}
+          </pre>
+        </section>
+      )}
+
+      <div className="flex justify-end">
+        {tool.source === "custom" ? (
+          <Button onClick={() => onOpenEditToolMode(tool)} size="sm">
+            編輯 Tool
+          </Button>
+        ) : (
+          <p className="text-muted-foreground text-xs">
+            系統預設工具僅可查看；只有自訂工具可以編輯。
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ToolMetadataItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 rounded-md border bg-background px-3 py-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="break-all font-mono text-foreground">{value}</span>
     </div>
   );
 }

@@ -178,7 +178,12 @@ export type ToolForm = {
   testInput: string;
 };
 
-export type AgentDialogView = "list" | "detail" | "config" | "tool-config";
+export type AgentDialogView =
+  | "list"
+  | "detail"
+  | "config"
+  | "tool-detail"
+  | "tool-config";
 export type AgentEditMode = "add" | "edit";
 export type ToolEditMode = "add" | "edit";
 export type AgentToolTab = "agents" | "tools";

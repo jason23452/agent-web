@@ -383,6 +383,7 @@ export function AppSidebar({
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
   const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [agentForm, setAgentForm] = useState(emptyAgentForm);
   const [agentYaml, setAgentYaml] = useState(agentToYaml(emptyAgentForm));
   const [toolForm, setToolForm] = useState(emptyToolForm);
@@ -461,6 +462,8 @@ export function AppSidebar({
     .map((skill) => skill.name);
   const selectedAgent =
     agents.find((agent) => agent.id === selectedAgentId) ?? null;
+  const selectedTool =
+    toolDefinitions.find((tool) => tool.id === selectedToolId) ?? null;
   const selectedModelProvider =
     modelProviders.find(
       (provider) => provider.id === selectedModelProviderId,
@@ -1046,6 +1049,7 @@ export function AppSidebar({
   function openAgentsList() {
     setAgentDialogView("list");
     setAgentToolTab("agents");
+    setSelectedToolId(null);
     setGuidanceTool(null);
     setGuidanceSkill(null);
     setGuidanceSubagent(null);
@@ -1068,6 +1072,7 @@ export function AppSidebar({
   function openAddToolMode() {
     setToolEditMode("add");
     setEditingToolId(null);
+    setSelectedToolId(null);
     setToolForm(emptyToolForm);
     setToolTestResult(null);
     setAgentDialogView("tool-config");
@@ -1077,6 +1082,7 @@ export function AppSidebar({
     if (tool.source !== "custom") return;
     setToolEditMode("edit");
     setEditingToolId(tool.id);
+    setSelectedToolId(tool.id);
     setToolForm({
       name: tool.name,
       description: tool.description,
@@ -1090,6 +1096,12 @@ export function AppSidebar({
     });
     setToolTestResult(null);
     setAgentDialogView("tool-config");
+  }
+
+  function openToolDetail(tool: ToolDefinition) {
+    setSelectedToolId(tool.id);
+    setAgentToolTab("tools");
+    setAgentDialogView("tool-detail");
   }
 
   function openAgentDetail(agent: AgentDefinition) {
@@ -1683,6 +1695,7 @@ export function AppSidebar({
         onOpenChange={setAgentsDialogOpen}
         onOpenEditAgentMode={openEditAgentMode}
         onOpenEditToolMode={openEditToolMode}
+        onOpenToolDetail={openToolDetail}
         onRemoveFormSubagent={removeFormSubagent}
         onRunToolCallTest={runToolCallTest}
         onSkillToAddChange={setSkillToAdd}
@@ -1697,6 +1710,7 @@ export function AppSidebar({
         onUpdateToolGuidance={updateToolGuidance}
         open={agentsDialogOpen}
         selectedAgent={selectedAgent}
+        selectedTool={selectedTool}
         skillToAdd={skillToAdd}
         subagentToAdd={subagentToAdd}
         toolDefinitions={toolDefinitions}
