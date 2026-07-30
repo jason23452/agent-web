@@ -64,10 +64,12 @@ type UserSettingsModalProps = {
   npmPackagesApplying?: boolean;
   npmPackagesError?: string | null;
   npmPackagesLoading?: boolean;
+  npmPackagesToInstall: string[];
   npmPackagesToDelete: string[];
   npmPackageTarget: NpmPackageScope;
   onClose: () => void;
   onApplyNpmPackageChanges: () => Promise<void> | void;
+  onCancelNpmPackageChanges: () => void;
   onClearNpmPackageDelete: () => void;
   onModelProviderSearchChange: (value: string) => void;
   onNpmPackageInputChange: (value: string) => void;
@@ -78,7 +80,9 @@ type UserSettingsModalProps = {
   onProviderUpdate: (providerId: string, updates: Partial<ModelProvider>) => void;
   onProviderViewBack: () => void;
   onRefreshNpmPackages: () => Promise<void> | void;
+  onRemoveNpmPackageInstall: (packageSpec: string) => void;
   onSectionChange: (section: UserSettingsSection) => void;
+  onStageNpmPackageInstalls: () => void;
   onToggleNpmPackageDelete: (packageName: string) => void;
   open: boolean;
   section: UserSettingsSection;
@@ -97,10 +101,12 @@ export function UserSettingsModal({
   npmPackagesApplying = false,
   npmPackagesError,
   npmPackagesLoading = false,
+  npmPackagesToInstall,
   npmPackagesToDelete,
   npmPackageTarget,
   onClose,
   onApplyNpmPackageChanges,
+  onCancelNpmPackageChanges,
   onClearNpmPackageDelete,
   onModelProviderSearchChange,
   onNpmPackageInputChange,
@@ -111,13 +117,17 @@ export function UserSettingsModal({
   onProviderUpdate,
   onProviderViewBack,
   onRefreshNpmPackages,
+  onRemoveNpmPackageInstall,
   onSectionChange,
+  onStageNpmPackageInstalls,
   onToggleNpmPackageDelete,
   open,
   section,
   selectedAuthMethod,
   selectedProvider,
 }: UserSettingsModalProps) {
+  const hasNpmPackageChanges = npmPackagesToInstall.length > 0 || npmPackagesToDelete.length > 0;
+
   return (
     <ModalShell
       ariaLabel="使用者設定"
@@ -135,53 +145,93 @@ export function UserSettingsModal({
           onSectionChange={onSectionChange}
         />
 
-        <main className="relative min-h-0 overflow-y-auto px-10 py-8 max-sm:px-5">
-          <button
-            aria-label="關閉使用者設定"
-            className="absolute right-4 top-4 grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onClose}
-            type="button"
-          >
-            <XIcon aria-hidden="true" className="size-4" />
-          </button>
+        <div className={cn("grid min-h-0", section === "npm-packages" ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]")}>
+          <main className="relative min-h-0 overflow-y-auto px-10 py-8 max-sm:px-5">
+            <button
+              aria-label="關閉使用者設定"
+              className="absolute right-4 top-4 grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={onClose}
+              type="button"
+            >
+              <XIcon aria-hidden="true" className="size-4" />
+            </button>
 
-          {section === "model-providers" ? (
-            <ModelProvidersPanel
-              filteredModelProviders={filteredModelProviders}
-              modelProviderSearch={modelProviderSearch}
-              onProviderAuthMethodChange={onProviderAuthMethodChange}
-              onProviderSearchChange={onModelProviderSearchChange}
-              onProviderSelect={onProviderSelect}
-              onProviderUpdate={onProviderUpdate}
-              onProviderViewBack={onProviderViewBack}
-              selectedAuthMethod={selectedAuthMethod}
-              selectedProvider={selectedProvider}
-            />
-          ) : section === "npm-packages" ? (
-            <NpmPackagesPanel
-              activeProjectName={activeProjectName}
-              applying={npmPackagesApplying}
-              input={npmPackageInput}
-              loading={npmPackagesLoading}
-              onApplyChanges={onApplyNpmPackageChanges}
-              onClearDeleteSelection={onClearNpmPackageDelete}
-              onInputChange={onNpmPackageInputChange}
-              onRefresh={onRefreshNpmPackages}
-              onTargetChange={onNpmPackageTargetChange}
-              onToggleDeletePackage={onToggleNpmPackageDelete}
-              packageJsonPath={npmPackageJsonPath}
-              packages={npmPackages}
-              packagesToDelete={npmPackagesToDelete}
-              root={npmPackageRoot}
-              error={npmPackagesError}
-              target={npmPackageTarget}
-            />
-          ) : section === "platform-management" ? (
-            <PlatformManagementPanel />
-          ) : (
-            <DeploymentPlatformsPanel />
+            {section === "model-providers" ? (
+              <ModelProvidersPanel
+                filteredModelProviders={filteredModelProviders}
+                modelProviderSearch={modelProviderSearch}
+                onProviderAuthMethodChange={onProviderAuthMethodChange}
+                onProviderSearchChange={onModelProviderSearchChange}
+                onProviderSelect={onProviderSelect}
+                onProviderUpdate={onProviderUpdate}
+                onProviderViewBack={onProviderViewBack}
+                selectedAuthMethod={selectedAuthMethod}
+                selectedProvider={selectedProvider}
+              />
+            ) : section === "npm-packages" ? (
+              <NpmPackagesPanel
+                activeProjectName={activeProjectName}
+                applying={npmPackagesApplying}
+                input={npmPackageInput}
+                loading={npmPackagesLoading}
+                onClearDeleteSelection={onClearNpmPackageDelete}
+                onInputChange={onNpmPackageInputChange}
+                onRemoveInstallPackage={onRemoveNpmPackageInstall}
+                onRefresh={onRefreshNpmPackages}
+                onStageInstalls={onStageNpmPackageInstalls}
+                onTargetChange={onNpmPackageTargetChange}
+                onToggleDeletePackage={onToggleNpmPackageDelete}
+                packageJsonPath={npmPackageJsonPath}
+                packages={npmPackages}
+                packagesToInstall={npmPackagesToInstall}
+                packagesToDelete={npmPackagesToDelete}
+                root={npmPackageRoot}
+                error={npmPackagesError}
+                target={npmPackageTarget}
+              />
+            ) : section === "platform-management" ? (
+              <PlatformManagementPanel />
+            ) : (
+              <DeploymentPlatformsPanel />
+            )}
+          </main>
+
+          {section === "npm-packages" && (
+            <div
+              className={cn(
+                "flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-10 py-4 max-sm:px-5",
+                hasNpmPackageChanges && "border-amber-300 bg-amber-50/80",
+              )}
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-sm">
+                  {hasNpmPackageChanges ? "套件變更尚未更新" : "尚未選取套件變更"}
+                </p>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  {hasNpmPackageChanges ? `待新增 ${npmPackagesToInstall.length} 個，待刪除 ${npmPackagesToDelete.length} 個。按更新後才會正式安裝/刪除。` : "安裝與刪除會先加入前端暫存清單，不會立即下載或移除。"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  disabled={npmPackagesApplying || !hasNpmPackageChanges}
+                  onClick={onCancelNpmPackageChanges}
+                  size="lg"
+                  variant="outline"
+                >
+                  取消
+                </Button>
+                <Button
+                  disabled={npmPackagesApplying || !hasNpmPackageChanges}
+                  loading={npmPackagesApplying}
+                  onClick={() => void onApplyNpmPackageChanges()}
+                  size="lg"
+                >
+                  {npmPackagesApplying ? "更新中..." : "更新"}
+                </Button>
+              </div>
+            </div>
           )}
-        </main>
+        </div>
       </div>
     </ModalShell>
   );
@@ -638,14 +688,16 @@ function NpmPackagesPanel({
   error,
   input,
   loading,
-  onApplyChanges,
   onClearDeleteSelection,
   onInputChange,
+  onRemoveInstallPackage,
   onRefresh,
+  onStageInstalls,
   onTargetChange,
   onToggleDeletePackage,
   packageJsonPath,
   packages,
+  packagesToInstall,
   packagesToDelete,
   root,
   target,
@@ -655,14 +707,16 @@ function NpmPackagesPanel({
   error?: string | null;
   input: string;
   loading: boolean;
-  onApplyChanges: () => Promise<void> | void;
   onClearDeleteSelection: () => void;
   onInputChange: (value: string) => void;
+  onRemoveInstallPackage: (packageSpec: string) => void;
   onRefresh: () => Promise<void> | void;
+  onStageInstalls: () => void;
   onTargetChange: (target: NpmPackageScope) => void;
   onToggleDeletePackage: (packageName: string) => void;
   packageJsonPath?: string;
   packages: NpmPackageEntry[];
+  packagesToInstall: string[];
   packagesToDelete: string[];
   root?: string;
   target: NpmPackageScope;
@@ -670,7 +724,8 @@ function NpmPackagesPanel({
   const projectTargetUnavailable = target === "project" && !activeProjectName;
   const pendingInstallCount = new Set(input.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)).size;
   const pendingDeleteCount = packagesToDelete.length;
-  const hasPendingChanges = pendingInstallCount > 0 || pendingDeleteCount > 0;
+  const stagedInstallCount = packagesToInstall.length;
+  const hasStagedChanges = stagedInstallCount > 0 || pendingDeleteCount > 0;
 
   return (
     <div className="mx-auto grid max-w-[680px] gap-6">
@@ -688,7 +743,7 @@ function NpmPackagesPanel({
               批次套件變更
             </h4>
             <p className="mt-0.5 text-muted-foreground text-xs">
-              支援 registry package，例如 zod、lodash@latest、@scope/pkg@1.2.3。
+              支援 registry package，例如 zod、lodash@latest、@scope/pkg@1.2.3。按新增只會加入待更新清單。
             </p>
           </div>
           <Button disabled={loading || applying} onClick={() => void onRefresh()} size="sm" variant="outline">
@@ -720,23 +775,22 @@ function NpmPackagesPanel({
             </InputGroup>
           </label>
           <Button
-            disabled={loading || applying || projectTargetUnavailable || !hasPendingChanges}
-            loading={applying}
-            onClick={() => void onApplyChanges()}
+            disabled={loading || applying || projectTargetUnavailable || pendingInstallCount === 0}
+            onClick={onStageInstalls}
           >
-            {applying ? "套用中..." : "套用變更並重啟"}
+            新增到待更新
           </Button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <Badge size="sm" variant={pendingInstallCount > 0 ? "secondary" : "outline"}>
-            新增 {pendingInstallCount}
+          <Badge size="sm" variant={stagedInstallCount > 0 ? "secondary" : "outline"}>
+            待新增 {stagedInstallCount}
           </Badge>
           <Badge size="sm" variant={pendingDeleteCount > 0 ? "secondary" : "outline"}>
-            刪除 {pendingDeleteCount}
+            待刪除 {pendingDeleteCount}
           </Badge>
           <span className="text-muted-foreground">
-            新增與刪除會一起套用，完成後只重啟 OpenCode 一次。
+            底部按更新後才會正式安裝/刪除。
           </span>
         </div>
 
@@ -753,6 +807,69 @@ function NpmPackagesPanel({
         )}
       </section>
 
+      {hasStagedChanges && (
+        <section className="grid gap-3 rounded-xl border border-amber-300 bg-amber-50/60 p-4" aria-labelledby="npm-package-pending-title">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="font-semibold text-sm" id="npm-package-pending-title">
+                待更新清單
+              </h4>
+              <p className="mt-0.5 text-muted-foreground text-xs">
+                這些變更目前只存在前端，底部按更新後才會執行。
+              </p>
+            </div>
+            <Badge size="sm" variant="secondary">
+              {stagedInstallCount + pendingDeleteCount}
+            </Badge>
+          </div>
+
+          {packagesToInstall.length > 0 && (
+            <div className="grid gap-2">
+              <p className="font-medium text-xs text-muted-foreground">待新增</p>
+              <div className="flex flex-wrap gap-2">
+                {packagesToInstall.map((packageSpec) => (
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-mono text-emerald-800 text-xs transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    disabled={applying}
+                    key={packageSpec}
+                    onClick={() => onRemoveInstallPackage(packageSpec)}
+                    type="button"
+                  >
+                    + {packageSpec}
+                    <XIcon aria-hidden="true" className="size-3" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {packagesToDelete.length > 0 && (
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium text-muted-foreground text-xs">待刪除</p>
+                <Button disabled={applying} onClick={onClearDeleteSelection} size="xs" variant="ghost">
+                  清除刪除選取
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {packagesToDelete.map((packageName) => (
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 font-mono text-red-700 text-xs transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    disabled={applying}
+                    key={packageName}
+                    onClick={() => onToggleDeletePackage(packageName)}
+                    type="button"
+                  >
+                    - {packageName}
+                    <XIcon aria-hidden="true" className="size-3" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="grid gap-3" aria-labelledby="npm-package-installed-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -763,24 +880,10 @@ function NpmPackagesPanel({
               {target === "global" ? "Global" : activeProjectName ? `Project: ${activeProjectName}` : "Project"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {pendingDeleteCount > 0 && (
-              <Button disabled={applying} onClick={onClearDeleteSelection} size="xs" variant="ghost">
-                清除刪除選取
-              </Button>
-            )}
-            <Badge size="sm" variant="secondary">
-              {packages.length}
-            </Badge>
-          </div>
+          <Badge size="sm" variant="secondary">
+            {packages.length}
+          </Badge>
         </div>
-
-        {(root || packageJsonPath) && (
-          <div className="grid gap-1 rounded-2xl border border-border/70 bg-gradient-to-r from-muted/60 to-background px-4 py-3 text-xs shadow-sm">
-            {root && <p className="break-all text-muted-foreground">root: <span className="font-mono text-foreground">{root}</span></p>}
-            {packageJsonPath && <p className="break-all text-muted-foreground">package.json: <span className="font-mono text-foreground">{packageJsonPath}</span></p>}
-          </div>
-        )}
 
         {loading ? (
           <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-center text-muted-foreground text-sm">
@@ -824,7 +927,7 @@ function NpmPackagesPanel({
                       variant={selectedForDelete ? "destructive" : "destructive-outline"}
                     >
                       <Trash2Icon aria-hidden="true" className="size-4" />
-                      {selectedForDelete ? "已選" : "刪除"}
+                      {selectedForDelete ? "待刪除" : "刪除"}
                     </Button>
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-2">

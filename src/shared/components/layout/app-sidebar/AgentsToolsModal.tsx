@@ -1052,11 +1052,6 @@ function ToolConfigPanel({
             </div>
           )}
         </section>
-        <div className="rounded-lg border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">
-          自訂工具會建立到{toolForm.installTarget === "global" ? " Global" : "當前 Project"}
-          ，並出現在工具清單與 Agent tool selector。內建工具不能編輯，只有 custom
-          tool 可以編輯或刪除。
-        </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-xs">
