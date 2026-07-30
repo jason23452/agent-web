@@ -470,6 +470,7 @@ export function AppSidebar({
   const [toolForm, setToolForm] = useState(emptyToolForm);
   const [toolTestResult, setToolTestResult] =
     useState<InstallResult | null>(null);
+  const [toolCallTestLoading, setToolCallTestLoading] = useState(false);
   const [toolToAdd, setToolToAdd] = useState(initialToolDefinitions[0]!.name);
   const [subagentToAdd, setSubagentToAdd] = useState("");
   const [skillToAdd, setSkillToAdd] = useState(availableSkills[0]!);
@@ -1787,6 +1788,8 @@ export function AppSidebar({
   }
 
   async function runToolCallTest() {
+    if (toolCallTestLoading) return;
+
     if (!toolForm.name.trim()) {
       setToolTestResult({ status: "error", message: "Tool 名稱必填。" });
       return;
@@ -1837,6 +1840,7 @@ export function AppSidebar({
       return;
     }
 
+    setToolCallTestLoading(true);
     setToolTestResult(null);
 
     try {
@@ -1865,6 +1869,8 @@ export function AppSidebar({
         status: "error",
         message: `Tool Call Test 失敗：${getApiErrorMessage(error)}`,
       });
+    } finally {
+      setToolCallTestLoading(false);
     }
   }
 
@@ -2196,6 +2202,7 @@ export function AppSidebar({
         toolEditMode={toolEditMode}
         toolsError={toolsError}
         toolsLoading={toolsLoading}
+        toolCallTestLoading={toolCallTestLoading}
         toolForm={toolForm}
         toolTestResult={toolTestResult}
         toolToAdd={toolToAdd}

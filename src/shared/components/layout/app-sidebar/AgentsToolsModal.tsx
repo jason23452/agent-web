@@ -93,6 +93,7 @@ type AgentsToolsModalProps = {
   subagentToAdd: string;
   toolDefinitions: ToolDefinition[];
   toolEditMode: ToolEditMode;
+  toolCallTestLoading?: boolean;
   toolsError?: string | null;
   toolsLoading?: boolean;
   toolForm: ToolForm;
@@ -157,6 +158,7 @@ export function AgentsToolsModal({
   subagentToAdd,
   toolDefinitions,
   toolEditMode,
+  toolCallTestLoading = false,
   toolsError,
   toolsLoading = false,
   toolForm,
@@ -267,6 +269,7 @@ export function AgentsToolsModal({
           onSubmitToolConfig={onSubmitToolConfig}
           onToolFormChange={onToolFormChange}
           onToolTestResultChange={onToolTestResultChange}
+          toolCallTestLoading={toolCallTestLoading}
           toolEditMode={toolEditMode}
           toolForm={toolForm}
           toolTestResult={toolTestResult}
@@ -706,16 +709,6 @@ function ToolListItem({
               inherited
             </Badge>
           )}
-          {tool.source === "custom" && (
-            <Badge size="sm" variant="outline">
-              {getToolTargetLabel(tool.installTarget)}
-            </Badge>
-          )}
-          {tool.inherited && (
-            <Badge size="sm" variant="info">
-              inherited
-            </Badge>
-          )}
           {tool.runtime && (
             <Badge size="sm" variant="info">
               JS/TS
@@ -859,6 +852,7 @@ function ToolConfigPanel({
   onSubmitToolConfig,
   onToolFormChange,
   onToolTestResultChange,
+  toolCallTestLoading = false,
   toolEditMode,
   toolForm,
   toolTestResult,
@@ -867,6 +861,7 @@ function ToolConfigPanel({
   onSubmitToolConfig: () => void;
   onToolFormChange: Dispatch<SetStateAction<ToolForm>>;
   onToolTestResultChange: Dispatch<SetStateAction<InstallResult | null>>;
+  toolCallTestLoading?: boolean;
   toolEditMode: ToolEditMode;
   toolForm: ToolForm;
   toolTestResult: InstallResult | null;
@@ -1001,12 +996,14 @@ function ToolConfigPanel({
               </p>
             </div>
             <Button
+              disabled={toolCallTestLoading}
+              loading={toolCallTestLoading}
               onClick={() => void onRunToolCallTest()}
               size="sm"
               type="button"
               variant="outline"
             >
-              測試 Tool Call
+              {toolCallTestLoading ? "測試中..." : "測試 Tool Call"}
             </Button>
           </div>
           <label className="grid gap-2 text-muted-foreground text-sm">
@@ -1041,7 +1038,7 @@ function ToolConfigPanel({
           Runtime 目前只支援 JS/TS；請先通過 Tool Call Test 再保存。
         </p>
         <Button
-          disabled={!toolForm.name.trim() || toolTestResult?.status !== "success"}
+          disabled={toolCallTestLoading || !toolForm.name.trim() || toolTestResult?.status !== "success"}
           onClick={onSubmitToolConfig}
         >
           {toolEditMode === "add" ? "新增 Tool" : "保存 Tool"}
