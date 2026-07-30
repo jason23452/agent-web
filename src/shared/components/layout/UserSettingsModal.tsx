@@ -4,6 +4,7 @@ import {
   CopyIcon,
   GlobeIcon,
   KeyRoundIcon,
+  PackageIcon,
   PlusIcon,
   RocketIcon,
   SearchIcon,
@@ -13,6 +14,7 @@ import {
   XIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { NpmPackageEntry, NpmPackageScope } from "@/shared/api/opencodeNpmPackages";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -24,6 +26,7 @@ import { ModalShell } from "@/shared/components/layout/ModalShell";
 
 export type UserSettingsSection =
   | "model-providers"
+  | "npm-packages"
   | "platform-management"
   | "deployment-platforms";
 
@@ -49,15 +52,28 @@ export type ModelProvider = {
 };
 
 type UserSettingsModalProps = {
+  activeProjectName?: string;
   filteredModelProviders: ModelProvider[];
   modelProviderSearch: string;
+  npmPackageInput: string;
+  npmPackageJsonPath?: string;
+  npmPackageRoot?: string;
+  npmPackages: NpmPackageEntry[];
+  npmPackagesError?: string | null;
+  npmPackagesInstalling?: boolean;
+  npmPackagesLoading?: boolean;
+  npmPackageTarget: NpmPackageScope;
   onClose: () => void;
+  onInstallNpmPackages: () => Promise<void> | void;
   onModelProviderSearchChange: (value: string) => void;
+  onNpmPackageInputChange: (value: string) => void;
+  onNpmPackageTargetChange: (target: NpmPackageScope) => void;
   onOpenChange: (open: boolean) => void;
   onProviderAuthMethodChange: (method: string) => void;
   onProviderSelect: (providerId: string) => void;
   onProviderUpdate: (providerId: string, updates: Partial<ModelProvider>) => void;
   onProviderViewBack: () => void;
+  onRefreshNpmPackages: () => Promise<void> | void;
   onSectionChange: (section: UserSettingsSection) => void;
   open: boolean;
   section: UserSettingsSection;
@@ -66,15 +82,28 @@ type UserSettingsModalProps = {
 };
 
 export function UserSettingsModal({
+  activeProjectName,
   filteredModelProviders,
   modelProviderSearch,
+  npmPackageInput,
+  npmPackageJsonPath,
+  npmPackageRoot,
+  npmPackages,
+  npmPackagesError,
+  npmPackagesInstalling = false,
+  npmPackagesLoading = false,
+  npmPackageTarget,
   onClose,
+  onInstallNpmPackages,
   onModelProviderSearchChange,
+  onNpmPackageInputChange,
+  onNpmPackageTargetChange,
   onOpenChange,
   onProviderAuthMethodChange,
   onProviderSelect,
   onProviderUpdate,
   onProviderViewBack,
+  onRefreshNpmPackages,
   onSectionChange,
   open,
   section,
@@ -120,6 +149,22 @@ export function UserSettingsModal({
               selectedAuthMethod={selectedAuthMethod}
               selectedProvider={selectedProvider}
             />
+          ) : section === "npm-packages" ? (
+            <NpmPackagesPanel
+              activeProjectName={activeProjectName}
+              input={npmPackageInput}
+              installing={npmPackagesInstalling}
+              loading={npmPackagesLoading}
+              onInputChange={onNpmPackageInputChange}
+              onInstall={onInstallNpmPackages}
+              onRefresh={onRefreshNpmPackages}
+              onTargetChange={onNpmPackageTargetChange}
+              packageJsonPath={npmPackageJsonPath}
+              packages={npmPackages}
+              root={npmPackageRoot}
+              error={npmPackagesError}
+              target={npmPackageTarget}
+            />
           ) : section === "platform-management" ? (
             <PlatformManagementPanel />
           ) : (
@@ -153,6 +198,12 @@ function SettingsSidebar({
           icon={<SettingsIcon aria-hidden="true" className="size-4" />}
           label="模型商"
           onClick={() => onSectionChange("model-providers")}
+        />
+        <SettingsNavButton
+          active={activeSection === "npm-packages"}
+          icon={<PackageIcon aria-hidden="true" className="size-4" />}
+          label="NPM 套件"
+          onClick={() => onSectionChange("npm-packages")}
         />
         <SettingsNavButton
           active={activeSection === "platform-management"}
@@ -568,6 +619,152 @@ function getAuthMethodDetail(method: string) {
     description: "透過瀏覽器授權，最適合本機快速連接。",
     icon: GlobeIcon,
   };
+}
+
+function NpmPackagesPanel({
+  activeProjectName,
+  error,
+  input,
+  installing,
+  loading,
+  onInputChange,
+  onInstall,
+  onRefresh,
+  onTargetChange,
+  packageJsonPath,
+  packages,
+  root,
+  target,
+}: {
+  activeProjectName?: string;
+  error?: string | null;
+  input: string;
+  installing: boolean;
+  loading: boolean;
+  onInputChange: (value: string) => void;
+  onInstall: () => Promise<void> | void;
+  onRefresh: () => Promise<void> | void;
+  onTargetChange: (target: NpmPackageScope) => void;
+  packageJsonPath?: string;
+  packages: NpmPackageEntry[];
+  root?: string;
+  target: NpmPackageScope;
+}) {
+  const projectTargetUnavailable = target === "project" && !activeProjectName;
+
+  return (
+    <div className="mx-auto grid max-w-[680px] gap-6">
+      <div className="grid gap-1 pr-8">
+        <h3 className="font-semibold text-lg">NPM 套件</h3>
+        <p className="text-muted-foreground text-sm">
+          安裝 JS/TS tool 會 import 的 npm 套件，可選擇安裝到當前 Project 或 Global。
+        </p>
+      </div>
+
+      <section className="grid gap-4 rounded-xl bg-muted/45 p-4" aria-labelledby="npm-package-install-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="font-semibold text-sm" id="npm-package-install-title">
+              安裝套件
+            </h4>
+            <p className="mt-0.5 text-muted-foreground text-xs">
+              支援 registry package，例如 zod、lodash@latest、@scope/pkg@1.2.3。
+            </p>
+          </div>
+          <Button disabled={loading || installing} onClick={() => void onRefresh()} size="sm" variant="outline">
+            重新整理
+          </Button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-[12rem_minmax(0,1fr)_auto] sm:items-end">
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            安裝位置
+            <select
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              onChange={(event) => onTargetChange(event.target.value as NpmPackageScope)}
+              value={target}
+            >
+              <option value="project">當前 Project</option>
+              <option value="global">Global</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            套件名稱
+            <InputGroup>
+              <InputGroupInput
+                disabled={installing}
+                onChange={(event) => onInputChange(event.target.value)}
+                placeholder="zod lodash@latest @scope/pkg"
+                value={input}
+              />
+            </InputGroup>
+          </label>
+          <Button
+            disabled={installing || projectTargetUnavailable || !input.trim()}
+            onClick={() => void onInstall()}
+          >
+            {installing ? "安裝中..." : "安裝"}
+          </Button>
+        </div>
+
+        {projectTargetUnavailable && (
+          <p className="rounded-lg border border-dashed bg-background px-3 py-2 text-muted-foreground text-xs">
+            請先開啟一個 project，才能安裝到當前 Project。
+          </p>
+        )}
+
+        {error && (
+          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs">
+            {error}
+          </p>
+        )}
+      </section>
+
+      <section className="grid gap-3" aria-labelledby="npm-package-installed-title">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h4 className="font-semibold text-sm" id="npm-package-installed-title">
+              已安裝套件
+            </h4>
+            <p className="mt-0.5 text-muted-foreground text-xs">
+              {target === "global" ? "Global" : activeProjectName ? `Project: ${activeProjectName}` : "Project"}
+            </p>
+          </div>
+          <Badge size="sm" variant="secondary">
+            {packages.length}
+          </Badge>
+        </div>
+
+        {(root || packageJsonPath) && (
+          <div className="grid gap-1 rounded-lg border bg-background px-3 py-2 text-xs">
+            {root && <p className="break-all text-muted-foreground">root: <span className="font-mono text-foreground">{root}</span></p>}
+            {packageJsonPath && <p className="break-all text-muted-foreground">package.json: <span className="font-mono text-foreground">{packageJsonPath}</span></p>}
+          </div>
+        )}
+
+        {loading ? (
+          <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-center text-muted-foreground text-sm">
+            正在讀取 npm packages...
+          </p>
+        ) : packages.length === 0 ? (
+          <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-center text-muted-foreground text-sm">
+            目前沒有 dependencies。
+          </p>
+        ) : (
+          <ul className="grid gap-1.5">
+            {packages.map((item) => (
+              <li className="flex min-h-10 items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2" key={item.name}>
+                <span className="min-w-0 truncate font-mono text-sm">{item.name}</span>
+                <Badge size="sm" variant="outline">
+                  {item.version}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function PlatformManagementPanel() {

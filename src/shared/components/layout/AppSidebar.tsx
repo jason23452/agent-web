@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  installOpenCodeNpmPackages,
+  listOpenCodeNpmPackages,
+  type NpmPackageEntry,
+  type NpmPackageScope,
+  type NpmPackageListResponse,
+} from "@/shared/api/opencodeNpmPackages";
 import {
   listProjectAgents,
   type OpenCodeAgent,
@@ -460,6 +467,15 @@ export function AppSidebar({
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
   const [userSettingsSection, setUserSettingsSection] =
     useState<UserSettingsSection>("model-providers");
+  const [npmPackageInput, setNpmPackageInput] = useState("");
+  const [npmPackageTarget, setNpmPackageTarget] =
+    useState<NpmPackageScope>("project");
+  const [npmPackages, setNpmPackages] = useState<NpmPackageEntry[]>([]);
+  const [npmPackageRoot, setNpmPackageRoot] = useState("");
+  const [npmPackageJsonPath, setNpmPackageJsonPath] = useState("");
+  const [npmPackagesError, setNpmPackagesError] = useState<string | null>(null);
+  const [npmPackagesLoading, setNpmPackagesLoading] = useState(false);
+  const [npmPackagesInstalling, setNpmPackagesInstalling] = useState(false);
   const [modelProviderSearch, setModelProviderSearch] = useState("");
   const [modelProviders, setModelProviders] = useState<ModelProvider[]>(
     initialModelProviders,
@@ -543,6 +559,100 @@ export function AppSidebar({
   });
   const isCustomToolName = (toolName: string) =>
     isCustomTool(toolName, toolDefinitions);
+
+  const applyNpmPackageResponse = useCallback((response: NpmPackageListResponse) => {
+    setNpmPackages(response.packages);
+    setNpmPackageRoot(response.root);
+    setNpmPackageJsonPath(response.packageJsonPath);
+    setNpmPackagesError(null);
+  }, []);
+
+  const loadNpmPackages = useCallback(async () => {
+    if (npmPackageTarget === "project" && !activeProjectName) {
+      setNpmPackages([]);
+      setNpmPackageRoot("");
+      setNpmPackageJsonPath("");
+      setNpmPackagesError("請先開啟一個 project，才能讀取 project npm packages。");
+      setNpmPackagesLoading(false);
+      return;
+    }
+
+    setNpmPackagesLoading(true);
+    setNpmPackagesError(null);
+
+    try {
+      const response = await listOpenCodeNpmPackages(
+        npmPackageTarget,
+        activeProjectName,
+      );
+      applyNpmPackageResponse(response);
+    } catch (error) {
+      setNpmPackages([]);
+      setNpmPackageRoot("");
+      setNpmPackageJsonPath("");
+      setNpmPackagesError(getApiErrorMessage(error));
+    } finally {
+      setNpmPackagesLoading(false);
+    }
+  }, [activeProjectName, applyNpmPackageResponse, npmPackageTarget]);
+
+  useEffect(() => {
+    if (!userSettingsOpen || userSettingsSection !== "npm-packages") return;
+
+    const timeoutId = window.setTimeout(() => {
+      void loadNpmPackages();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadNpmPackages, userSettingsOpen, userSettingsSection]);
+
+  async function installNpmPackages() {
+    const packageSpecs = parseNpmPackageInput(npmPackageInput);
+    if (packageSpecs.length === 0) {
+      setNpmPackagesError("請輸入至少一個 npm package。即使多個套件也可用空白或逗號分隔。");
+      return;
+    }
+
+    if (npmPackageTarget === "project" && !activeProjectName) {
+      setNpmPackagesError("請先開啟一個 project，才能安裝到當前 Project。");
+      return;
+    }
+
+    setNpmPackagesInstalling(true);
+    setNpmPackagesError(null);
+
+    try {
+      const response = await installOpenCodeNpmPackages({
+        packages: packageSpecs,
+        project: npmPackageTarget === "project" ? activeProjectName : undefined,
+        scope: npmPackageTarget,
+      });
+      applyNpmPackageResponse(response);
+      setNpmPackageInput("");
+      toastManager.add({
+        id: `npm-packages-installed-${Date.now()}`,
+        title: "NPM 套件已安裝",
+        description: packageSpecs.join(", "),
+        type: "success",
+      });
+      await onRestartOpenCode(`Install ${npmPackageTarget} npm packages`);
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      setNpmPackagesError(message);
+      toastManager.add({
+        id: `npm-packages-install-error-${Date.now()}`,
+        title: "NPM 套件安裝失敗",
+        description: message,
+        type: "error",
+      });
+    } finally {
+      setNpmPackagesInstalling(false);
+    }
+  }
+
+  function parseNpmPackageInput(input: string) {
+    return [...new Set(input.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean))];
+  }
 
   useEffect(() => {
     if (!agentsDialogOpen) return;
@@ -1777,10 +1887,22 @@ export function AppSidebar({
       />
 
       <UserSettingsModal
+        activeProjectName={activeProjectName}
         filteredModelProviders={filteredModelProviders}
         modelProviderSearch={modelProviderSearch}
+        npmPackageInput={npmPackageInput}
+        npmPackageJsonPath={npmPackageJsonPath}
+        npmPackageRoot={npmPackageRoot}
+        npmPackages={npmPackages}
+        npmPackagesError={npmPackagesError}
+        npmPackagesInstalling={npmPackagesInstalling}
+        npmPackagesLoading={npmPackagesLoading}
+        npmPackageTarget={npmPackageTarget}
         onClose={closeUserSettings}
+        onInstallNpmPackages={installNpmPackages}
         onModelProviderSearchChange={setModelProviderSearch}
+        onNpmPackageInputChange={setNpmPackageInput}
+        onNpmPackageTargetChange={setNpmPackageTarget}
         onOpenChange={(settingsOpen) => {
           if (!settingsOpen) closeUserSettings();
         }}
@@ -1798,6 +1920,7 @@ export function AppSidebar({
 
           setSelectedModelProviderId(null);
         }}
+        onRefreshNpmPackages={loadNpmPackages}
         onSectionChange={(nextSection) => {
           setUserSettingsSection(nextSection);
           setSelectedModelProviderId(null);
