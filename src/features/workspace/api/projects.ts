@@ -38,6 +38,10 @@ export type DeleteManagedProjectResponse = {
   deleted: boolean;
   path: string;
   projectName: string;
+  sessions: {
+    deleted: number;
+    ids: string[];
+  };
 };
 
 export type ManagedProjectStatusResponse = {
