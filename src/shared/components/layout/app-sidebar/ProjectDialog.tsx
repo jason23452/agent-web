@@ -1,16 +1,24 @@
-import { ArrowLeftIcon, FolderIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, FolderIcon, PlusIcon, RefreshCwIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import type { AppSidebarProject, ProjectDialogView } from "./types";
 
+const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+
 type ProjectDialogProps = {
   activeProjectPath: string;
+  busyProjectName: string | null;
   createName: string;
+  creatingProject: boolean;
+  error?: string | null;
   filteredProjects: AppSidebarProject[];
+  loadingProjects: boolean;
   onClose: () => void;
   onConfirmCreate: () => void;
+  onConfirmDelete: (project: AppSidebarProject) => void;
   onConfirmOpen: (path: string) => void;
   onCreateNameChange: (value: string) => void;
+  onRefreshProjects: () => void;
   onSearchChange: (value: string) => void;
   onViewChange: (view: ProjectDialogView) => void;
   open: boolean;
@@ -20,12 +28,18 @@ type ProjectDialogProps = {
 
 export function ProjectDialog({
   activeProjectPath,
+  busyProjectName,
   createName,
+  creatingProject,
+  error,
   filteredProjects,
+  loadingProjects,
   onClose,
   onConfirmCreate,
+  onConfirmDelete,
   onConfirmOpen,
   onCreateNameChange,
+  onRefreshProjects,
   onSearchChange,
   onViewChange,
   open,
@@ -33,6 +47,12 @@ export function ProjectDialog({
   view,
 }: ProjectDialogProps) {
   if (!open) return null;
+
+  const trimmedCreateName = createName.trim();
+  const createNameInvalid =
+    trimmedCreateName.length > 0 && !PROJECT_NAME_PATTERN.test(trimmedCreateName);
+  const createDisabled =
+    creatingProject || !trimmedCreateName || createNameInvalid;
 
   return (
     <div
@@ -61,14 +81,25 @@ export function ProjectDialog({
           </div>
           <div className="flex items-center gap-1.5">
             {view === "list" && (
-              <Button
-                onClick={() => onViewChange("create")}
-                size="sm"
-                variant="outline"
-              >
-                <PlusIcon aria-hidden="true" />
-                建立專案
-              </Button>
+              <>
+                <Button
+                  loading={loadingProjects}
+                  onClick={onRefreshProjects}
+                  size="sm"
+                  variant="outline"
+                >
+                  <RefreshCwIcon aria-hidden="true" />
+                  重新整理
+                </Button>
+                <Button
+                  onClick={() => onViewChange("create")}
+                  size="sm"
+                  variant="outline"
+                >
+                  <PlusIcon aria-hidden="true" />
+                  建立專案
+                </Button>
+              </>
             )}
             <button
               aria-label={view === "list" ? "關閉打開項目" : "關閉建立專案"}
@@ -98,31 +129,78 @@ export function ProjectDialog({
                 />
               </label>
 
-              <div className="mt-6 px-1">
-                <p className="mb-3 font-semibold text-muted-foreground text-xs">
-                  最近項目
-                </p>
+              <div className="mt-4 px-1">
+                {error && (
+                  <div
+                    className="mb-3 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs"
+                    role="alert"
+                  >
+                    {error}
+                  </div>
+                )}
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="font-semibold text-muted-foreground text-xs">
+                    BFF 管理專案
+                  </p>
+                  {loadingProjects && (
+                    <span className="text-muted-foreground text-xs">同步中...</span>
+                  )}
+                </div>
                 <ul className="grid min-h-28 gap-1">
-                  {filteredProjects.map((project) => (
-                    <li key={project.id}>
-                      <button
-                        className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${project.path === activeProjectPath ? "bg-accent" : ""}`}
-                        onClick={() => onConfirmOpen(project.path)}
-                        type="button"
+                  {filteredProjects.map((project) => {
+                    const label = project.displayName || project.name;
+                    const isActive = project.path === activeProjectPath;
+                    const isDeleting = busyProjectName === project.name;
+
+                    return (
+                      <li
+                        className={`flex items-center gap-1 rounded-lg transition-colors hover:bg-accent ${isActive ? "bg-accent" : ""}`}
+                        key={project.id}
                       >
-                        <FolderIcon
-                          aria-hidden="true"
-                          className="size-4 shrink-0 text-foreground"
-                        />
-                        <span className="min-w-0 truncate text-muted-foreground text-sm">
-                          {project.path}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                  {filteredProjects.length === 0 && (
+                        <button
+                          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => onConfirmOpen(project.path)}
+                          type="button"
+                        >
+                          <FolderIcon
+                            aria-hidden="true"
+                            className="size-4 shrink-0 text-foreground"
+                          />
+                          <span className="grid min-w-0 gap-0.5">
+                            <span className="truncate font-medium text-foreground text-sm">
+                              {label}
+                            </span>
+                            <span className="truncate text-muted-foreground text-xs">
+                              {project.path}
+                            </span>
+                            {project.description && (
+                              <span className="truncate text-muted-foreground text-xs">
+                                {project.description}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                        <Button
+                          aria-label={`刪除專案 ${label}`}
+                          className="mr-1 text-destructive hover:bg-destructive/10"
+                          loading={isDeleting}
+                          onClick={() => onConfirmDelete(project)}
+                          size="icon-sm"
+                          variant="ghost"
+                        >
+                          <Trash2Icon aria-hidden="true" />
+                        </Button>
+                      </li>
+                    );
+                  })}
+                  {loadingProjects && filteredProjects.length === 0 && (
                     <li className="px-2 py-8 text-center text-muted-foreground text-sm">
-                      找不到符合的項目
+                      正在讀取 backend 專案...
+                    </li>
+                  )}
+                  {!loadingProjects && filteredProjects.length === 0 && (
+                    <li className="px-2 py-8 text-center text-muted-foreground text-sm">
+                      找不到符合的專案
                     </li>
                   )}
                 </ul>
@@ -146,8 +224,13 @@ export function ProjectDialog({
                   value={createName}
                 />
                 <span className="text-muted-foreground text-xs">
-                  系統會自動建立到 workspace 專案目錄。
+                  只允許英文、數字、底線、連字號，最多 80 字元。
                 </span>
+                {createNameInvalid && (
+                  <span className="text-destructive-foreground text-xs">
+                    專案名稱格式不符合 backend 規則。
+                  </span>
+                )}
               </label>
               <div className="flex justify-end gap-2">
                 <Button
@@ -159,7 +242,8 @@ export function ProjectDialog({
                 </Button>
                 <Button
                   className="sm:min-w-24"
-                  disabled={!createName.trim()}
+                  disabled={createDisabled}
+                  loading={creatingProject}
                   onClick={onConfirmCreate}
                   size="sm"
                 >

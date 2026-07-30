@@ -9,6 +9,7 @@ import { AppSidebarPanel } from "@/shared/components/layout/app-sidebar/AppSideb
 import { McpServersDialog } from "@/shared/components/layout/app-sidebar/McpServersDialog";
 import { PluginSkillModal } from "@/shared/components/layout/app-sidebar/PluginSkillModal";
 import { ProjectDialog } from "@/shared/components/layout/app-sidebar/ProjectDialog";
+import { getApiErrorMessage } from "@/shared/api";
 import { toastManager } from "@/shared/components/ui/toast";
 import {
   agentDefinitions,
@@ -30,6 +31,7 @@ import type {
   AgentDialogView,
   AgentEditMode,
   AgentToolTab,
+  AppSidebarProject,
   AppSidebarProps,
   InstallResult,
   McpServer,
@@ -52,19 +54,32 @@ import {
   taskPermissionFor,
 } from "@/shared/components/layout/app-sidebar/utils";
 
+const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+
 export function AppSidebar({
   activeProjectPath,
+  onCreateProject,
+  onDeleteProject,
   onProjectChange,
+  onRefreshProjects,
   open,
   onClose,
   onSelectSession,
-  projects: initialProjects,
+  projects,
+  projectsError,
+  projectsLoading = false,
   sessions,
 }: AppSidebarProps) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectDialogView, setProjectDialogView] =
     useState<ProjectDialogView>("list");
-  const [projects, setProjects] = useState(initialProjects);
+  const [projectActionError, setProjectActionError] = useState<string | null>(
+    null,
+  );
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [deletingProjectName, setDeletingProjectName] = useState<string | null>(
+    null,
+  );
   const [projectSearch, setProjectSearch] = useState("");
   const [projectCreateName, setProjectCreateName] = useState("");
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
@@ -137,10 +152,13 @@ export function AppSidebar({
     const keyword = projectSearch.trim().toLowerCase();
     if (!keyword) return true;
     return (
+      (project.displayName ?? "").toLowerCase().includes(keyword) ||
+      (project.description ?? "").toLowerCase().includes(keyword) ||
       project.name.toLowerCase().includes(keyword) ||
       project.path.toLowerCase().includes(keyword)
     );
   });
+  const projectDialogError = projectActionError ?? projectsError ?? null;
 
   const filteredSessions = sessions.filter((session) => {
     const keyword = historySearch.trim().toLowerCase();
@@ -238,6 +256,11 @@ export function AppSidebar({
     onClose();
   }
 
+  function refreshProjects() {
+    setProjectActionError(null);
+    void onRefreshProjects();
+  }
+
   function confirmOpenProject(path: string) {
     if (!path.trim()) return;
     showConfirmationToast({
@@ -253,32 +276,101 @@ export function AppSidebar({
     });
   }
 
+  async function createProject(name: string) {
+    setCreatingProject(true);
+    setProjectActionError(null);
+
+    try {
+      const nextProject = await onCreateProject(name);
+      setProjectDialogView("list");
+      setProjectCreateName("");
+      finishProjectOpen(nextProject.path);
+      toastManager.add({
+        id: `project-created-${name}-${Date.now()}`,
+        title: "專案已建立",
+        description: nextProject.path,
+        type: "success",
+      });
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      setProjectActionError(message);
+      toastManager.add({
+        id: `project-create-error-${Date.now()}`,
+        title: "建立專案失敗",
+        description: message,
+        type: "error",
+      });
+    } finally {
+      setCreatingProject(false);
+    }
+  }
+
   function confirmCreateProject() {
     const name = projectCreateName.trim();
-    const path = `/workspace/${name}/`;
     if (!name) return;
+
+    if (!PROJECT_NAME_PATTERN.test(name)) {
+      setProjectActionError(
+        "專案名稱只能使用英文、數字、底線、連字號，且需以英文或數字開頭。",
+      );
+      return;
+    }
+
     showConfirmationToast({
-      id: `create-project-${path}`,
+      id: `create-project-${name}`,
       title: "是否建立專案？",
       description: (
         <span className="grid gap-1">
           <span>名稱：{name}</span>
-          <span className="font-mono text-xs">{path}</span>
+          <span className="text-xs">會建立到 backend 的 OpenCode projects root。</span>
           <span className="text-xs">忽略此提示即取消操作。</span>
         </span>
       ),
-      onConfirm: () => {
-        const nextProject = { id: `project-${Date.now()}`, name, path };
-        setProjects((current) =>
-          current.some((project) => project.path === path)
-            ? current
-            : [nextProject, ...current],
-        );
-        setProjectDialogView("list");
-        setProjectCreateName("");
-        finishProjectOpen(path);
-      },
+      onConfirm: () => void createProject(name),
     });
+  }
+
+  function confirmDeleteProject(project: AppSidebarProject) {
+    const label = project.displayName || project.name;
+
+    showConfirmationToast({
+      id: `delete-project-${project.name}`,
+      title: "是否刪除專案？",
+      description: (
+        <span className="grid gap-1">
+          <span>名稱：{label}</span>
+          <span className="font-mono text-xs">{project.path}</span>
+          <span className="text-xs">會以 force=true 刪除 backend 管理的專案資料。</span>
+        </span>
+      ),
+      onConfirm: () => void deleteProject(project),
+    });
+  }
+
+  async function deleteProject(project: AppSidebarProject) {
+    setDeletingProjectName(project.name);
+    setProjectActionError(null);
+
+    try {
+      await onDeleteProject(project);
+      toastManager.add({
+        id: `project-deleted-${project.name}-${Date.now()}`,
+        title: "專案已刪除",
+        description: project.path,
+        type: "success",
+      });
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      setProjectActionError(message);
+      toastManager.add({
+        id: `project-delete-error-${Date.now()}`,
+        title: "刪除專案失敗",
+        description: message,
+        type: "error",
+      });
+    } finally {
+      setDeletingProjectName(null);
+    }
   }
 
   function confirmBatchUpdate(scope: "agents-tools" | "plugins-skills") {
@@ -1084,7 +1176,9 @@ export function AppSidebar({
         onPluginSkillOpen={openPluginSkillSettings}
         onProjectOpen={() => {
           setProjectDialogView("list");
+          setProjectActionError(null);
           setProjectDialogOpen(true);
+          void onRefreshProjects();
         }}
         onSelectSession={onSelectSession}
         onUserSettingsOpen={() => {
@@ -1098,15 +1192,22 @@ export function AppSidebar({
 
       <ProjectDialog
         activeProjectPath={activeProjectPath}
+        busyProjectName={deletingProjectName}
         createName={projectCreateName}
+        creatingProject={creatingProject}
+        error={projectDialogError}
         filteredProjects={filteredProjects}
+        loadingProjects={projectsLoading}
         onClose={() => {
           setProjectDialogOpen(false);
           setProjectDialogView("list");
+          setProjectActionError(null);
         }}
         onConfirmCreate={confirmCreateProject}
+        onConfirmDelete={confirmDeleteProject}
         onConfirmOpen={confirmOpenProject}
         onCreateNameChange={setProjectCreateName}
+        onRefreshProjects={refreshProjects}
         onSearchChange={setProjectSearch}
         onViewChange={setProjectDialogView}
         open={projectDialogOpen}

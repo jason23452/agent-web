@@ -14,6 +14,8 @@ export type Session = {
 }
 
 export type Project = {
+  description?: string
+  displayName?: string
   id: string
   name: string
   path: string

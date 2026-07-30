@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
 import { agents, fileTree, recentProjects, sessions, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
+import { createManagedProject, deleteManagedProject, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
-import type { Attachment, FileNode, PinContext } from "@/shared/types/workspace"
+import { getApiErrorMessage } from "@/shared/api"
+import type { Attachment, FileNode, PinContext, Project } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
 import { AppShell } from "@/shared/components/layout/AppShell"
@@ -51,12 +53,12 @@ function getProjectRouteName(projectPath: string) {
   return name || "project"
 }
 
-function getProjectPath(name: string) {
-  const matchedProject = recentProjects.find((project) => {
+function getProjectPath(name: string, projects: Project[]) {
+  const matchedProject = projects.find((project) => {
     return project.id === name || project.name === name || getProjectRouteName(project.path) === name
   })
 
-  return matchedProject?.path ?? `/workspace/${name}/`
+  return matchedProject?.path ?? `/workspace/projects/${name}`
 }
 
 export function AppRouter() {
@@ -66,6 +68,9 @@ export function AppRouter() {
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [previewFile, setPreviewFile] = useState<FileNode | null>(null)
+  const [projects, setProjects] = useState<Project[]>(recentProjects)
+  const [projectsError, setProjectsError] = useState<string | null>(null)
+  const [projectsLoading, setProjectsLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -103,10 +108,73 @@ export function AppRouter() {
     navigateToRoute({ name: "workspaceProject", projectName }, options)
   }, [navigateToRoute])
 
-  const defaultProjectName = getProjectRouteName(recentProjects[0]?.path ?? "/workspace/test-web/")
+  const refreshProjects = useCallback(async () => {
+    setProjectsLoading(true)
+    setProjectsError(null)
+
+    try {
+      const response = await listManagedProjects()
+      setProjects(response.projects.map(toWorkspaceProject))
+    } catch (error) {
+      setProjectsError(getApiErrorMessage(error))
+    } finally {
+      setProjectsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void refreshProjects()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [refreshProjects])
+
+  const defaultProjectPath = projects[0]?.path ?? recentProjects[0]?.path ?? "/workspace/projects/test-web"
+  const defaultProjectName = getProjectRouteName(defaultProjectPath)
   const activeProjectName = route.name === "workspaceProject" ? route.projectName : defaultProjectName
-  const activeProjectPath = getProjectPath(activeProjectName)
+  const activeProjectPath = getProjectPath(activeProjectName, projects)
   const activeAgent = agents.find((agent) => agent.id === activeAgentId) ?? agents[0]!
+
+  const createProject = useCallback(async (name: string) => {
+    const response = await createManagedProject({
+      displayName: name,
+      initializeReadme: true,
+      name,
+    })
+    const nextProject = toWorkspaceProject(response.project)
+
+    setProjects((current) => [
+      nextProject,
+      ...current.filter((project) => project.id !== nextProject.id),
+    ])
+    setProjectsError(null)
+
+    return nextProject
+  }, [])
+
+  const deleteProject = useCallback(async (project: Project) => {
+    await deleteManagedProject(project.name)
+
+    const nextProjects = projects.filter((item) => item.id !== project.id)
+    setProjects(nextProjects)
+    setProjectsError(null)
+
+    const deletedRouteName = getProjectRouteName(project.path)
+    const deletedActiveProject =
+      route.name === "workspaceProject" &&
+      (route.projectName === project.name || route.projectName === deletedRouteName)
+
+    if (!deletedActiveProject) return
+
+    const fallbackProject = nextProjects[0]
+    if (fallbackProject) {
+      navigateToWorkspaceProject(getProjectRouteName(fallbackProject.path), { replace: true })
+      return
+    }
+
+    navigateToRoute({ name: "home" }, { replace: true })
+  }, [navigateToRoute, navigateToWorkspaceProject, projects, route])
 
   function addAttachment() {
     const next = starterAttachments.find((item) => !attachments.some((attachment) => attachment.id === item.id))
@@ -133,7 +201,7 @@ export function AppRouter() {
 
   const mainRoute =
     route.name === "workspace" ? (
-      <WorkspaceRoute defaultProjectPath={recentProjects[0]?.path ?? "/workspace/test-web/"} onProjectNameChange={navigateToWorkspaceProject} />
+      <WorkspaceRoute defaultProjectPath={defaultProjectPath} onProjectNameChange={navigateToWorkspaceProject} />
     ) : route.name === "workspaceProject" ? (
       <WorkspaceProjectRoute />
     ) : (
@@ -159,11 +227,16 @@ export function AppRouter() {
       sidebar={
         <AppSidebar
           activeProjectPath={activeProjectPath}
+          onCreateProject={createProject}
+          onDeleteProject={deleteProject}
           onClose={() => setSidebarOpen(false)}
           onProjectChange={changeProject}
+          onRefreshProjects={refreshProjects}
           onSelectSession={closeMobileSurfaces}
           open={sidebarOpen}
-          projects={recentProjects}
+          projects={projects}
+          projectsError={projectsError}
+          projectsLoading={projectsLoading}
           sessions={sessions}
         />
       }

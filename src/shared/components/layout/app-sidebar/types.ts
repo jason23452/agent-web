@@ -1,10 +1,6 @@
 import type { Project, Session } from "@/shared/types/workspace";
 
-export type AppSidebarProject = {
-  id: Project["id"];
-  name: Project["name"];
-  path: Project["path"];
-};
+export type AppSidebarProject = Pick<Project, "description" | "displayName" | "id" | "name" | "path">;
 
 export type AppSidebarSession = {
   id: Session["id"];
@@ -14,11 +10,16 @@ export type AppSidebarSession = {
 
 export type AppSidebarProps = {
   activeProjectPath: string;
+  onCreateProject: (name: string) => Promise<AppSidebarProject>;
+  onDeleteProject: (project: AppSidebarProject) => Promise<void>;
   onProjectChange: (path: string) => void;
+  onRefreshProjects: () => Promise<void>;
   open: boolean;
   onClose: () => void;
   onSelectSession: () => void;
   projects: AppSidebarProject[];
+  projectsError?: string | null;
+  projectsLoading?: boolean;
   sessions: AppSidebarSession[];
 };
 
