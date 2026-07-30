@@ -19,6 +19,21 @@ export type RestartOpenCodeRuntimeResponse = {
   status: OpenCodeRuntimeOperationStatus;
 };
 
+export type OpenCodeRuntimeOperationResponse = {
+  operation: OpenCodeRuntimeOperation;
+};
+
+export type OpenCodeRuntimeStatusResponse = {
+  enabled: boolean;
+  operation: OpenCodeRuntimeOperation | null;
+  lastOperation: OpenCodeRuntimeOperation | null;
+  upstream: {
+    error?: string;
+    ready: boolean;
+    statusCode?: number;
+  };
+};
+
 export function restartOpenCodeRuntime(
   body: { reason?: string; wait?: boolean },
   config?: ApiRequestConfig,
@@ -28,4 +43,18 @@ export function restartOpenCodeRuntime(
     body,
     method: "POST",
   });
+}
+
+export function getOpenCodeRuntimeOperation(
+  operationID: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest<OpenCodeRuntimeOperationResponse>(
+    `/bff/opencode-runtime/operations/${encodeURIComponent(operationID)}`,
+    config,
+  );
+}
+
+export function getOpenCodeRuntimeStatus(config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeRuntimeStatusResponse>("/bff/opencode-runtime/status", config);
 }

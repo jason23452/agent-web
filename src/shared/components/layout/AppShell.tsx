@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/shared/utils/cn"
 
 type AppShellProps = {
@@ -97,11 +98,12 @@ export function AppShell({
 }
 
 function AppLayoutLoadingOverlay({ label }: { label: string }) {
-  return (
+  return createPortal(
     <div
       aria-live="polite"
-      className="fixed inset-0 z-[90] grid place-items-center bg-background/72 backdrop-blur-sm"
+      className="fixed inset-0 grid place-items-center bg-background/72 backdrop-blur-sm"
       role="status"
+      style={{ zIndex: 2147483647 }}
     >
       <div className="grid min-w-60 gap-3 rounded-2xl border bg-background px-5 py-4 text-center shadow-lg/10">
         <span
@@ -111,6 +113,7 @@ function AppLayoutLoadingOverlay({ label }: { label: string }) {
         <span className="font-medium text-sm">{label}</span>
         <span className="text-muted-foreground text-xs">請稍候，完成前不要關閉頁面。</span>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

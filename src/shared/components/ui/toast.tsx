@@ -337,10 +337,11 @@ export function ToastProvider({
   children,
   position = "bottom-right",
   portalProps,
+  timeout = 2000,
   ...props
 }: ToastProviderProps): React.ReactElement {
   return (
-    <Toast.Provider toastManager={toastManager} {...props}>
+    <Toast.Provider timeout={timeout} toastManager={toastManager} {...props}>
       {children}
       <Toasts portalProps={portalProps} position={position} />
     </Toast.Provider>

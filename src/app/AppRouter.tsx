@@ -7,7 +7,7 @@ import { listProjectSessions, toWorkspaceSession } from "@/features/workspace/ap
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
-import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
+import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus, restartOpenCodeRuntime, type OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
 import type { Agent, Attachment, FileNode, PinContext, Project, Session } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
@@ -27,6 +27,9 @@ const EMPTY_AGENT: Agent = {
   provider: "OpenCode",
   status: "idle",
 }
+
+const OPENCODE_RESTART_WAIT_TIMEOUT_MS = 70_000
+const OPENCODE_RESTART_POLL_MS = 1_000
 
 function readBrowserRoute(): AppRoute {
   const pathname = window.location.pathname.replace(/\/+$/, "") || HOME_ROUTE_PATH
@@ -69,6 +72,58 @@ function getProjectPath(name: string, projects: Project[]) {
   })
 
   return matchedProject?.path ?? `/workspace/projects/${name}`
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function isRuntimeOperation(value: unknown): value is OpenCodeRuntimeOperation {
+  return isRecord(value) && typeof value.operationID === "string" && typeof value.status === "string"
+}
+
+function getRestartInProgressOperation(error: unknown): OpenCodeRuntimeOperation | null {
+  if (!(error instanceof ApiError)) return null
+  if (error.status !== 409 || error.code !== "OPENCODE_RESTART_IN_PROGRESS") return null
+
+  return isRuntimeOperation(error.details) ? error.details : null
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function waitForOpenCodeRestartOperation(operationID: string) {
+  const deadline = Date.now() + OPENCODE_RESTART_WAIT_TIMEOUT_MS
+
+  while (Date.now() <= deadline) {
+    const { operation } = await getOpenCodeRuntimeOperation(operationID)
+    if (operation.status === "ready") return operation
+    if (operation.status === "failed") {
+      throw new Error(operation.error || "OpenCode runtime restart failed.")
+    }
+
+    await sleep(OPENCODE_RESTART_POLL_MS)
+  }
+
+  throw new Error("OpenCode runtime restart did not finish before the timeout.")
+}
+
+async function waitForOpenCodeRuntimeReady() {
+  const deadline = Date.now() + OPENCODE_RESTART_WAIT_TIMEOUT_MS
+
+  while (Date.now() <= deadline) {
+    const status = await getOpenCodeRuntimeStatus()
+    if (!status.operation && status.upstream.ready) return
+    if (status.operation?.status === "ready" && status.upstream.ready) return
+    if (status.operation?.status === "failed") {
+      throw new Error(status.operation.error || "OpenCode runtime restart failed.")
+    }
+
+    await sleep(OPENCODE_RESTART_POLL_MS)
+  }
+
+  throw new Error("OpenCode runtime did not become ready before the timeout.")
 }
 
 export function AppRouter() {
@@ -298,10 +353,23 @@ export function AppRouter() {
     setLayoutLoading(true)
 
     try {
-      await restartOpenCodeRuntime({ reason, wait: true })
+      try {
+        await restartOpenCodeRuntime({ reason, wait: true })
+      } catch (error) {
+        const runningOperation = getRestartInProgressOperation(error)
+        if (!runningOperation) throw error
+
+        setLayoutLoadingLabel("OpenCode server 已在重新啟動，正在等待完成...")
+        if (runningOperation.operationID) {
+          await waitForOpenCodeRestartOperation(runningOperation.operationID)
+        } else {
+          await waitForOpenCodeRuntimeReady()
+        }
+      }
 
       if (!activeProjectPath) return
 
+      setLayoutLoadingLabel("正在重新載入 OpenCode agents...")
       const nextAgents = await listProjectPrimaryAgents(activeProjectPath).catch((error) => {
         setAgentsError(getApiErrorMessage(error))
         return null
