@@ -1,4 +1,4 @@
-import { apiRequest } from "@/shared/api";
+import { apiRequest, type ApiRequestConfig } from "@/shared/api";
 import type { Project } from "@/shared/types/workspace";
 
 export type ManagedProject = {
@@ -40,6 +40,13 @@ export type DeleteManagedProjectResponse = {
   projectName: string;
 };
 
+export type ManagedProjectStatusResponse = {
+  exists: true;
+  project: ManagedProject;
+  projectName: string;
+  status: "found";
+};
+
 export function listManagedProjects() {
   return apiRequest<ManagedProjectsResponse>("/bff/opencode-volume/projects");
 }
@@ -56,6 +63,10 @@ export function deleteManagedProject(projectName: string) {
     method: "DELETE",
     query: { force: true },
   });
+}
+
+export function getManagedProjectStatus(projectName: string, config?: ApiRequestConfig) {
+  return apiRequest<ManagedProjectStatusResponse>(`/bff/opencode-volume/projects/${encodeURIComponent(projectName)}/status`, config);
 }
 
 export function toWorkspaceProject(project: ManagedProject): Project {

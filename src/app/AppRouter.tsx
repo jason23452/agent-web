@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
 import { agents, fileTree, recentProjects, sessions, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
-import { createManagedProject, deleteManagedProject, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
+import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
-import { getApiErrorMessage } from "@/shared/api"
+import { ApiError, getApiErrorMessage } from "@/shared/api"
 import type { Attachment, FileNode, PinContext, Project } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
@@ -108,6 +108,8 @@ export function AppRouter() {
     navigateToRoute({ name: "workspaceProject", projectName }, options)
   }, [navigateToRoute])
 
+  const checkedProjectName = route.name === "workspaceProject" ? route.projectName : null
+
   const refreshProjects = useCallback(async () => {
     setProjectsLoading(true)
     setProjectsError(null)
@@ -130,10 +132,33 @@ export function AppRouter() {
     return () => window.clearTimeout(timeoutId)
   }, [refreshProjects])
 
+  useEffect(() => {
+    if (!checkedProjectName) return
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      void getManagedProjectStatus(checkedProjectName, { signal: controller.signal }).catch((error) => {
+        if (controller.signal.aborted) return
+
+        if (error instanceof ApiError && error.status === 404) {
+          navigateToRoute({ name: "workspace" }, { replace: true })
+          return
+        }
+
+        setProjectsError(getApiErrorMessage(error))
+      })
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [checkedProjectName, navigateToRoute])
+
   const defaultProjectPath = projects[0]?.path ?? recentProjects[0]?.path ?? "/workspace/projects/test-web"
   const defaultProjectName = getProjectRouteName(defaultProjectPath)
-  const activeProjectName = route.name === "workspaceProject" ? route.projectName : defaultProjectName
-  const activeProjectPath = getProjectPath(activeProjectName, projects)
+  const activeProjectName = checkedProjectName ?? defaultProjectName
+  const activeProjectPath = checkedProjectName ? getProjectPath(activeProjectName, projects) : ""
   const activeAgent = agents.find((agent) => agent.id === activeAgentId) ?? agents[0]!
 
   const createProject = useCallback(async (name: string) => {
@@ -167,14 +192,8 @@ export function AppRouter() {
 
     if (!deletedActiveProject) return
 
-    const fallbackProject = nextProjects[0]
-    if (fallbackProject) {
-      navigateToWorkspaceProject(getProjectRouteName(fallbackProject.path), { replace: true })
-      return
-    }
-
-    navigateToRoute({ name: "home" }, { replace: true })
-  }, [navigateToRoute, navigateToWorkspaceProject, projects, route])
+    navigateToRoute({ name: "workspace" }, { replace: true })
+  }, [navigateToRoute, projects, route])
 
   function addAttachment() {
     const next = starterAttachments.find((item) => !attachments.some((attachment) => attachment.id === item.id))
@@ -201,7 +220,7 @@ export function AppRouter() {
 
   const mainRoute =
     route.name === "workspace" ? (
-      <WorkspaceRoute defaultProjectPath={defaultProjectPath} onProjectNameChange={navigateToWorkspaceProject} />
+      <WorkspaceRoute />
     ) : route.name === "workspaceProject" ? (
       <WorkspaceProjectRoute />
     ) : (
