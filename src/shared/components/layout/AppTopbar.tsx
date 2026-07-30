@@ -8,6 +8,8 @@ import type { Agent, TokenUsage } from "@/shared/types/workspace"
 type AppTopbarProps = {
   activeAgent: Agent
   activeProjectPath?: string | null
+  agentsError?: string | null
+  agentsLoading?: boolean
   agents: Agent[]
   onAgentChange: (agentId: string) => void
   onOpenContextPanel: () => void
@@ -23,6 +25,8 @@ function getProjectLabel(path: string) {
 export function AppTopbar({
   activeAgent,
   activeProjectPath,
+  agentsError,
+  agentsLoading = false,
   agents,
   onAgentChange,
   onOpenContextPanel,
@@ -47,7 +51,7 @@ export function AppTopbar({
       }
       end={
         <>
-          <AgentSwitcher activeAgent={activeAgent} agents={agents} onAgentChange={onAgentChange} />
+          <AgentSwitcher activeAgent={activeAgent} agents={agents} error={agentsError} loading={agentsLoading} onAgentChange={onAgentChange} />
           <ContextMeter usage={tokenUsage} />
           <Button aria-label="Open context panel" className="bg-background min-[1181px]:hidden" onClick={onOpenContextPanel} size="icon" variant="outline">
             <PanelRightIcon aria-hidden="true" />

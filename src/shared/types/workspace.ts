@@ -1,9 +1,15 @@
 export type AgentStatus = "active" | "idle" | "review"
 
 export type Agent = {
+  builtIn?: boolean
+  color?: string
+  description?: string
   id: string
+  mode?: "all" | "primary" | "subagent"
+  modelID?: string
   name: string
   provider: string
+  providerID?: string
   status: AgentStatus
 }
 
