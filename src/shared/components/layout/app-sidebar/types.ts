@@ -162,6 +162,10 @@ export type ToolDefinition = {
   description: string;
   category: string;
   source: "built-in" | "custom";
+  installTarget?: "project" | "global";
+  inherited?: boolean;
+  registryPath?: string;
+  registryType?: "file" | "directory";
   runtime?: "python" | "js-ts";
   entry?: string;
   code?: string;
@@ -172,6 +176,7 @@ export type ToolForm = {
   name: string;
   description: string;
   category: string;
+  installTarget: NonNullable<ToolDefinition["installTarget"]>;
   runtime: ToolDefinition["runtime"];
   entry: string;
   code: string;

@@ -463,6 +463,7 @@ export const initialToolDefinitions: ToolDefinition[] = [
     description: "Query project database records, schema, and persisted data.",
     category: "Custom",
     source: "custom",
+    installTarget: "project",
   },
   {
     id: "cms_publish",
@@ -471,6 +472,7 @@ export const initialToolDefinitions: ToolDefinition[] = [
       "Publish or validate CMS content through a project-specific tool.",
     category: "Custom",
     source: "custom",
+    installTarget: "project",
   },
 ];
 
@@ -520,6 +522,7 @@ export const emptyToolForm: ToolForm = {
   name: "",
   description: "",
   category: "Custom",
+  installTarget: "project",
   runtime: "js-ts",
   entry: "./.opencode/tools/my-tool.ts",
   code: "",

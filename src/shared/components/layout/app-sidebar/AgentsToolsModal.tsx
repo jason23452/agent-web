@@ -358,6 +358,28 @@ function getToolSourceLabel(source: ToolDefinition["source"]) {
   return source === "built-in" ? "系統預設" : "自訂";
 }
 
+function getToolTargetLabel(target?: ToolDefinition["installTarget"]) {
+  if (target === "global") return "Global";
+  if (target === "project") return "Project";
+  return "未指定";
+}
+
+function getToolFormEntryPath(
+  name: string,
+  runtime: ToolDefinition["runtime"] = "js-ts",
+  installTarget: NonNullable<ToolDefinition["installTarget"]> = "project",
+) {
+  const safeName = name.trim().replace(/\s+/g, "_") || "my-tool";
+  const relativePath = runtime === "python" ? `${safeName}/${safeName}.py` : `${safeName}.ts`;
+  const prefix = installTarget === "global" ? "~/.config/opencode/tools" : "./.opencode/tools";
+
+  return `${prefix}/${relativePath}`;
+}
+
+function isDefaultToolEntry(form: ToolForm) {
+  return !form.entry || form.entry === getToolFormEntryPath(form.name, form.runtime, form.installTarget);
+}
+
 function AgentsToolsList({
   agents,
   agentsError,
@@ -675,6 +697,26 @@ function ToolListItem({
           >
             {getToolSourceLabel(tool.source)}
           </Badge>
+          {tool.source === "custom" && (
+            <Badge size="sm" variant="outline">
+              {getToolTargetLabel(tool.installTarget)}
+            </Badge>
+          )}
+          {tool.inherited && (
+            <Badge size="sm" variant="info">
+              inherited
+            </Badge>
+          )}
+          {tool.source === "custom" && (
+            <Badge size="sm" variant="outline">
+              {getToolTargetLabel(tool.installTarget)}
+            </Badge>
+          )}
+          {tool.inherited && (
+            <Badge size="sm" variant="info">
+              inherited
+            </Badge>
+          )}
           {tool.runtime && (
             <Badge size="sm" variant="info">
               {tool.runtime === "python" ? "Python" : "JS/TS"}
@@ -748,6 +790,12 @@ function ToolDetailPanel({
           <ToolMetadataItem label="名稱" value={tool.name} />
           <ToolMetadataItem label="分類" value={tool.category} />
           <ToolMetadataItem label="來源" value={getToolSourceLabel(tool.source)} />
+          {tool.source === "custom" && (
+            <ToolMetadataItem
+              label="建立位置"
+              value={getToolTargetLabel(tool.installTarget)}
+            />
+          )}
           {tool.runtime && (
             <ToolMetadataItem
               label="Runtime"
@@ -755,6 +803,9 @@ function ToolDetailPanel({
             />
           )}
           {tool.entry && <ToolMetadataItem label="Entry" value={tool.entry} />}
+          {tool.registryPath && (
+            <ToolMetadataItem label="Registry path" value={tool.registryPath} />
+          )}
         </div>
       </section>
 
@@ -830,10 +881,14 @@ function ToolConfigPanel({
             <Input
               aria-label="Tool 名稱"
               onChange={(event) => {
+                const nextName = event.target.value;
                 onToolTestResultChange(null);
                 onToolFormChange((current) => ({
                   ...current,
-                  name: event.target.value,
+                  name: nextName,
+                  entry: isDefaultToolEntry(current)
+                    ? getToolFormEntryPath(nextName, current.runtime, current.installTarget)
+                    : current.entry,
                 }));
               }}
               placeholder="cms_publish"
@@ -870,19 +925,41 @@ function ToolConfigPanel({
             value={toolForm.description}
           />
         </label>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            建立位置
+            <select
+              className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              onChange={(event) => {
+                const installTarget = event.target.value as ToolForm["installTarget"];
+                onToolTestResultChange(null);
+                onToolFormChange((current) => ({
+                  ...current,
+                  installTarget,
+                  entry: isDefaultToolEntry(current)
+                    ? getToolFormEntryPath(current.name, current.runtime, installTarget)
+                    : current.entry,
+                }));
+              }}
+              value={toolForm.installTarget}
+            >
+              <option value="project">當前 Project</option>
+              <option value="global">Global</option>
+            </select>
+          </label>
           <label className="grid gap-2 text-muted-foreground text-sm">
             Runtime
             <select
               className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               onChange={(event) => {
+                const runtime = event.target.value as ToolDefinition["runtime"];
                 onToolTestResultChange(null);
                 onToolFormChange((current) => ({
                   ...current,
-                  runtime: event.target.value as ToolDefinition["runtime"],
-                  entry:
-                    current.entry ||
-                    `./.opencode/tools/${current.name || "my-tool"}.${event.target.value === "python" ? "py" : "ts"}`,
+                  runtime,
+                  entry: isDefaultToolEntry(current)
+                    ? getToolFormEntryPath(current.name, runtime, current.installTarget)
+                    : current.entry,
                 }));
               }}
               value={toolForm.runtime}
@@ -904,8 +981,8 @@ function ToolConfigPanel({
               }}
               placeholder={
                 toolForm.runtime === "python"
-                  ? "./.opencode/tools/my-tool.py"
-                  : "./.opencode/tools/my-tool.ts"
+                  ? getToolFormEntryPath("my-tool", "python", toolForm.installTarget)
+                  : getToolFormEntryPath("my-tool", "js-ts", toolForm.installTarget)
               }
               value={toolForm.entry}
             />
@@ -982,8 +1059,9 @@ function ToolConfigPanel({
           )}
         </section>
         <div className="rounded-lg border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">
-          自訂工具會出現在工具清單與 Agent tool selector。內建工具不能編輯，只有
-          custom tool 可以編輯或刪除。
+          自訂工具會建立到{toolForm.installTarget === "global" ? " Global" : "當前 Project"}
+          ，並出現在工具清單與 Agent tool selector。內建工具不能編輯，只有 custom
+          tool 可以編輯或刪除。
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">

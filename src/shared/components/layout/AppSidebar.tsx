@@ -3,6 +3,12 @@ import {
   listProjectAgents,
   type OpenCodeAgent,
 } from "@/shared/api/opencodeAgents";
+import {
+  listEffectiveProjectTools,
+  readToolRegistryEntry,
+  upsertToolRegistryEntry,
+  type OpenCodeRegistryEntry,
+} from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
 import {
   UserSettingsModal,
@@ -195,7 +201,10 @@ function toAgentDefinition(agent: OpenCodeAgent): AgentDefinition {
   };
 }
 
-function toToolDefinition(toolId: string): ToolDefinition {
+function toToolDefinition(
+  toolId: string,
+  registryEntry?: OpenCodeRegistryEntry,
+): ToolDefinition {
   const metadata = SYSTEM_TOOL_METADATA[toolId];
   if (metadata) {
     return {
@@ -211,7 +220,67 @@ function toToolDefinition(toolId: string): ToolDefinition {
     description: "OpenCode project/global custom or dynamically registered tool.",
     category: "Custom",
     source: "custom",
+    installTarget: registryEntry?.scope ?? "project",
+    inherited: registryEntry?.inherited,
+    registryPath: registryEntry?.path,
+    registryType: registryEntry?.type,
+    runtime: inferToolRuntime(registryEntry),
+    entry: getToolEntryPath(toolId, inferToolRuntime(registryEntry), registryEntry?.scope ?? "project", registryEntry),
   };
+}
+
+function inferToolRuntime(registryEntry?: OpenCodeRegistryEntry): ToolDefinition["runtime"] {
+  if (!registryEntry) return "js-ts";
+  const normalizedPath = registryEntry.path.replace(/\\/g, "/");
+  if (normalizedPath.endsWith(".py")) return "python";
+  return "js-ts";
+}
+
+function getToolEntryPath(
+  name: string,
+  runtime: ToolDefinition["runtime"] = "js-ts",
+  installTarget: NonNullable<ToolDefinition["installTarget"]> = "project",
+  registryEntry?: OpenCodeRegistryEntry,
+) {
+  const relativePath = registryEntry ? getRegistryToolRelativePath(name, registryEntry) : undefined;
+  const defaultRelativePath = runtime === "python" ? `${name}/${name}.py` : `${name}.ts`;
+  const path = relativePath || defaultRelativePath;
+  const prefix = installTarget === "global" ? "~/.config/opencode/tools" : "./.opencode/tools";
+
+  return `${prefix}/${path}`;
+}
+
+function getRegistryToolRelativePath(name: string, registryEntry: OpenCodeRegistryEntry) {
+  const normalizedPath = registryEntry.path.replace(/\\/g, "/");
+  const marker = "/tools/";
+  const markerIndex = normalizedPath.lastIndexOf(marker);
+  if (markerIndex === -1) return registryEntry.type === "directory" ? name : `${name}.ts`;
+
+  return normalizedPath.slice(markerIndex + marker.length);
+}
+
+function getProjectNameFromPath(path: string) {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalizedPath.split("/").filter(Boolean).at(-1) ?? "";
+}
+
+function getRegistryFilenameFromEntry(
+  name: string,
+  runtime: ToolDefinition["runtime"] = "js-ts",
+  entry: string,
+) {
+  const normalizedEntry = entry.replace(/\\/g, "/").trim();
+  const marker = "/tools/";
+  const markerIndex = normalizedEntry.lastIndexOf(marker);
+  const relativePath = markerIndex === -1
+    ? normalizedEntry.replace(/^\.\/\.opencode\/tools\//, "").replace(/^~\/\.config\/opencode\/tools\//, "")
+    : normalizedEntry.slice(markerIndex + marker.length);
+
+  if (!relativePath || (runtime === "js-ts" && relativePath === `${name}.ts`)) {
+    return undefined;
+  }
+
+  return relativePath;
 }
 
 function sortToolDefinitions(a: ToolDefinition, b: ToolDefinition) {
@@ -464,6 +533,9 @@ export function AppSidebar({
     agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedTool =
     toolDefinitions.find((tool) => tool.id === selectedToolId) ?? null;
+  const activeProjectName =
+    projects.find((project) => project.path === activeProjectPath)?.name ??
+    getProjectNameFromPath(activeProjectPath);
   const selectedModelProvider =
     modelProviders.find(
       (provider) => provider.id === selectedModelProviderId,
@@ -527,12 +599,26 @@ export function AppSidebar({
           if (!controller.signal.aborted) setAgentsLoading(false);
         });
 
-      void listProjectToolIds(activeProjectPath, { signal: controller.signal })
-        .then((response) => {
+      void Promise.all([
+        listProjectToolIds(activeProjectPath, { signal: controller.signal }),
+        activeProjectName
+          ? listEffectiveProjectTools(activeProjectName, { signal: controller.signal }).catch(() => null)
+          : Promise.resolve(null),
+      ])
+        .then(([toolIds, registryResponse]) => {
           if (controller.signal.aborted) return;
 
-          const nextTools = [...new Set(response)]
-            .map(toToolDefinition)
+          const registryEntries = registryResponse?.entries ?? [];
+          const registryEntriesByName = new Map(
+            registryEntries.map((entry) => [entry.name, entry]),
+          );
+          const nextTools = [
+            ...new Set([
+              ...toolIds,
+              ...registryEntries.map((entry) => entry.name),
+            ]),
+          ]
+            .map((toolId) => toToolDefinition(toolId, registryEntriesByName.get(toolId)))
             .sort(sortToolDefinitions);
           setToolDefinitions(nextTools);
           setToolToAdd((current) =>
@@ -557,7 +643,7 @@ export function AppSidebar({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [activeProjectPath, agentsDialogOpen, agentsToolsHasChanges]);
+  }, [activeProjectName, activeProjectPath, agentsDialogOpen, agentsToolsHasChanges]);
 
   function showConfirmationToast({
     description,
@@ -1087,15 +1173,62 @@ export function AppSidebar({
       name: tool.name,
       description: tool.description,
       category: tool.category,
+      installTarget: tool.installTarget ?? "project",
       runtime: tool.runtime ?? "js-ts",
       entry:
         tool.entry ??
-        `./.opencode/tools/${tool.name}.${tool.runtime === "python" ? "py" : "ts"}`,
+        getToolEntryPath(
+          tool.name,
+          tool.runtime ?? "js-ts",
+          tool.installTarget ?? "project",
+        ),
       code: tool.code ?? "",
       testInput: tool.testInput ?? emptyToolForm.testInput,
     });
     setToolTestResult(null);
     setAgentDialogView("tool-config");
+
+    if (tool.installTarget) {
+      void loadToolRegistryContent(tool);
+    }
+  }
+
+  async function loadToolRegistryContent(tool: ToolDefinition) {
+    if ((tool.installTarget ?? "project") === "project" && !activeProjectName) return;
+
+    try {
+      const response = await readToolRegistryEntry(
+        tool.installTarget ?? "project",
+        tool.name,
+        activeProjectName,
+      );
+      const content = response.content ?? Object.values(response.files ?? {})[0] ?? "";
+      if (!content) return;
+
+      setToolForm((current) =>
+        current.name === tool.name
+          ? {
+              ...current,
+              code: content,
+              entry:
+                response.file
+                  ? getToolEntryPath(tool.name, current.runtime, current.installTarget, {
+                      kind: "tools",
+                      name: tool.name,
+                      path: `${response.root.replace(/\\/g, "/")}/${response.file}`,
+                      scope: current.installTarget,
+                      type: response.files ? "directory" : "file",
+                    })
+                  : current.entry,
+            }
+          : current,
+      );
+    } catch (error) {
+      setToolTestResult({
+        status: "error",
+        message: `讀取 tool 內容失敗：${getApiErrorMessage(error)}`,
+      });
+    }
   }
 
   function openToolDetail(tool: ToolDefinition) {
@@ -1293,23 +1426,58 @@ export function AppSidebar({
     setBatchUpdateNotice("");
   }
 
-  function submitToolConfig() {
+  async function submitToolConfig() {
     const name = toolForm.name.trim().replace(/\s+/g, "_");
     if (!name) return;
+    if (toolForm.installTarget === "project" && !activeProjectName) {
+      setToolTestResult({
+        status: "error",
+        message: "請先開啟有效 project，才能建立 project-local tool。",
+      });
+      return;
+    }
+
+    const installTarget = toolForm.installTarget;
+    const entry =
+      toolForm.entry.trim() ||
+      getToolEntryPath(name, toolForm.runtime, installTarget);
+    const filename = getRegistryFilenameFromEntry(name, toolForm.runtime, entry);
 
     const nextTool: ToolDefinition = {
       id: editingToolId ?? name,
       name,
-      description: toolForm.description.trim() || "Custom project tool.",
+      description:
+        toolForm.description.trim() ||
+        `Custom ${installTarget === "global" ? "global" : "project"} tool.`,
       category: toolForm.category.trim() || "Custom",
       source: "custom",
+      installTarget,
       runtime: toolForm.runtime,
-      entry:
-        toolForm.entry.trim() ||
-        `./.opencode/tools/${name}.${toolForm.runtime === "python" ? "py" : "ts"}`,
+      entry,
       code: toolForm.code,
       testInput: toolForm.testInput,
     };
+
+    try {
+      await upsertToolRegistryEntry(
+        installTarget,
+        name,
+        {
+          content: toolForm.code,
+          ...(filename ? { filename } : {}),
+          reason: `${toolEditMode === "add" ? "Create" : "Update"} ${installTarget} tool ${name}`,
+          restart: false,
+          wait: false,
+        },
+        activeProjectName,
+      );
+    } catch (error) {
+      setToolTestResult({
+        status: "error",
+        message: `保存 Tool 失敗：${getApiErrorMessage(error)}`,
+      });
+      return;
+    }
 
     setToolDefinitions((current) => {
       if (toolEditMode === "edit" && editingToolId) {
@@ -1324,6 +1492,7 @@ export function AppSidebar({
         ? current
         : [...current, nextTool];
     });
+    setSelectedToolId(nextTool.id);
     setAgentsToolsHasChanges(true);
     setBatchUpdateNotice("");
     setToolToAdd(name);
