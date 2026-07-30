@@ -224,7 +224,9 @@ export function AppSidebarPanel({
                   </EmptyMedia>
                   <EmptyTitle className="text-sm">沒有符合的紀錄</EmptyTitle>
                   <EmptyDescription className="text-xs">
-                    換個關鍵字搜尋標題或標籤。
+                    {historySearch
+                      ? "換個關鍵字搜尋標題或標籤。"
+                      : "送出第一則訊息並建立真實 session 後，才會出現在最近。"}
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>

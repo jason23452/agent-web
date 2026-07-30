@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
 import { agents, fileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
-import { createProjectSession, listProjectSessions, toWorkspaceSession } from "@/features/workspace/api/sessions"
+import { listProjectSessions, toWorkspaceSession } from "@/features/workspace/api/sessions"
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
@@ -240,23 +240,11 @@ export function AppRouter() {
       return
     }
 
-    setSessionsLoading(true)
     setSessionsError(null)
-
-    try {
-      const session = await createProjectSession(activeProjectPath, { title: "新對話" })
-      const nextSession = toWorkspaceSession(session)
-      setProjectSessions((current) => [
-        nextSession,
-        ...current.filter((item) => item.id !== nextSession.id),
-      ])
-      setActiveSessionId(nextSession.id)
-      navigateToWorkspaceProject(checkedProjectName)
-    } catch (error) {
-      setSessionsError(getApiErrorMessage(error))
-    } finally {
-      setSessionsLoading(false)
-    }
+    setActiveSessionId(null)
+    navigateToWorkspaceProject(checkedProjectName)
+    setSidebarOpen(false)
+    setContextPanelOpen(false)
   }, [activeProjectPath, checkedProjectName, navigateToRoute, navigateToWorkspaceProject])
 
   function addAttachment() {
