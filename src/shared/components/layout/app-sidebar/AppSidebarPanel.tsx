@@ -35,27 +35,33 @@ const navItems = [
 ];
 
 type AppSidebarPanelProps = {
+  activeSessionId?: string | null;
   filteredSessions: AppSidebarSession[];
   historySearch: string;
   historySearchOpen: boolean;
   onAgentsOpen: () => void;
   onClose: () => void;
+  onCreateSession: () => void;
   onHistorySearchChange: (value: string) => void;
   onHistorySearchToggle: () => void;
   onMcpOpen: () => void;
   onPluginSkillOpen: () => void;
   onProjectOpen: () => void;
-  onSelectSession: () => void;
+  onSelectSession: (sessionId: string) => void;
   onUserSettingsOpen: () => void;
   open: boolean;
+  sessionsError?: string | null;
+  sessionsLoading?: boolean;
 };
 
 export function AppSidebarPanel({
+  activeSessionId,
   filteredSessions,
   historySearch,
   historySearchOpen,
   onAgentsOpen,
   onClose,
+  onCreateSession,
   onHistorySearchChange,
   onHistorySearchToggle,
   onMcpOpen,
@@ -64,6 +70,8 @@ export function AppSidebarPanel({
   onSelectSession,
   onUserSettingsOpen,
   open,
+  sessionsError,
+  sessionsLoading = false,
 }: AppSidebarPanelProps) {
   return (
     <Sidebar
@@ -91,7 +99,9 @@ export function AppSidebarPanel({
               <li key={item.label}>
                 <button
                   className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${item.key === "new" ? "bg-accent text-accent-foreground" : "text-foreground"}`}
+                  disabled={item.key === "new" && sessionsLoading}
                   onClick={() => {
+                    if (item.key === "new") onCreateSession();
                     if (item.key === "projects") onProjectOpen();
                     if (item.key === "mcp") onMcpOpen();
                     if (item.key === "plugins") onPluginSkillOpen();
@@ -117,16 +127,30 @@ export function AppSidebarPanel({
             <h2 className="font-semibold text-xs" id="recent-sessions-title">
               最近
             </h2>
-            <Button
-              aria-expanded={historySearchOpen}
-              aria-label="搜尋對話"
-              onClick={onHistorySearchToggle}
-              size="icon-xs"
-              variant={historySearchOpen ? "secondary" : "ghost"}
-            >
-              <SearchIcon aria-hidden="true" />
-            </Button>
+            <div className="flex items-center gap-1.5">
+              {sessionsLoading && (
+                <span className="text-muted-foreground text-[11px]">同步中</span>
+              )}
+              <Button
+                aria-expanded={historySearchOpen}
+                aria-label="搜尋對話"
+                onClick={onHistorySearchToggle}
+                size="icon-xs"
+                variant={historySearchOpen ? "secondary" : "ghost"}
+              >
+                <SearchIcon aria-hidden="true" />
+              </Button>
+            </div>
           </div>
+
+          {sessionsError && (
+            <div
+              className="rounded-md border border-destructive/30 bg-destructive/8 px-2 py-1.5 text-destructive-foreground text-[11px]"
+              role="alert"
+            >
+              {sessionsError}
+            </div>
+          )}
 
           {historySearchOpen && (
             <label className="block">
@@ -175,8 +199,8 @@ export function AppSidebarPanel({
           {filteredSessions.map((session) => (
             <li key={session.id}>
               <button
-                className="grid w-full gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring first:bg-accent"
-                onClick={onSelectSession}
+                className={`grid w-full gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeSessionId === session.id ? "bg-accent" : ""}`}
+                onClick={() => onSelectSession(session.id)}
                 type="button"
               >
                 <span className="truncate text-sm">{session.title}</span>
@@ -186,7 +210,12 @@ export function AppSidebarPanel({
               </button>
             </li>
           ))}
-          {filteredSessions.length === 0 && (
+          {sessionsLoading && filteredSessions.length === 0 && (
+            <li className="px-3 py-6 text-center text-muted-foreground text-xs">
+              正在讀取專案對話...
+            </li>
+          )}
+          {!sessionsLoading && filteredSessions.length === 0 && (
             <li>
               <Empty className="rounded-lg border border-dashed bg-background px-3 py-7 md:py-7">
                 <EmptyHeader>

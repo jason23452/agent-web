@@ -58,7 +58,9 @@ const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 
 export function AppSidebar({
   activeProjectPath,
+  activeSessionId,
   onCreateProject,
+  onCreateSession,
   onDeleteProject,
   onProjectChange,
   onRefreshProjects,
@@ -69,6 +71,8 @@ export function AppSidebar({
   projectsError,
   projectsLoading = false,
   sessions,
+  sessionsError,
+  sessionsLoading = false,
 }: AppSidebarProps) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectDialogView, setProjectDialogView] =
@@ -1163,11 +1167,13 @@ export function AppSidebar({
   return (
     <>
       <AppSidebarPanel
+        activeSessionId={activeSessionId}
         filteredSessions={filteredSessions}
         historySearch={historySearch}
         historySearchOpen={historySearchOpen}
         onAgentsOpen={openAgentsList}
         onClose={onClose}
+        onCreateSession={() => void onCreateSession()}
         onHistorySearchChange={setHistorySearch}
         onHistorySearchToggle={() =>
           setHistorySearchOpen((current) => !current)
@@ -1188,6 +1194,8 @@ export function AppSidebar({
           setUserSettingsOpen(true);
         }}
         open={open}
+        sessionsError={sessionsError}
+        sessionsLoading={sessionsLoading}
       />
 
       <ProjectDialog

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
-import { agents, fileTree, recentProjects, sessions, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
+import { agents, fileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
+import { createProjectSession, listProjectSessions, toWorkspaceSession } from "@/features/workspace/api/sessions"
 import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
-import type { Attachment, FileNode, PinContext, Project } from "@/shared/types/workspace"
+import type { Attachment, FileNode, PinContext, Project, Session } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
 import { AppShell } from "@/shared/components/layout/AppShell"
@@ -64,6 +65,7 @@ function getProjectPath(name: string, projects: Project[]) {
 export function AppRouter() {
   const [route, setRoute] = useState<AppRoute>(() => readBrowserRoute())
   const [activeAgentId, setActiveAgentId] = useState(agents[0]!.id)
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
@@ -71,6 +73,9 @@ export function AppRouter() {
   const [projects, setProjects] = useState<Project[]>(recentProjects)
   const [projectsError, setProjectsError] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
+  const [projectSessions, setProjectSessions] = useState<Session[]>([])
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
+  const [sessionsLoading, setSessionsLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -133,20 +138,53 @@ export function AppRouter() {
   }, [refreshProjects])
 
   useEffect(() => {
-    if (!checkedProjectName) return
+    if (!checkedProjectName) {
+      const timeoutId = window.setTimeout(() => {
+        setActiveSessionId(null)
+        setProjectSessions([])
+        setSessionsError(null)
+        setSessionsLoading(false)
+      }, 0)
+
+      return () => window.clearTimeout(timeoutId)
+    }
 
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => {
-      void getManagedProjectStatus(checkedProjectName, { signal: controller.signal }).catch((error) => {
-        if (controller.signal.aborted) return
+      setSessionsLoading(true)
+      setSessionsError(null)
 
-        if (error instanceof ApiError && error.status === 404) {
-          navigateToRoute({ name: "workspace" }, { replace: true })
-          return
-        }
+      void getManagedProjectStatus(checkedProjectName, { signal: controller.signal })
+        .then(async (response) => {
+          if (controller.signal.aborted) return
+          const project = toWorkspaceProject(response.project)
+          const directory = response.project.sdkDirectory || response.project.path
 
-        setProjectsError(getApiErrorMessage(error))
-      })
+          setProjects((current) => {
+            const nextProjects = current.filter((item) => item.id !== project.id)
+            return [project, ...nextProjects]
+          })
+
+          const sessionsResponse = await listProjectSessions(directory, { signal: controller.signal })
+          if (controller.signal.aborted) return
+          const nextSessions = sessionsResponse.map(toWorkspaceSession)
+          setProjectSessions(nextSessions)
+          setActiveSessionId((current) => current && nextSessions.some((session) => session.id === current) ? current : nextSessions[0]?.id ?? null)
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return
+
+          if (error instanceof ApiError && error.status === 404) {
+            navigateToRoute({ name: "workspace" }, { replace: true })
+            return
+          }
+
+          setProjectSessions([])
+          setSessionsError(getApiErrorMessage(error))
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSessionsLoading(false)
+        })
     }, 0)
 
     return () => {
@@ -195,6 +233,32 @@ export function AppRouter() {
     navigateToRoute({ name: "workspace" }, { replace: true })
   }, [navigateToRoute, projects, route])
 
+  const createSession = useCallback(async () => {
+    if (!checkedProjectName || !activeProjectPath) {
+      setSessionsError("請先選擇專案後再建立對話。")
+      navigateToRoute({ name: "workspace" }, { replace: true })
+      return
+    }
+
+    setSessionsLoading(true)
+    setSessionsError(null)
+
+    try {
+      const session = await createProjectSession(activeProjectPath, { title: "新對話" })
+      const nextSession = toWorkspaceSession(session)
+      setProjectSessions((current) => [
+        nextSession,
+        ...current.filter((item) => item.id !== nextSession.id),
+      ])
+      setActiveSessionId(nextSession.id)
+      navigateToWorkspaceProject(checkedProjectName)
+    } catch (error) {
+      setSessionsError(getApiErrorMessage(error))
+    } finally {
+      setSessionsLoading(false)
+    }
+  }, [activeProjectPath, checkedProjectName, navigateToRoute, navigateToWorkspaceProject])
+
   function addAttachment() {
     const next = starterAttachments.find((item) => !attachments.some((attachment) => attachment.id === item.id))
     if (next) setAttachments((current) => [...current, next])
@@ -207,6 +271,11 @@ export function AppRouter() {
   function closeMobileSurfaces() {
     setSidebarOpen(false)
     setContextPanelOpen(false)
+  }
+
+  function selectSession(sessionId: string) {
+    setActiveSessionId(sessionId)
+    closeMobileSurfaces()
   }
 
   function changeProject(projectPath: string) {
@@ -246,17 +315,21 @@ export function AppRouter() {
       sidebar={
         <AppSidebar
           activeProjectPath={activeProjectPath}
+          activeSessionId={activeSessionId}
           onCreateProject={createProject}
+          onCreateSession={createSession}
           onDeleteProject={deleteProject}
           onClose={() => setSidebarOpen(false)}
           onProjectChange={changeProject}
           onRefreshProjects={refreshProjects}
-          onSelectSession={closeMobileSurfaces}
+          onSelectSession={selectSession}
           open={sidebarOpen}
           projects={projects}
           projectsError={projectsError}
           projectsLoading={projectsLoading}
-          sessions={sessions}
+          sessions={projectSessions}
+          sessionsError={sessionsError}
+          sessionsLoading={sessionsLoading}
         />
       }
       sidebarOpen={sidebarOpen}

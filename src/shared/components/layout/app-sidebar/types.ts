@@ -10,17 +10,21 @@ export type AppSidebarSession = {
 
 export type AppSidebarProps = {
   activeProjectPath: string;
+  activeSessionId?: string | null;
   onCreateProject: (name: string) => Promise<AppSidebarProject>;
+  onCreateSession: () => Promise<void>;
   onDeleteProject: (project: AppSidebarProject) => Promise<void>;
   onProjectChange: (path: string) => void;
   onRefreshProjects: () => Promise<void>;
   open: boolean;
   onClose: () => void;
-  onSelectSession: () => void;
+  onSelectSession: (sessionId: string) => void;
   projects: AppSidebarProject[];
   projectsError?: string | null;
   projectsLoading?: boolean;
   sessions: AppSidebarSession[];
+  sessionsError?: string | null;
+  sessionsLoading?: boolean;
 };
 
 export type McpServer = {
