@@ -1,4 +1,5 @@
 import { ChevronDownIcon, SearchIcon } from "lucide-react";
+import { useState } from "react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Switch } from "@/shared/components/ui/switch";
 import {
@@ -19,6 +20,7 @@ export function ModelsPanel({
   onModelSearchChange: (value: string) => void;
   onModelToggle: (modelKey: string, enabled: boolean) => void;
 }) {
+  const [collapsedProviderIds, setCollapsedProviderIds] = useState<Set<string>>(() => new Set());
   const keyword = modelSearch.trim().toLowerCase();
   const connectedProviders = modelProviders
     .filter((provider) => provider.connected)
@@ -60,45 +62,65 @@ export function ModelsPanel({
         <div className="grid gap-6">
           {connectedProviders.map((provider) => (
             <section aria-label={`${provider.name} 模型`} className="grid gap-3" key={provider.id}>
-              <div className="flex items-center gap-2 font-semibold text-sm">
-                <ChevronDownIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+              <button
+                aria-expanded={!collapsedProviderIds.has(provider.id)}
+                className="flex w-fit items-center gap-2 rounded-md font-semibold text-sm outline-none transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  setCollapsedProviderIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(provider.id)) {
+                      next.delete(provider.id);
+                    } else {
+                      next.add(provider.id);
+                    }
+                    return next;
+                  });
+                }}
+                type="button"
+              >
+                <ChevronDownIcon
+                  aria-hidden="true"
+                  className={`size-4 text-muted-foreground transition-transform ${collapsedProviderIds.has(provider.id) ? "-rotate-90" : "rotate-0"}`}
+                />
                 <span className="grid size-5 place-items-center font-bold text-sm">{provider.icon}</span>
                 <span>{provider.name}</span>
                 <Badge size="sm" variant="secondary">
                   {provider.availableModels.length}
                 </Badge>
-              </div>
+              </button>
 
-              <div className="overflow-hidden rounded-xl border bg-muted/25">
-                {provider.availableModels.map((model) => (
-                  <div
-                    className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-border/70 border-b px-4 py-3 last:border-b-0"
-                    key={model.key}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-medium text-sm">{model.name}</span>
-                        {model.status && model.status !== "active" ? (
-                          <Badge size="sm" variant="secondary">
-                            {model.status}
-                          </Badge>
-                        ) : null}
+              {!collapsedProviderIds.has(provider.id) ? (
+                <div className="overflow-hidden rounded-xl border bg-muted/25">
+                  {provider.availableModels.map((model) => (
+                    <div
+                      className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-border/70 border-b px-4 py-3 last:border-b-0"
+                      key={model.key}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-medium text-sm">{model.name}</span>
+                          {model.status && model.status !== "active" ? (
+                            <Badge size="sm" variant="secondary">
+                              {model.status}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 truncate text-muted-foreground text-xs">
+                          {model.id}
+                          {model.contextLimit ? ` · context ${model.contextLimit}` : ""}
+                          {model.outputLimit ? ` · output ${model.outputLimit}` : ""}
+                        </p>
                       </div>
-                      <p className="mt-1 truncate text-muted-foreground text-xs">
-                        {model.id}
-                        {model.contextLimit ? ` · context ${model.contextLimit}` : ""}
-                        {model.outputLimit ? ` · output ${model.outputLimit}` : ""}
-                      </p>
-                    </div>
 
-                    <Switch
-                      aria-label={`${model.name} ${model.enabled ? "停用" : "啟用"}`}
-                      checked={model.enabled}
-                      onCheckedChange={(checked) => onModelToggle(model.key, checked)}
-                    />
-                  </div>
-                ))}
-              </div>
+                      <Switch
+                        aria-label={`${model.name} ${model.enabled ? "停用" : "啟用"}`}
+                        checked={model.enabled}
+                        onCheckedChange={(checked) => onModelToggle(model.key, checked)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </section>
           ))}
         </div>
