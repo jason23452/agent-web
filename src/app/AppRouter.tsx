@@ -275,9 +275,12 @@ export function AppRouter() {
 
   useEffect(() => {
     if (!activeProjectPath || !activeSessionId) {
-      setActiveOpenCodeSessionDetail(null)
-      setActiveOpenCodeContextUsage(null)
-      return
+      const timeoutId = window.setTimeout(() => {
+        setActiveOpenCodeSessionDetail(null)
+        setActiveOpenCodeContextUsage(null)
+      }, 0)
+
+      return () => window.clearTimeout(timeoutId)
     }
 
     const controller = new AbortController()
@@ -310,8 +313,9 @@ export function AppRouter() {
     ].filter((providerID): providerID is string => Boolean(providerID) && providerID !== "opencode")))
 
     if (providerIDs.length === 0) {
-      setModelRateLimitUsage(null)
-      return
+      const timeoutId = window.setTimeout(() => setModelRateLimitUsage(null), 0)
+
+      return () => window.clearTimeout(timeoutId)
     }
 
     const controller = new AbortController()
