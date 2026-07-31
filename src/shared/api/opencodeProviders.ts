@@ -9,7 +9,15 @@ export type OpenCodeModel = {
   id: string;
   name: string;
   providerID: string;
+  capabilities?: {
+    reasoning?: boolean;
+  };
+  request?: {
+    variant?: string;
+  };
   status?: "alpha" | "beta" | "deprecated" | "active";
+  variant?: string;
+  variants?: unknown;
   limit?: {
     context?: number;
     output?: number;

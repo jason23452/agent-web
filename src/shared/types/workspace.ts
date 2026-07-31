@@ -87,6 +87,24 @@ export type ModelRateLimitUsage = {
   providerID?: string
 }
 
+export type ModelOption = {
+  contextLimit?: number
+  id: string
+  key: string
+  name: string
+  providerID: string
+  providerName: string
+  reasoning?: boolean
+  status?: "alpha" | "beta" | "deprecated" | "active"
+  variant?: string
+  variants?: string[]
+}
+
+export type ThinkingVariantOption = {
+  key: string
+  label: string
+}
+
 export type Attachment = {
   id: string
   name: string

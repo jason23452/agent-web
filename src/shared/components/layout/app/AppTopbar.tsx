@@ -1,9 +1,10 @@
 import { HomeIcon, PanelLeftIcon, PanelRightIcon } from "lucide-react"
 import { AgentSwitcher } from "@/shared/components/layout/app/AgentSwitcher"
 import { ContextMeter } from "@/shared/components/layout/context/ContextMeter"
+import { ModelSwitcher } from "@/shared/components/layout/ModelSwitcher"
 import { TopNav } from "@/shared/components/layout/app/TopNav"
 import { Button } from "@/shared/components/ui/button"
-import type { Agent, ModelRateLimitUsage, TokenUsage } from "@/shared/types/workspace"
+import type { Agent, ModelOption, ModelRateLimitUsage, TokenUsage } from "@/shared/types/workspace"
 
 type AppTopbarProps = {
   activeAgent: Agent
@@ -11,10 +12,14 @@ type AppTopbarProps = {
   agentsError?: string | null
   agentsLoading?: boolean
   agents: Agent[]
+  modelLoading?: boolean
+  models: ModelOption[]
   onAgentChange: (agentId: string) => void
+  onModelChange: (modelKey: string) => void
   onOpenContextPanel: () => void
   onOpenSidebar: () => void
   rateLimitUsage?: ModelRateLimitUsage | null
+  selectedModelKey: string | null
   tokenUsage: TokenUsage[]
 }
 
@@ -29,10 +34,14 @@ export function AppTopbar({
   agentsError,
   agentsLoading = false,
   agents,
+  modelLoading = false,
+  models,
   onAgentChange,
+  onModelChange,
   onOpenContextPanel,
   onOpenSidebar,
   rateLimitUsage,
+  selectedModelKey,
   tokenUsage,
 }: AppTopbarProps) {
   const projectLabel = activeProjectPath ? getProjectLabel(activeProjectPath) : null
@@ -54,6 +63,7 @@ export function AppTopbar({
       end={
         <>
           <AgentSwitcher activeAgent={activeAgent} agents={agents} error={agentsError} loading={agentsLoading} onAgentChange={onAgentChange} />
+          <ModelSwitcher activeModelKey={selectedModelKey} loading={modelLoading} models={models} onModelChange={onModelChange} />
           <ContextMeter rateLimitUsage={rateLimitUsage} usage={tokenUsage} />
           <Button aria-label="Open context panel" className="bg-background min-[1181px]:hidden" onClick={onOpenContextPanel} size="icon" variant="outline">
             <PanelRightIcon aria-hidden="true" />

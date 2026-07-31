@@ -1,19 +1,41 @@
 import { FileTextIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, UploadIcon, XIcon } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { ThinkingVariantSwitcher } from "@/shared/components/layout/context/ThinkingVariantSwitcher"
 import { Button } from "@/shared/components/ui/button"
-import type { Attachment, PinContext } from "@/shared/types/workspace"
+import type { Attachment, PinContext, ThinkingVariantOption } from "@/shared/types/workspace"
 
 type ChatComposerProps = {
   attachments: Attachment[]
   onAddAttachment: () => void
   onClearPin: () => void
   onRemoveAttachment: (id: string) => void
+  onThinkingVariantChange?: (variantKey: string) => void
   pinContext: PinContext | null
+  selectedThinkingVariant?: string
+  thinkingVariants?: ThinkingVariantOption[]
 }
 
-export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemoveAttachment, pinContext }: ChatComposerProps) {
+export function ChatComposer({
+  attachments,
+  onAddAttachment,
+  onClearPin,
+  onRemoveAttachment,
+  onThinkingVariantChange,
+  pinContext,
+  selectedThinkingVariant = "default",
+  thinkingVariants = [],
+}: ChatComposerProps) {
   const [value, setValue] = useState("")
   const [uploadOpen, setUploadOpen] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+
+    textarea.style.height = "auto"
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`
+  }, [value])
 
   return (
     <form
@@ -60,8 +82,8 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
             </div>
           )}
 
-          <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-2 min-[761px]:items-end">
-            <span className="relative grid size-10 place-items-center self-center min-[761px]:self-end">
+          <div className="flex min-w-0 items-end gap-2">
+            <span className="relative grid size-10 shrink-0 place-items-center self-end">
               <Button aria-label="加入檔案" className="grid size-10 min-h-10 min-w-10 place-items-center rounded-full border-0 bg-transparent p-0 shadow-none before:hidden hover:bg-muted [&_svg]:mx-0 [&_svg]:size-5" onClick={() => setUploadOpen((current) => !current)} size="icon" variant="ghost">
                 <PaperclipIcon aria-hidden="true" />
               </Button>
@@ -101,14 +123,23 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
 
             <textarea
               aria-label="詢問 AICaht"
-              className="field-sizing-content min-h-11 max-h-[140px] w-full resize-none border-0 bg-transparent px-1 py-[11px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground/70"
+              className="min-h-11 max-h-[140px] min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-[11px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground/70"
               onChange={(event) => setValue(event.target.value)}
               placeholder="詢問 AICaht，或請 opencode-agent 開始工作"
+              ref={textareaRef}
               rows={1}
               value={value}
             />
-
-            <div className="flex items-center gap-1 self-center min-[761px]:self-end">
+            {onThinkingVariantChange && thinkingVariants.length > 0 && (
+              <div className="flex shrink-0 items-center self-end pb-1.5">
+                <ThinkingVariantSwitcher
+                  activeVariantKey={selectedThinkingVariant}
+                  onVariantChange={onThinkingVariantChange}
+                  variants={thinkingVariants}
+                />
+              </div>
+            )}
+            <div className="flex shrink-0 items-center gap-1 self-end">
               <Button aria-label="語音輸入" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" size="icon" variant="ghost">
                 <MicIcon aria-hidden="true" />
               </Button>
@@ -117,6 +148,7 @@ export function ChatComposer({ attachments, onAddAttachment, onClearPin, onRemov
               </Button>
             </div>
           </div>
+          
         </div>
         <p className="text-center text-muted-foreground text-xs">原型提示：目前使用 mock data，後續可接 OpenCode agent API 與 tool logs。</p>
       </div>

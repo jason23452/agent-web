@@ -1,5 +1,5 @@
 import { ChevronRightIcon, Code2Icon, FileIcon, FileImageIcon, FileJsonIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, PlusIcon, Trash2Icon } from "lucide-react"
-import { type DragEvent, useState } from "react"
+import { type DragEvent, type KeyboardEvent, useState } from "react"
 import type { FileNode, FileType } from "@/shared/types/workspace"
 
 export type FileTreeNode = FileNode
@@ -56,14 +56,23 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
       const expanded = expandedIds.has(node.id)
       const nodeDirectory = node.path || parentPath
       const actionDirectory = isFolder ? nodeDirectory : parentPath
+      const activateNode = () => (isFolder ? toggleNode(node.id) : onPreviewFile(node))
+      const handleNodeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+
+        event.preventDefault()
+        activateNode()
+      }
 
       return (
         <li className="grid" key={node.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, actionDirectory)}>
-          <button
+          <div
             className="group/file-tree flex min-h-8 w-full items-center gap-1.5 rounded-lg pr-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => (isFolder ? toggleNode(node.id) : onPreviewFile(node))}
+            onClick={activateNode}
+            onKeyDown={handleNodeKeyDown}
+            role="button"
             style={{ paddingLeft: `${depth * 18 + 4}px` }}
-            type="button"
+            tabIndex={0}
           >
             <span className={`grid size-4 place-items-center text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""} ${isFolder ? "visible" : "invisible"}`}>
               <ChevronRightIcon aria-hidden="true" className="size-3" />
@@ -120,7 +129,7 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
                 </button>
               ) : null}
             </span>
-          </button>
+          </div>
 
           {isFolder && node.children && expanded && <ul className="grid">{renderNodes(node.children, depth + 1, nodeDirectory)}</ul>}
         </li>

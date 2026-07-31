@@ -11,7 +11,7 @@ import { ApiError, getApiErrorMessage } from "@/shared/api"
 import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
 import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders"
 import { getOpenCodeCurrentUsage, getOpenCodeSessionContextUsage } from "@/shared/api/opencodeUsage"
-import type { Agent, Attachment, FileNode, ModelRateLimitUsage, PinContext, Project, Session, TokenUsage } from "@/shared/types/workspace"
+import type { Agent, Attachment, FileNode, ModelOption, ModelRateLimitUsage, PinContext, Project, Session, ThinkingVariantOption, TokenUsage } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
 import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
@@ -44,6 +44,14 @@ const EMPTY_AGENT: Agent = {
 }
 
 const NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE = "尚未啟用專案，請先到側邊欄開啟專案。"
+const DEFAULT_THINKING_VARIANTS: ThinkingVariantOption[] = [
+  { key: "default", label: "Default" },
+  { key: "none", label: "None" },
+  { key: "low", label: "Low" },
+  { key: "medium", label: "Medium" },
+  { key: "high", label: "High" },
+  { key: "xhigh", label: "Xhigh" },
+]
 
 function buildTokenUsage(session: OpenCodeSession | undefined, providers: OpenCodeProviderListResponse | null): TokenUsage[] {
   if (!session?.model) {
@@ -78,6 +86,76 @@ function buildTokenUsage(session: OpenCodeSession | undefined, providers: OpenCo
   ]
 }
 
+function getModelKey(providerID: string, modelID: string, variant?: string) {
+  return variant ? `${providerID}:${modelID}:${variant}` : `${providerID}:${modelID}`
+}
+
+function getModelVariants(variants: unknown) {
+  if (Array.isArray(variants)) {
+    return variants
+      .map((variant) => {
+        if (typeof variant === "string") return variant
+        if (variant && typeof variant === "object" && "id" in variant && typeof variant.id === "string") return variant.id
+        return null
+      })
+      .filter((variant): variant is string => Boolean(variant))
+  }
+
+  if (variants && typeof variants === "object") {
+    return Object.keys(variants)
+  }
+
+  return []
+}
+
+function buildOpenCodeModelOptions(providers: OpenCodeProviderListResponse | null): ModelOption[] {
+  if (!providers) return []
+
+  const connectedProviderIDs = new Set(providers.connected)
+
+  return providers.all
+    .filter((provider) => connectedProviderIDs.has(provider.id))
+    .flatMap((provider) => Object.values(provider.models).map((model) => ({
+      contextLimit: model.limit?.context,
+      id: model.id,
+      key: getModelKey(provider.id, model.id, model.variant),
+      name: model.name,
+      providerID: provider.id,
+      providerName: provider.name,
+      reasoning: model.capabilities?.reasoning,
+      status: model.status,
+      variant: model.request?.variant ?? model.variant,
+      variants: getModelVariants(model.variants),
+    })))
+}
+
+function formatThinkingVariantLabel(variant: string) {
+  if (variant === "xhigh") return "Xhigh"
+  return variant.charAt(0).toUpperCase() + variant.slice(1)
+}
+
+function buildThinkingVariantOptions(model: ModelOption | null): ThinkingVariantOption[] {
+  if (!model?.reasoning) return []
+
+  const apiVariants = model.variants?.filter(Boolean) ?? []
+  if (apiVariants.length === 0) return DEFAULT_THINKING_VARIANTS
+
+  return [
+    { key: "default", label: "Default" },
+    ...apiVariants.map((variant) => ({ key: variant, label: formatThinkingVariantLabel(variant) })),
+  ]
+}
+
+function getOpenCodeDefaultModelKey(providers: OpenCodeProviderListResponse | null) {
+  if (!providers) return null
+
+  for (const [providerID, modelID] of Object.entries(providers.default)) {
+    if (providers.connected.includes(providerID)) return getModelKey(providerID, modelID)
+  }
+
+  return null
+}
+
 export function AppRouter() {
   const [route, setRoute] = useState<AppRoute>(() => readBrowserRoute())
   const [activeAgentId, setActiveAgentId] = useState("")
@@ -95,6 +173,8 @@ export function AppRouter() {
   const [projectsError, setProjectsError] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [openCodeProviderCatalog, setOpenCodeProviderCatalog] = useState<OpenCodeProviderListResponse | null>(null)
+  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
+  const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [activeOpenCodeSessionDetail, setActiveOpenCodeSessionDetail] = useState<OpenCodeSession | null>(null)
   const [activeOpenCodeContextUsage, setActiveOpenCodeContextUsage] = useState<TokenUsage[] | null>(null)
   const [modelRateLimitUsage, setModelRateLimitUsage] = useState<ModelRateLimitUsage | null>(null)
@@ -272,6 +352,44 @@ export function AppRouter() {
     ? getProjectPath(activeProjectName, projects)
     : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
+  const activeOpenCodeSession = activeOpenCodeSessionDetail ?? openCodeSessions.find((session) => session.id === activeSessionId)
+  const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog)
+  const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
+  const thinkingVariants = buildThinkingVariantOptions(selectedModel)
+  const thinkingVariantKeys = thinkingVariants.map((variant) => variant.key).join("\n")
+  const selectedThinkingVariantIsAvailable = thinkingVariants.some((variant) => variant.key === selectedThinkingVariant)
+  const activeSessionVariantModelKey = activeOpenCodeSession?.model
+    ? getModelKey(activeOpenCodeSession.model.providerID, activeOpenCodeSession.model.id, activeOpenCodeSession.model.variant)
+    : null
+  const activeSessionModelKey = activeOpenCodeSession?.model
+    ? getModelKey(activeOpenCodeSession.model.providerID, activeOpenCodeSession.model.id)
+    : null
+  const preferredModelKey = activeSessionVariantModelKey && modelOptions.some((model) => model.key === activeSessionVariantModelKey)
+    ? activeSessionVariantModelKey
+    : activeSessionModelKey && modelOptions.some((model) => model.key === activeSessionModelKey)
+      ? activeSessionModelKey
+      : activeAgent.providerID && activeAgent.modelID
+      ? getModelKey(activeAgent.providerID, activeAgent.modelID)
+      : getOpenCodeDefaultModelKey(openCodeProviderCatalog) ?? modelOptions[0]?.key ?? null
+  const modelOptionKeys = modelOptions.map((model) => model.key).join("\n")
+  const selectedModelIsAvailable = Boolean(selectedModelKey && modelOptions.some((model) => model.key === selectedModelKey))
+
+  useEffect(() => {
+    if (selectedModelIsAvailable) return
+    if (!preferredModelKey) return
+
+    const timeoutId = window.setTimeout(() => setSelectedModelKey(preferredModelKey), 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [modelOptionKeys, preferredModelKey, selectedModelIsAvailable])
+
+  useEffect(() => {
+    if (!thinkingVariantKeys || selectedThinkingVariantIsAvailable) return
+
+    const timeoutId = window.setTimeout(() => setSelectedThinkingVariant("default"), 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [selectedThinkingVariantIsAvailable, thinkingVariantKeys])
 
   useEffect(() => {
     if (!activeProjectPath || !activeSessionId) {
@@ -306,7 +424,7 @@ export function AppRouter() {
 
   useEffect(() => {
     const fallbackProviderID = openCodeProviderCatalog?.connected.find((providerID) => providerID !== "opencode")
-    const primaryProviderID = activeOpenCodeSessionDetail?.model?.providerID ?? activeAgent.providerID ?? fallbackProviderID
+    const primaryProviderID = selectedModel?.providerID ?? activeOpenCodeSessionDetail?.model?.providerID ?? activeAgent.providerID ?? fallbackProviderID
     const providerIDs = Array.from(new Set([
       primaryProviderID,
       ...(openCodeProviderCatalog?.connected ?? []),
@@ -342,7 +460,7 @@ export function AppRouter() {
       })
 
     return () => controller.abort()
-  }, [activeAgent.providerID, activeOpenCodeSessionDetail?.model?.providerID, openCodeProviderCatalog?.connected])
+  }, [activeAgent.providerID, activeOpenCodeSessionDetail?.model?.providerID, openCodeProviderCatalog?.connected, selectedModel?.providerID])
 
   const openProjectFile = useCallback(async (file: FileTreeNode) => {
     if (!activeProjectPath) return
@@ -643,8 +761,8 @@ export function AppRouter() {
   const renderedContextFileTreeError = activeProjectPath
     ? contextFileTreeError
     : NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE
-  const activeOpenCodeSession = activeOpenCodeSessionDetail ?? openCodeSessions.find((session) => session.id === activeSessionId)
   const topbarTokenUsage = activeOpenCodeContextUsage ?? buildTokenUsage(activeOpenCodeSession, openCodeProviderCatalog)
+  const modelCatalogLoading = Boolean(activeProjectPath && sessionsLoading && !openCodeProviderCatalog)
 
   return (
     <AppShell
@@ -678,7 +796,10 @@ export function AppRouter() {
           onAddAttachment={addAttachment}
           onClearPin={() => setPinContext(null)}
           onRemoveAttachment={removeAttachment}
+          onThinkingVariantChange={setSelectedThinkingVariant}
           pinContext={pinContext}
+          selectedThinkingVariant={selectedThinkingVariant}
+          thinkingVariants={thinkingVariants}
         />
       }
       loading={layoutLoading}
@@ -714,10 +835,14 @@ export function AppRouter() {
           agents={availableAgents}
           agentsError={agentsError}
           agentsLoading={agentsLoading}
+          modelLoading={modelCatalogLoading}
+          models={modelOptions}
           onAgentChange={setActiveAgentId}
+          onModelChange={setSelectedModelKey}
           onOpenContextPanel={() => setContextPanelOpen(true)}
           onOpenSidebar={() => setSidebarOpen(true)}
           rateLimitUsage={modelRateLimitUsage}
+          selectedModelKey={selectedModelKey}
           tokenUsage={topbarTokenUsage}
         />
       }
