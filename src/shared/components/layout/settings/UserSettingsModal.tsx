@@ -1,5 +1,6 @@
 import { XIcon } from "lucide-react";
 import type { NpmPackageEntry, NpmPackageScope } from "@/shared/api/opencodeNpmPackages";
+import type { OpenCodeAuthMethod } from "@/shared/api/opencodeProviders";
 import { Button } from "@/shared/components/ui/button";
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import { cn } from "@/shared/utils/cn";
@@ -33,6 +34,12 @@ export type ModelProvider = {
   whitelist: string;
   blacklist: string;
   authMethods: string[];
+  authMethodDetails?: OpenCodeAuthMethod[];
+  verificationCode?: string;
+  verificationInstructions?: string;
+  verificationMethodIndex?: number;
+  verificationMethod?: "auto" | "code";
+  verificationUrl?: string;
 };
 
 type UserSettingsModalProps = {
@@ -53,13 +60,15 @@ type UserSettingsModalProps = {
   onApplyNpmPackageChanges: () => Promise<void> | void;
   onCancelNpmPackageChanges: () => void;
   onClearNpmPackageDelete: () => void;
+  disconnectingProviderId: string | null;
   onModelProviderSearchChange: (value: string) => void;
   onNpmPackageInputChange: (value: string) => void;
   onNpmPackageTargetChange: (target: NpmPackageScope) => void;
   onOpenChange: (open: boolean) => void;
-  onProviderAuthMethodChange: (method: string) => void;
+  onProviderAuthMethodChange: (method: string, inputs?: Record<string, string>) => void;
+  onProviderApiKeySubmit: (providerId: string, key: string, inputs?: Record<string, string>) => Promise<void> | void;
+  onProviderDisconnect: (providerId: string) => Promise<void> | void;
   onProviderSelect: (providerId: string) => void;
-  onProviderUpdate: (providerId: string, updates: Partial<ModelProvider>) => void;
   onProviderViewBack: () => void;
   onRefreshNpmPackages: () => Promise<void> | void;
   onRemoveNpmPackageInstall: (packageSpec: string) => void;
@@ -69,6 +78,7 @@ type UserSettingsModalProps = {
   open: boolean;
   section: UserSettingsSection;
   selectedAuthMethod: string | null;
+  providerAuthApplying: boolean;
   selectedProvider: ModelProvider | null;
 };
 
@@ -90,13 +100,15 @@ export function UserSettingsModal({
   onApplyNpmPackageChanges,
   onCancelNpmPackageChanges,
   onClearNpmPackageDelete,
+  disconnectingProviderId,
   onModelProviderSearchChange,
   onNpmPackageInputChange,
   onNpmPackageTargetChange,
   onOpenChange,
   onProviderAuthMethodChange,
+  onProviderApiKeySubmit,
+  onProviderDisconnect,
   onProviderSelect,
-  onProviderUpdate,
   onProviderViewBack,
   onRefreshNpmPackages,
   onRemoveNpmPackageInstall,
@@ -106,6 +118,7 @@ export function UserSettingsModal({
   open,
   section,
   selectedAuthMethod,
+  providerAuthApplying,
   selectedProvider,
 }: UserSettingsModalProps) {
   const hasNpmPackageChanges = npmPackagesToInstall.length > 0 || npmPackagesToDelete.length > 0;
@@ -140,14 +153,17 @@ export function UserSettingsModal({
 
             {section === "model-providers" ? (
               <ModelProvidersPanel
+                disconnectingProviderId={disconnectingProviderId}
                 filteredModelProviders={filteredModelProviders}
                 modelProviderSearch={modelProviderSearch}
                 onProviderAuthMethodChange={onProviderAuthMethodChange}
+                onProviderApiKeySubmit={onProviderApiKeySubmit}
+                onProviderDisconnect={onProviderDisconnect}
                 onProviderSearchChange={onModelProviderSearchChange}
                 onProviderSelect={onProviderSelect}
-                onProviderUpdate={onProviderUpdate}
                 onProviderViewBack={onProviderViewBack}
                 selectedAuthMethod={selectedAuthMethod}
+                providerAuthApplying={providerAuthApplying}
                 selectedProvider={selectedProvider}
               />
             ) : section === "npm-packages" ? (

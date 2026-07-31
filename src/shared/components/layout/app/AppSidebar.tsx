@@ -12,6 +12,19 @@ import {
   type OpenCodeAgent,
 } from "@/shared/api/opencodeAgents";
 import {
+  completeOpenCodeProviderAuth,
+  disconnectOpenCodeProviderAuth,
+  disposeOpenCodeInstance,
+  getOpenCodeProviderAuthMethods,
+  listOpenCodeProviders,
+  setOpenCodeProviderApiKey,
+  startOpenCodeProviderAuth,
+  type OpenCodeAuthMethod,
+  type OpenCodeAuthMethodsResponse,
+  type OpenCodeProvider,
+  type OpenCodeProviderListResponse,
+} from "@/shared/api/opencodeProviders";
+import {
   listEffectiveProjectTools,
   readToolRegistryEntry,
   testToolScript,
@@ -74,6 +87,13 @@ import {
 } from "@/shared/components/layout/app-sidebar/utils";
 
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+
+const initialModelProviderById = Object.fromEntries(
+  initialModelProviders.map((provider) => [provider.id, provider]),
+);
+const PROVIDER_AUTH_POLL_INTERVAL_MS = 2_000;
+const PROVIDER_AUTH_POLL_ATTEMPTS = 150;
+
 const AGENT_MODE_ORDER: Record<AgentDefinition["mode"], number> = {
   primary: 0,
   all: 1,
@@ -378,6 +398,127 @@ function stringifyJson(value: unknown) {
   }
 }
 
+function pickDefaultProviderModel(
+  provider: OpenCodeProvider,
+  defaultModels: Record<string, string>,
+) {
+  const models = provider.models;
+  const preferredModelId = defaultModels[provider.id];
+  if (preferredModelId && models[preferredModelId]) {
+    return [preferredModelId, models[preferredModelId]] as const;
+  }
+
+  const firstEntry = Object.entries(models)[0];
+  if (firstEntry) {
+    return [firstEntry[0], firstEntry[1]] as const;
+  }
+
+  return ["", undefined] as const;
+}
+
+function resolveAuthMethods(
+  provider: OpenCodeProvider,
+  authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
+  fallbackMethods: string[] = [],
+) {
+  const fromBackend = resolveAuthMethodDetails(provider, authMethodsResponse, fallbackMethods).map((item) => item.label);
+  if (fromBackend.length) {
+    return fromBackend;
+  }
+
+  return fallbackMethods.length > 0
+    ? fallbackMethods
+    : ["API 密鑰", "瀏覽器授權", "自動授權"];
+}
+
+function resolveAuthMethodDetails(
+  provider: OpenCodeProvider,
+  authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
+  fallbackMethods: string[] = [],
+): OpenCodeAuthMethod[] {
+  const fromBackend = authMethodsResponse?.[provider.id];
+  if (fromBackend?.length) {
+    return fromBackend;
+  }
+
+  const labels = fallbackMethods.length > 0
+    ? fallbackMethods
+    : ["API 密鑰", "瀏覽器授權", "自動授權"];
+
+  return labels.map((label) => ({
+    label,
+    type: label.toLowerCase().includes("api") || label.includes("密鑰") ? "api" : "oauth",
+  }));
+}
+
+function resolveProviderDescription(provider: OpenCodeProvider) {
+  const envVariables = [provider.key, ...provider.env].filter((item): item is string =>
+    Boolean(item),
+  );
+  if (envVariables.length > 0) {
+    return `從環境變數 ${envVariables.join(", ")} 讀取設定。`;
+  }
+
+  return "透過 OpenCode provider 設定載入。";
+}
+
+function extractVerificationCode(instructions: string) {
+  const codePatterns = [
+    /(?:code|verification code|device code|確認碼)[:：\s]*([A-Za-z0-9][A-Za-z0-9._-]{4,})/i,
+    /`([A-Za-z0-9][A-Za-z0-9._-]{4,})`/,
+  ];
+
+  for (const pattern of codePatterns) {
+    const match = instructions.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  return "";
+}
+
+function toModelProvider(
+  provider: OpenCodeProvider,
+  providersResponse: OpenCodeProviderListResponse,
+  authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
+) {
+  const fallbackProvider = initialModelProviderById[provider.id];
+  const [modelId, model] = pickDefaultProviderModel(
+    provider,
+    providersResponse.default,
+  );
+  const fallbackMethods = fallbackProvider?.authMethods ?? [];
+
+  return {
+    ...fallbackProvider,
+    id: provider.id,
+    name: provider.name,
+    description: fallbackProvider?.description || resolveProviderDescription(provider),
+    connected: providersResponse.connected.includes(provider.id),
+    enabled: providersResponse.connected.includes(provider.id),
+    npm: model?.api?.npm || fallbackProvider?.npm || "",
+    baseUrl: model?.api?.url || fallbackProvider?.baseUrl || "",
+    apiKey: fallbackProvider?.apiKey || "",
+    headersJson: fallbackProvider?.headersJson || "",
+    defaultModel: modelId ? `${provider.id}/${modelId}` : fallbackProvider?.defaultModel || "",
+    modelDisplayName: model?.name || fallbackProvider?.modelDisplayName || "",
+    contextLimit:
+      typeof model?.limit?.context === "number"
+        ? String(model.limit.context)
+        : fallbackProvider?.contextLimit || "",
+    outputLimit:
+      typeof model?.limit?.output === "number"
+        ? String(model.limit.output)
+        : fallbackProvider?.outputLimit || "",
+    whitelist: fallbackProvider?.whitelist || "",
+    blacklist: fallbackProvider?.blacklist || "",
+    authMethods: resolveAuthMethods(provider, authMethodsResponse, fallbackMethods),
+    authMethodDetails: resolveAuthMethodDetails(provider, authMethodsResponse, fallbackMethods),
+    badge: fallbackProvider?.badge,
+    icon: fallbackProvider?.icon || provider.name.charAt(0).toUpperCase(),
+  } satisfies ModelProvider;
+}
+
+
 function getNpmPackageNameFromSpec(spec: string) {
   const normalized = spec.trim().toLowerCase();
   if (normalized.startsWith("@")) {
@@ -501,6 +642,8 @@ export function AppSidebar({
   const [selectedProviderAuthMethod, setSelectedProviderAuthMethod] = useState<
     string | null
   >(null);
+  const [disconnectingProviderId, setDisconnectingProviderId] = useState<string | null>(null);
+  const [providerAuthApplying, setProviderAuthApplying] = useState(false);
 
   const filteredProjects = projects.filter((project) => {
     const keyword = projectSearch.trim().toLowerCase();
@@ -628,6 +771,112 @@ export function AppSidebar({
 
     return () => window.clearTimeout(timeoutId);
   }, [loadNpmPackages, userSettingsOpen, userSettingsSection]);
+
+  const loadModelProviders = useCallback(
+    async (signal?: AbortSignal) => {
+      const directory = activeProjectPath?.trim() || undefined;
+      const query = directory ? { directory } : undefined;
+
+      try {
+        const providerResponse = await listOpenCodeProviders({
+          query,
+          signal,
+        });
+        let authMethodsResponse: OpenCodeAuthMethodsResponse | undefined;
+
+        try {
+          authMethodsResponse = await getOpenCodeProviderAuthMethods({
+            query,
+            signal,
+          });
+        } catch {
+          authMethodsResponse = undefined;
+        }
+
+        if (signal?.aborted) return;
+
+        const nextProviders = providerResponse.all
+          .map((provider) =>
+            toModelProvider(provider, providerResponse, authMethodsResponse),
+          )
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setModelProviders((current) => {
+          const previousProvidersById = Object.fromEntries(
+            current.map((provider) => [provider.id, provider]),
+          );
+
+          return nextProviders.map((nextProvider) => ({
+            ...nextProvider,
+            verificationCode:
+              previousProvidersById[nextProvider.id]?.verificationCode,
+            verificationInstructions:
+              previousProvidersById[nextProvider.id]?.verificationInstructions,
+            verificationMethod:
+              previousProvidersById[nextProvider.id]?.verificationMethod,
+            verificationMethodIndex:
+              previousProvidersById[nextProvider.id]?.verificationMethodIndex,
+            verificationUrl:
+              previousProvidersById[nextProvider.id]?.verificationUrl,
+          }));
+        });
+      } catch (error) {
+        if (signal?.aborted) return;
+        setModelProviders(initialModelProviders);
+        toastManager.add({
+          id: `model-providers-load-error-${Date.now()}`,
+          description: getApiErrorMessage(error),
+          title: "載入模型商失敗",
+          type: "error",
+        });
+      }
+    },
+    [activeProjectPath],
+  );
+
+  const pollProviderConnection = useCallback(
+    async (providerId: string) => {
+      const directory = activeProjectPath?.trim() || undefined;
+      const query = directory ? { directory } : undefined;
+
+      for (let attempt = 0; attempt < PROVIDER_AUTH_POLL_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, PROVIDER_AUTH_POLL_INTERVAL_MS));
+
+        try {
+          const providerResponse = await listOpenCodeProviders({ query });
+          if (!providerResponse.connected.includes(providerId)) continue;
+
+          await loadModelProviders();
+          setSelectedProviderAuthMethod(null);
+          setSelectedModelProviderId(null);
+          toastManager.add({
+            id: `provider-auth-connected-${providerId}-${Date.now()}`,
+            description: "模型商已成功連接，列表狀態已更新。",
+            title: "已連接模型商",
+            type: "success",
+          });
+          return;
+        } catch {
+          // Ignore transient proxy/server errors while the browser OAuth flow completes.
+        }
+      }
+    },
+    [activeProjectPath, loadModelProviders],
+  );
+
+  useEffect(() => {
+    if (!userSettingsOpen || userSettingsSection !== "model-providers") return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void loadModelProviders(controller.signal);
+    }, 0);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [loadModelProviders, userSettingsOpen, userSettingsSection]);
 
   function stageNpmPackageInstalls() {
     const packageSpecs = parseNpmPackageInput(npmPackageInput);
@@ -1141,6 +1390,213 @@ export function AppSidebar({
         provider.id === providerId ? { ...provider, ...updates } : provider,
       ),
     );
+  }
+
+  async function disconnectModelProvider(providerId: string) {
+    if (disconnectingProviderId) return;
+
+    const provider = modelProviders.find((item) => item.id === providerId);
+    setDisconnectingProviderId(providerId);
+
+    try {
+      const directory = activeProjectPath?.trim() || undefined;
+      await disconnectOpenCodeProviderAuth(providerId, {
+        query: directory ? { directory } : undefined,
+      });
+      await disposeOpenCodeInstance({
+        query: directory ? { directory } : undefined,
+      });
+      updateModelProvider(providerId, {
+        connected: false,
+        enabled: false,
+        verificationCode: undefined,
+        verificationInstructions: undefined,
+        verificationMethod: undefined,
+        verificationMethodIndex: undefined,
+        verificationUrl: undefined,
+      });
+      await loadModelProviders();
+      toastManager.add({
+        id: `provider-disconnected-${providerId}-${Date.now()}`,
+        description: `${provider?.name ?? providerId} 已從 OpenCode 移除授權。`,
+        title: "已斷開連接",
+        type: "success",
+      });
+    } catch (error) {
+      toastManager.add({
+        id: `provider-disconnect-error-${providerId}-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "斷開連接失敗",
+        type: "error",
+      });
+    } finally {
+      setDisconnectingProviderId(null);
+    }
+  }
+
+  async function submitProviderApiKey(providerId: string, key: string, inputs?: Record<string, string>) {
+    if (providerAuthApplying) return;
+
+    const provider = modelProviders.find((item) => item.id === providerId);
+    const directory = activeProjectPath?.trim() || undefined;
+    const query = directory ? { directory } : undefined;
+    setProviderAuthApplying(true);
+
+    try {
+      await setOpenCodeProviderApiKey(providerId, key.trim(), inputs, { query });
+      await disposeOpenCodeInstance({ query });
+      await loadModelProviders();
+      setSelectedProviderAuthMethod(null);
+      setSelectedModelProviderId(null);
+      toastManager.add({
+        id: `provider-api-key-connected-${providerId}-${Date.now()}`,
+        description: `${provider?.name ?? providerId} 已使用 API key 連接。`,
+        title: "已連接模型商",
+        type: "success",
+      });
+    } catch (error) {
+      toastManager.add({
+        id: `provider-api-key-error-${providerId}-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "API key 連接失敗",
+        type: "error",
+      });
+    } finally {
+      setProviderAuthApplying(false);
+    }
+  }
+
+  async function completeProviderAuthFlow(providerId: string, methodIndexOverride?: number) {
+    if (providerAuthApplying) return;
+
+    const provider = modelProviders.find((item) => item.id === providerId);
+    const methodIndex = methodIndexOverride ?? provider?.verificationMethodIndex;
+    if (!provider || methodIndex === undefined) {
+      toastManager.add({
+        id: `provider-auth-complete-missing-method-${Date.now()}`,
+        description: "找不到授權方式，請重新啟動授權流程。",
+        title: "確認連接失敗",
+        type: "error",
+      });
+      return;
+    }
+
+    const directory = activeProjectPath?.trim() || undefined;
+    const query = directory ? { directory } : undefined;
+    setProviderAuthApplying(true);
+
+    try {
+      await completeOpenCodeProviderAuth(providerId, methodIndex, { query });
+      await disposeOpenCodeInstance({ query });
+      await loadModelProviders();
+      setSelectedProviderAuthMethod(null);
+      setSelectedModelProviderId(null);
+      toastManager.add({
+        id: `provider-auth-completed-${providerId}-${Date.now()}`,
+        description: `${provider.name} 已完成授權並更新 OpenCode 狀態。`,
+        title: "已連接模型商",
+        type: "success",
+      });
+    } catch (error) {
+      toastManager.add({
+        id: `provider-auth-complete-error-${providerId}-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "確認連接失敗",
+        type: "error",
+      });
+    } finally {
+      setProviderAuthApplying(false);
+    }
+  }
+
+  async function startProviderAuthFlow(method: string, inputs?: Record<string, string>) {
+    if (!selectedModelProviderId) return;
+
+    const provider = modelProviders.find((item) => item.id === selectedModelProviderId);
+    if (!provider) return;
+
+    const methodIndex = provider.authMethods.indexOf(method);
+    if (methodIndex < 0) {
+      toastManager.add({
+        id: `provider-auth-method-not-found-${Date.now()}`,
+        description: "未找到指定授權方式，請重新選擇。",
+        title: "授權啟動失敗",
+        type: "error",
+      });
+      return;
+    }
+
+    const authMethod = provider.authMethodDetails?.[methodIndex];
+    if (authMethod?.type === "api") {
+      updateModelProvider(provider.id, {
+        verificationCode: undefined,
+        verificationInstructions: undefined,
+        verificationMethod: undefined,
+        verificationMethodIndex: undefined,
+        verificationUrl: undefined,
+      });
+      setSelectedProviderAuthMethod(method);
+      return;
+    }
+
+    if (authMethod?.prompts?.length && !inputs) {
+      updateModelProvider(provider.id, {
+        verificationCode: undefined,
+        verificationInstructions: undefined,
+        verificationMethod: undefined,
+        verificationMethodIndex: undefined,
+        verificationUrl: undefined,
+      });
+      setSelectedProviderAuthMethod(method);
+      return;
+    }
+
+    try {
+      const response = await startOpenCodeProviderAuth(
+        provider.id,
+        methodIndex,
+        inputs,
+        {
+          query: activeProjectPath ? { directory: activeProjectPath } : undefined,
+        },
+      );
+      const verificationCode = extractVerificationCode(response.instructions);
+
+      if (response.url) {
+        window.open(response.url, "_blank", "noopener,noreferrer");
+      }
+
+      updateModelProvider(provider.id, {
+        connected: provider.connected,
+        verificationCode,
+        verificationInstructions: response.instructions,
+        verificationMethod: response.method,
+        verificationMethodIndex: methodIndex,
+        verificationUrl: response.url,
+      });
+
+      setSelectedProviderAuthMethod(method);
+      toastManager.add({
+        id: `provider-auth-started-${Date.now()}`,
+        description:
+          "請在彈出的授權連結完成驗證，完成後會自動更新連接狀態。",
+        title: "請完成授權",
+        type: "warning",
+      });
+      if (verificationCode) {
+        void completeProviderAuthFlow(provider.id, methodIndex);
+      } else {
+        void pollProviderConnection(provider.id);
+      }
+    } catch (error) {
+      setSelectedProviderAuthMethod(null);
+      toastManager.add({
+        id: `provider-auth-start-error-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "授權啟動失敗",
+        type: "error",
+      });
+    }
   }
 
   function closeUserSettings() {
@@ -2044,6 +2500,7 @@ export function AppSidebar({
 
       <UserSettingsModal
         activeProjectName={activeProjectName}
+        disconnectingProviderId={disconnectingProviderId}
         filteredModelProviders={filteredModelProviders}
         modelProviderSearch={modelProviderSearch}
         npmPackageInput={npmPackageInput}
@@ -2067,15 +2524,19 @@ export function AppSidebar({
         onOpenChange={(settingsOpen) => {
           if (!settingsOpen) closeUserSettings();
         }}
-        onProviderAuthMethodChange={setSelectedProviderAuthMethod}
+        onProviderApiKeySubmit={submitProviderApiKey}
+        onProviderAuthMethodChange={startProviderAuthFlow}
+        onProviderDisconnect={disconnectModelProvider}
         onProviderSelect={(providerId) => {
           setSelectedModelProviderId(providerId);
           setSelectedProviderAuthMethod(null);
         }}
-        onProviderUpdate={updateModelProvider}
         onProviderViewBack={() => {
           if (selectedProviderAuthMethod) {
             setSelectedProviderAuthMethod(null);
+            if (selectedModelProviderId) {
+              void loadModelProviders();
+            }
             return;
           }
 
@@ -2090,6 +2551,7 @@ export function AppSidebar({
           setSelectedProviderAuthMethod(null);
         }}
         open={userSettingsOpen}
+        providerAuthApplying={providerAuthApplying}
         section={userSettingsSection}
         selectedAuthMethod={selectedProviderAuthMethod}
         selectedProvider={selectedModelProvider}
