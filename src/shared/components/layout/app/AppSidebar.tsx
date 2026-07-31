@@ -15,6 +15,7 @@ import {
   completeOpenCodeProviderAuth,
   disconnectOpenCodeProviderAuth,
   disposeOpenCodeInstance,
+  getOpenCodeProviderOAuthStatus,
   getOpenCodeProviderAuthMethods,
   listOpenCodeProviders,
   setOpenCodeProviderApiKey,
@@ -801,7 +802,6 @@ export function AppSidebar({
           query,
           signal,
         });
-        onOpenCodeProviderCatalogChange?.(providerResponse);
         let authMethodsResponse: OpenCodeAuthMethodsResponse | undefined;
 
         try {
@@ -814,6 +814,7 @@ export function AppSidebar({
         }
 
         if (signal?.aborted) return;
+        onOpenCodeProviderCatalogChange?.(providerResponse);
 
         const nextProviders = providerResponse.all
           .map((provider) =>
@@ -829,17 +830,22 @@ export function AppSidebar({
           return nextProviders.map((nextProvider) => ({
             ...nextProvider,
             verificationCode:
-              previousProvidersById[nextProvider.id]?.verificationCode,
+              nextProvider.connected ? undefined : previousProvidersById[nextProvider.id]?.verificationCode,
             verificationInstructions:
-              previousProvidersById[nextProvider.id]?.verificationInstructions,
+              nextProvider.connected ? undefined : previousProvidersById[nextProvider.id]?.verificationInstructions,
             verificationMethod:
-              previousProvidersById[nextProvider.id]?.verificationMethod,
+              nextProvider.connected ? undefined : previousProvidersById[nextProvider.id]?.verificationMethod,
             verificationMethodIndex:
-              previousProvidersById[nextProvider.id]?.verificationMethodIndex,
+              nextProvider.connected ? undefined : previousProvidersById[nextProvider.id]?.verificationMethodIndex,
             verificationUrl:
-              previousProvidersById[nextProvider.id]?.verificationUrl,
+              nextProvider.connected ? undefined : previousProvidersById[nextProvider.id]?.verificationUrl,
           }));
         });
+
+        if (selectedModelProviderId && providerResponse.connected.includes(selectedModelProviderId)) {
+          setSelectedProviderAuthMethod(null);
+          setSelectedModelProviderId(null);
+        }
       } catch (error) {
         if (signal?.aborted) return;
         setModelProviders(initialModelProviders);
@@ -851,8 +857,29 @@ export function AppSidebar({
         });
       }
     },
-    [activeProjectPath, disabledModelIds, onOpenCodeProviderCatalogChange],
+    [activeProjectPath, disabledModelIds, onOpenCodeProviderCatalogChange, selectedModelProviderId],
   );
+
+  const markModelProviderConnected = useCallback((providerId: string) => {
+    setModelProviders((current) =>
+      current.map((provider) =>
+        provider.id === providerId
+          ? {
+              ...provider,
+              connected: true,
+              enabled: true,
+              verificationCode: undefined,
+              verificationInstructions: undefined,
+              verificationMethod: undefined,
+              verificationMethodIndex: undefined,
+              verificationUrl: undefined,
+            }
+          : provider,
+      ),
+    );
+    setSelectedProviderAuthMethod(null);
+    setSelectedModelProviderId(null);
+  }, []);
 
   const pollProviderConnection = useCallback(
     async (providerId: string) => {
@@ -863,12 +890,24 @@ export function AppSidebar({
         await new Promise((resolve) => window.setTimeout(resolve, PROVIDER_AUTH_POLL_INTERVAL_MS));
 
         try {
+          const oauthStatus = await getOpenCodeProviderOAuthStatus(providerId, { query });
+          if (oauthStatus.completed) {
+            await loadModelProviders();
+            markModelProviderConnected(providerId);
+            toastManager.add({
+              id: `provider-auth-connected-${providerId}-${Date.now()}`,
+              description: "OAuth 驗證已成功，模型商狀態已更新。",
+              title: "已連接模型商",
+              type: "success",
+            });
+            return;
+          }
+
           const providerResponse = await listOpenCodeProviders({ query });
           if (!providerResponse.connected.includes(providerId)) continue;
 
           await loadModelProviders();
-          setSelectedProviderAuthMethod(null);
-          setSelectedModelProviderId(null);
+          markModelProviderConnected(providerId);
           toastManager.add({
             id: `provider-auth-connected-${providerId}-${Date.now()}`,
             description: "模型商已成功連接，列表狀態已更新。",
@@ -880,8 +919,50 @@ export function AppSidebar({
           // Ignore transient proxy/server errors while the browser OAuth flow completes.
         }
       }
+
+      toastManager.add({
+        id: `provider-auth-timeout-${providerId}-${Date.now()}`,
+        description: "Browser 授權完成後仍未從 OpenCode 讀到連接狀態，請重新整理模型商列表或檢查後端 OAuth callback log。",
+        title: "模型商連接逾時",
+        type: "error",
+      });
     },
-    [activeProjectPath, loadModelProviders],
+    [activeProjectPath, loadModelProviders, markModelProviderConnected],
+  );
+
+  const pollHeadlessProviderCompletion = useCallback(
+    async (providerId: string, methodIndex: number) => {
+      const directory = activeProjectPath?.trim() || undefined;
+      const query = directory ? { directory } : undefined;
+
+      for (let attempt = 0; attempt < PROVIDER_AUTH_POLL_ATTEMPTS; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, PROVIDER_AUTH_POLL_INTERVAL_MS));
+
+        try {
+          await completeOpenCodeProviderAuth(providerId, methodIndex, { query });
+          await disposeOpenCodeInstance({ query });
+          await loadModelProviders();
+          markModelProviderConnected(providerId);
+          toastManager.add({
+            id: `provider-headless-auth-completed-${providerId}-${Date.now()}`,
+            description: "Headless 授權已成功，模型商狀態已更新。",
+            title: "已連接模型商",
+            type: "success",
+          });
+          return;
+        } catch {
+          // The device-code/headless flow returns failure until the user finishes authorization.
+        }
+      }
+
+      toastManager.add({
+        id: `provider-headless-auth-timeout-${providerId}-${Date.now()}`,
+        description: "Headless 授權完成後仍未收到 OpenCode callback 成功結果，請重新啟動授權流程。",
+        title: "模型商連接逾時",
+        type: "error",
+      });
+    },
+    [activeProjectPath, loadModelProviders, markModelProviderConnected],
   );
 
   useEffect(() => {
@@ -1507,49 +1588,6 @@ export function AppSidebar({
     }
   }
 
-  async function completeProviderAuthFlow(providerId: string, methodIndexOverride?: number) {
-    if (providerAuthApplying) return;
-
-    const provider = modelProviders.find((item) => item.id === providerId);
-    const methodIndex = methodIndexOverride ?? provider?.verificationMethodIndex;
-    if (!provider || methodIndex === undefined) {
-      toastManager.add({
-        id: `provider-auth-complete-missing-method-${Date.now()}`,
-        description: "找不到授權方式，請重新啟動授權流程。",
-        title: "確認連接失敗",
-        type: "error",
-      });
-      return;
-    }
-
-    const directory = activeProjectPath?.trim() || undefined;
-    const query = directory ? { directory } : undefined;
-    setProviderAuthApplying(true);
-
-    try {
-      await completeOpenCodeProviderAuth(providerId, methodIndex, { query });
-      await disposeOpenCodeInstance({ query });
-      await loadModelProviders();
-      setSelectedProviderAuthMethod(null);
-      setSelectedModelProviderId(null);
-      toastManager.add({
-        id: `provider-auth-completed-${providerId}-${Date.now()}`,
-        description: `${provider.name} 已完成授權並更新 OpenCode 狀態。`,
-        title: "已連接模型商",
-        type: "success",
-      });
-    } catch (error) {
-      toastManager.add({
-        id: `provider-auth-complete-error-${providerId}-${Date.now()}`,
-        description: getApiErrorMessage(error),
-        title: "確認連接失敗",
-        type: "error",
-      });
-    } finally {
-      setProviderAuthApplying(false);
-    }
-  }
-
   async function startProviderAuthFlow(method: string, inputs?: Record<string, string>) {
     if (!selectedModelProviderId) return;
 
@@ -1625,7 +1663,7 @@ export function AppSidebar({
         type: "warning",
       });
       if (verificationCode) {
-        void completeProviderAuthFlow(provider.id, methodIndex);
+        void pollHeadlessProviderCompletion(provider.id, methodIndex);
       } else {
         void pollProviderConnection(provider.id);
       }

@@ -79,10 +79,23 @@ export type OpenCodeAuthStartResponse = {
   url: string;
 };
 
+export type OpenCodeOAuthStatusResponse = {
+  completed: boolean;
+  completedAt?: number;
+};
+
 export function listOpenCodeProviders(config?: ApiRequestConfig) {
   return apiRequest<OpenCodeProviderListResponse>("/bff/opencode-proxy/provider", {
     ...config,
     query: { ...config?.query },
+    method: "GET",
+  });
+}
+
+export function getOpenCodeProviderOAuthStatus(providerId: string, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeOAuthStatusResponse>("/bff/opencode-oauth/status", {
+    ...config,
+    query: { ...config?.query, providerId },
     method: "GET",
   });
 }
