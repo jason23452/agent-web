@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from "react"
 import { HomeRoute } from "@/features/home/router"
-import { fileTree as mockFileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
+import { fileTree as mockFileTree, recentProjects, starterAttachments } from "@/app/data/mockWorkspace"
 import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, readProjectFileContent } from "@/features/workspace/api/files"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
-import { listProjectSessions, toWorkspaceSession } from "@/features/workspace/api/sessions"
+import { getProjectSession, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
 import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
 import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
-import type { Agent, Attachment, FileNode, PinContext, Project, Session } from "@/shared/types/workspace"
+import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders"
+import { getOpenCodeCurrentUsage, getOpenCodeSessionContextUsage } from "@/shared/api/opencodeUsage"
+import type { Agent, Attachment, FileNode, ModelRateLimitUsage, PinContext, Project, Session, TokenUsage } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
 import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
@@ -43,6 +45,39 @@ const EMPTY_AGENT: Agent = {
 
 const NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE = "尚未啟用專案，請先到側邊欄開啟專案。"
 
+function buildTokenUsage(session: OpenCodeSession | undefined, providers: OpenCodeProviderListResponse | null): TokenUsage[] {
+  if (!session?.model) {
+    return [{ label: "Context", used: 0, limit: 0 }]
+  }
+
+  const provider = providers?.all.find((item) => item.id === session.model?.providerID)
+  const model = provider?.models[session.model.id]
+  const tokens = session.tokens
+  const input = tokens?.input ?? 0
+  const output = tokens?.output ?? 0
+  const reasoning = tokens?.reasoning ?? 0
+  const cacheRead = tokens?.cache.read ?? 0
+  const cacheWrite = tokens?.cache.write ?? 0
+  const used = input + output + reasoning + cacheRead + cacheWrite
+  const limit = model?.limit?.context ?? 0
+  const modelLabel = `${provider?.name ?? session.model.providerID} / ${model?.name ?? session.model.id}`
+
+  return [
+    {
+      cacheRead,
+      cacheWrite,
+      input,
+      label: "Context",
+      limit,
+      modelLabel,
+      output,
+      providerLabel: provider?.name ?? session.model.providerID,
+      reasoning,
+      used,
+    },
+  ]
+}
+
 export function AppRouter() {
   const [route, setRoute] = useState<AppRoute>(() => readBrowserRoute())
   const [activeAgentId, setActiveAgentId] = useState("")
@@ -59,6 +94,11 @@ export function AppRouter() {
   const [projects, setProjects] = useState<Project[]>(recentProjects)
   const [projectsError, setProjectsError] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
+  const [openCodeProviderCatalog, setOpenCodeProviderCatalog] = useState<OpenCodeProviderListResponse | null>(null)
+  const [activeOpenCodeSessionDetail, setActiveOpenCodeSessionDetail] = useState<OpenCodeSession | null>(null)
+  const [activeOpenCodeContextUsage, setActiveOpenCodeContextUsage] = useState<TokenUsage[] | null>(null)
+  const [modelRateLimitUsage, setModelRateLimitUsage] = useState<ModelRateLimitUsage | null>(null)
+  const [openCodeSessions, setOpenCodeSessions] = useState<OpenCodeSession[]>([])
   const [projectSessions, setProjectSessions] = useState<Session[]>([])
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
@@ -161,7 +201,7 @@ export function AppRouter() {
             return [project, ...nextProjects]
           })
 
-          const [sessionsResponse, agentsResponse] = await Promise.all([
+          const [sessionsResponse, agentsResponse, providersResponse] = await Promise.all([
             listProjectSessions(directory, { signal: controller.signal }).catch((error) => {
               if (!controller.signal.aborted) setSessionsError(getApiErrorMessage(error))
               return null
@@ -170,17 +210,24 @@ export function AppRouter() {
               if (!controller.signal.aborted) setAgentsError(getApiErrorMessage(error))
               return null
             }),
+            listOpenCodeProviders({ query: { directory }, signal: controller.signal }).catch(() => null),
           ])
           if (controller.signal.aborted) return
 
           if (sessionsResponse) {
+            setOpenCodeSessions(sessionsResponse)
+            setActiveOpenCodeSessionDetail(null)
             const nextSessions = sessionsResponse.map(toWorkspaceSession)
             setProjectSessions(nextSessions)
             setActiveSessionId((current) => current && nextSessions.some((session) => session.id === current) ? current : nextSessions[0]?.id ?? null)
           } else {
+            setOpenCodeSessions([])
+            setActiveOpenCodeSessionDetail(null)
             setProjectSessions([])
             setActiveSessionId(null)
           }
+
+          setOpenCodeProviderCatalog(providersResponse)
 
           if (agentsResponse) {
             setAvailableAgents(agentsResponse)
@@ -199,6 +246,9 @@ export function AppRouter() {
           }
 
           setProjectSessions([])
+          setOpenCodeSessions([])
+          setActiveOpenCodeSessionDetail(null)
+          setOpenCodeProviderCatalog(null)
           setSessionsError(getApiErrorMessage(error))
           setAvailableAgents([])
           setAgentsError(getApiErrorMessage(error))
@@ -222,6 +272,54 @@ export function AppRouter() {
     ? getProjectPath(activeProjectName, projects)
     : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
+
+  useEffect(() => {
+    if (!activeProjectPath || !activeSessionId) {
+      setActiveOpenCodeSessionDetail(null)
+      setActiveOpenCodeContextUsage(null)
+      return
+    }
+
+    const controller = new AbortController()
+    void Promise.all([
+      getProjectSession(activeSessionId, activeProjectPath, { signal: controller.signal }),
+      getOpenCodeSessionContextUsage(activeSessionId, activeProjectPath, { signal: controller.signal }).catch(() => null),
+    ])
+      .then(([session, contextUsage]) => {
+        if (controller.signal.aborted) return
+
+        setActiveOpenCodeSessionDetail(session)
+        setActiveOpenCodeContextUsage(contextUsage ? [contextUsage] : null)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setActiveOpenCodeSessionDetail(null)
+          setActiveOpenCodeContextUsage(null)
+        }
+      })
+
+    return () => controller.abort()
+  }, [activeProjectPath, activeSessionId])
+
+  useEffect(() => {
+    const fallbackProviderID = openCodeProviderCatalog?.connected.find((providerID) => providerID !== "opencode")
+    const providerID = activeOpenCodeSessionDetail?.model?.providerID ?? activeAgent.providerID ?? fallbackProviderID
+    if (!providerID) {
+      setModelRateLimitUsage(null)
+      return
+    }
+
+    const controller = new AbortController()
+    void getOpenCodeCurrentUsage(providerID, { signal: controller.signal })
+      .then((usage) => {
+        if (!controller.signal.aborted) setModelRateLimitUsage(usage)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setModelRateLimitUsage(null)
+      })
+
+    return () => controller.abort()
+  }, [activeAgent.providerID, activeOpenCodeSessionDetail?.model?.providerID, openCodeProviderCatalog?.connected])
 
   const openProjectFile = useCallback(async (file: FileTreeNode) => {
     if (!activeProjectPath) return
@@ -522,6 +620,8 @@ export function AppRouter() {
   const renderedContextFileTreeError = activeProjectPath
     ? contextFileTreeError
     : NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE
+  const activeOpenCodeSession = activeOpenCodeSessionDetail ?? openCodeSessions.find((session) => session.id === activeSessionId)
+  const topbarTokenUsage = activeOpenCodeContextUsage ?? buildTokenUsage(activeOpenCodeSession, openCodeProviderCatalog)
 
   return (
     <AppShell
@@ -594,7 +694,8 @@ export function AppRouter() {
           onAgentChange={setActiveAgentId}
           onOpenContextPanel={() => setContextPanelOpen(true)}
           onOpenSidebar={() => setSidebarOpen(true)}
-          tokenUsage={tokenUsage}
+          rateLimitUsage={modelRateLimitUsage}
+          tokenUsage={topbarTokenUsage}
         />
       }
     >

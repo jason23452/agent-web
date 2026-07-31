@@ -3,7 +3,7 @@ import { AgentSwitcher } from "@/shared/components/layout/app/AgentSwitcher"
 import { ContextMeter } from "@/shared/components/layout/context/ContextMeter"
 import { TopNav } from "@/shared/components/layout/app/TopNav"
 import { Button } from "@/shared/components/ui/button"
-import type { Agent, TokenUsage } from "@/shared/types/workspace"
+import type { Agent, ModelRateLimitUsage, TokenUsage } from "@/shared/types/workspace"
 
 type AppTopbarProps = {
   activeAgent: Agent
@@ -14,6 +14,7 @@ type AppTopbarProps = {
   onAgentChange: (agentId: string) => void
   onOpenContextPanel: () => void
   onOpenSidebar: () => void
+  rateLimitUsage?: ModelRateLimitUsage | null
   tokenUsage: TokenUsage[]
 }
 
@@ -31,6 +32,7 @@ export function AppTopbar({
   onAgentChange,
   onOpenContextPanel,
   onOpenSidebar,
+  rateLimitUsage,
   tokenUsage,
 }: AppTopbarProps) {
   const projectLabel = activeProjectPath ? getProjectLabel(activeProjectPath) : null
@@ -52,7 +54,7 @@ export function AppTopbar({
       end={
         <>
           <AgentSwitcher activeAgent={activeAgent} agents={agents} error={agentsError} loading={agentsLoading} onAgentChange={onAgentChange} />
-          <ContextMeter usage={tokenUsage} />
+          <ContextMeter rateLimitUsage={rateLimitUsage} usage={tokenUsage} />
           <Button aria-label="Open context panel" className="bg-background min-[1181px]:hidden" onClick={onOpenContextPanel} size="icon" variant="outline">
             <PanelRightIcon aria-hidden="true" />
           </Button>

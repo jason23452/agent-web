@@ -1,8 +1,10 @@
+import { useState } from "react"
 import { Progress, ProgressIndicator, ProgressTrack } from "@/shared/components/ui/progress"
 import { Spinner } from "@/shared/components/ui/spinner"
-import type { TokenUsage } from "@/shared/types/workspace"
+import type { ModelRateLimitUsage, TokenUsage } from "@/shared/types/workspace"
 
 type ContextMeterProps = {
+  rateLimitUsage?: ModelRateLimitUsage | null
   usage: TokenUsage[]
 }
 
@@ -38,11 +40,20 @@ function getUsageClasses(percent: number) {
   }
 }
 
-export function ContextMeter({ usage }: ContextMeterProps) {
+function formatResetAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return `Resets ${date.toLocaleString([], { day: "2-digit", hour: "2-digit", minute: "2-digit", month: "short" })}`
+}
+
+export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
+  const [quotaTab, setQuotaTab] = useState<"remaining" | "used">("remaining")
   const primary = usage[0]
   if (!primary) return null
 
   const percent = getUsagePercent(primary)
+  const hasUsage = primary.limit > 0 && Boolean(primary.modelLabel)
   const usageClasses = getUsageClasses(percent)
   const spinnerRotation = `${Math.round(percent * 3.6)}deg`
 
@@ -51,7 +62,7 @@ export function ContextMeter({ usage }: ContextMeterProps) {
       aria-describedby="context-token-popover"
       className="group relative hidden items-center gap-2 rounded-full border border-border/70 bg-background px-2 py-1 focus-within:ring-2 focus-within:ring-ring sm:inline-flex"
       tabIndex={0}
-      title={`Token 使用量：${primary.label} ${formatToken(primary.used)}/${formatToken(primary.limit)}`}
+      title={hasUsage ? `Context 使用量：${primary.label} ${formatToken(primary.used)}/${formatToken(primary.limit)}` : "尚無 context 使用量"}
     >
       <Spinner
         aria-hidden="true"
@@ -66,10 +77,78 @@ export function ContextMeter({ usage }: ContextMeterProps) {
         role="region"
       >
         <div className="mb-3 flex items-center justify-between gap-3">
-          <strong className="text-sm">Context tokens</strong>
-          <span className="font-mono text-muted-foreground text-xs">OpenAI</span>
+          <strong className="text-sm">Rate limits</strong>
+          <span className="truncate font-mono text-muted-foreground text-xs">{rateLimitUsage?.providerID ?? primary.providerLabel ?? "Current model"}</span>
         </div>
-        <div className="grid gap-3">
+        {rateLimitUsage?.fetchedAt ? (
+          <p className="mb-3 text-muted-foreground text-xs">Last updated {new Date(rateLimitUsage.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+        ) : null}
+        <div className="mb-3 grid grid-cols-2 rounded-lg bg-muted p-1 text-xs">
+          <button
+            className={`rounded-md px-2 py-1.5 font-medium transition-colors ${quotaTab === "remaining" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setQuotaTab("remaining")}
+            type="button"
+          >
+            剩餘用量
+          </button>
+          <button
+            className={`rounded-md px-2 py-1.5 font-medium transition-colors ${quotaTab === "used" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setQuotaTab("used")}
+            type="button"
+          >
+            已用用量
+          </button>
+        </div>
+        {rateLimitUsage?.entries.length ? (
+          <div className="grid gap-3">
+            {rateLimitUsage.entries.map((entry) => {
+              const limit = entry.limit ?? 0
+              const used = entry.used ?? (entry.remaining !== undefined && limit > 0 ? Math.max(limit - entry.remaining, 0) : 0)
+              const remaining = entry.remaining ?? (limit > 0 ? Math.max(limit - used, 0) : undefined)
+              const usedPercent = Math.round(entry.usedPercent ?? (limit > 0 ? (used / limit) * 100 : 0))
+              const remainingPercent = Math.max(100 - usedPercent, 0)
+              const hasMeterValue = entry.usedPercent !== undefined || limit > 0
+              const value = hasMeterValue ? quotaTab === "remaining" ? remainingPercent : usedPercent : 0
+              const usageLabel = entry.valueLabel ?? (quotaTab === "remaining"
+                ? entry.usedPercent !== undefined
+                  ? `${remainingPercent}% left`
+                  : remaining !== undefined && limit > 0
+                    ? `${formatToken(remaining)} / ${formatToken(limit)} left`
+                    : remaining !== undefined
+                      ? `${formatToken(remaining)} left`
+                      : `${remainingPercent}% left`
+                : entry.usedPercent !== undefined
+                  ? `${usedPercent}% used`
+                  : limit > 0
+                    ? `${formatToken(used)} / ${formatToken(limit)} used`
+                    : `${usedPercent}% used`)
+
+              return (
+                <div className="grid gap-1.5" key={`${entry.label}-${entry.resetAt ?? ""}`}>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium">{entry.label}</span>
+                    <span className="font-mono text-xs">{usageLabel}</span>
+                  </div>
+                  <Progress aria-label={`${entry.label} ${quotaTab} usage`} className="gap-0" max={100} value={value}>
+                    <ProgressTrack className="h-1.5 bg-muted">
+                      <ProgressIndicator className={getUsageClasses(usedPercent).indicator} />
+                    </ProgressTrack>
+                  </Progress>
+                  {entry.resetAt ? <span className="text-muted-foreground text-xs">{formatResetAt(entry.resetAt)}</span> : null}
+                </div>
+              )
+            })}
+          </div>
+        ) : rateLimitUsage?.error ? (
+          <p className="mb-3 rounded-lg bg-muted/45 px-3 py-2 text-muted-foreground text-sm">
+            {rateLimitUsage.error}
+          </p>
+        ) : (
+          <p className="mb-3 rounded-lg bg-muted/45 px-3 py-2 text-muted-foreground text-sm">
+            此模型尚無可用額度資料。
+          </p>
+        )}
+        <div className="mt-3 grid gap-3 border-border/70 border-t pt-3">
           {usage.map((item) => {
             const itemPercent = getUsagePercent(item)
             const itemClasses = getUsageClasses(itemPercent)

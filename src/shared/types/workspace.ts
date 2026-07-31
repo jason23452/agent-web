@@ -60,9 +60,31 @@ export type WorkspaceMessage = {
 }
 
 export type TokenUsage = {
+  cacheRead?: number
+  cacheWrite?: number
+  input?: number
   label: string
   used: number
   limit: number
+  modelLabel?: string
+  output?: number
+  providerLabel?: string
+  reasoning?: number
+}
+
+export type ModelRateLimitUsage = {
+  entries: Array<{
+    label: string
+    limit?: number
+    remaining?: number
+    resetAt?: string
+    used?: number
+    usedPercent?: number
+    valueLabel?: string
+  }>
+  error?: string
+  fetchedAt?: string
+  providerID?: string
 }
 
 export type Attachment = {

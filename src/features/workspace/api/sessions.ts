@@ -4,8 +4,22 @@ import type { Session } from "@/shared/types/workspace";
 export type OpenCodeSession = {
   directory: string;
   id: string;
+  model?: {
+    id: string;
+    providerID: string;
+    variant?: string;
+  };
   parentID?: string;
   projectID: string;
+  tokens?: {
+    cache: {
+      read: number;
+      write: number;
+    };
+    input: number;
+    output: number;
+    reasoning: number;
+  };
   title: string;
   time: {
     compacting?: number;
@@ -22,6 +36,13 @@ export type CreateProjectSessionInput = {
 
 export function listProjectSessions(directory: string, config?: ApiRequestConfig) {
   return apiRequest<OpenCodeSession[]>("/bff/opencode-proxy/session", {
+    ...config,
+    query: { ...config?.query, directory },
+  });
+}
+
+export function getProjectSession(sessionID: string, directory: string, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeSession>(`/bff/opencode-proxy/session/${encodeURIComponent(sessionID)}`, {
     ...config,
     query: { ...config?.query, directory },
   });
