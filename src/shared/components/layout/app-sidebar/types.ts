@@ -1,4 +1,5 @@
 import type { Project, Session } from "@/shared/types/workspace";
+import type { OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders";
 
 export type AppSidebarProject = Pick<Project, "description" | "displayName" | "id" | "name" | "path">;
 
@@ -15,6 +16,8 @@ export type AppSidebarProps = {
   onCreateSession: () => Promise<void>;
   onDeleteProject: (project: AppSidebarProject) => Promise<void>;
   onProjectChange: (path: string) => void;
+  onOpenCodeProviderCatalogChange?: (catalog: OpenCodeProviderListResponse | null) => void;
+  onOpenCodeDisabledModelsChange?: (disabledModelKeys: string[]) => void;
   onRefreshProjects: () => Promise<void>;
   onRestartOpenCode: (reason: string) => Promise<void>;
   open: boolean;

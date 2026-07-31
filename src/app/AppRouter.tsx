@@ -90,6 +90,10 @@ function getModelKey(providerID: string, modelID: string, variant?: string) {
   return variant ? `${providerID}:${modelID}:${variant}` : `${providerID}:${modelID}`
 }
 
+function getModelSettingsKey(providerID: string, modelID: string) {
+  return `${providerID}/${modelID}`
+}
+
 function getModelVariants(variants: unknown) {
   if (Array.isArray(variants)) {
     return variants
@@ -173,6 +177,7 @@ export function AppRouter() {
   const [projectsError, setProjectsError] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [openCodeProviderCatalog, setOpenCodeProviderCatalog] = useState<OpenCodeProviderListResponse | null>(null)
+  const [disabledOpenCodeModelKeys, setDisabledOpenCodeModelKeys] = useState<string[]>([])
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
   const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [activeOpenCodeSessionDetail, setActiveOpenCodeSessionDetail] = useState<OpenCodeSession | null>(null)
@@ -353,7 +358,8 @@ export function AppRouter() {
     : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
   const activeOpenCodeSession = activeOpenCodeSessionDetail ?? openCodeSessions.find((session) => session.id === activeSessionId)
-  const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog)
+  const disabledOpenCodeModelKeySet = new Set(disabledOpenCodeModelKeys)
+  const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
   const thinkingVariants = buildThinkingVariantOptions(selectedModel)
   const thinkingVariantKeys = thinkingVariants.map((variant) => variant.key).join("\n")
@@ -814,6 +820,8 @@ export function AppRouter() {
           onCreateSession={createSession}
           onDeleteProject={deleteProject}
           onClose={() => setSidebarOpen(false)}
+          onOpenCodeDisabledModelsChange={setDisabledOpenCodeModelKeys}
+          onOpenCodeProviderCatalogChange={setOpenCodeProviderCatalog}
           onProjectChange={changeProject}
           onRefreshProjects={refreshProjects}
           onRestartOpenCode={restartOpenCodeServer}

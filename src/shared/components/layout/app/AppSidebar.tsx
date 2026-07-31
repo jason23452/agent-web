@@ -551,6 +551,8 @@ export function AppSidebar({
   onCreateProject,
   onCreateSession,
   onDeleteProject,
+  onOpenCodeDisabledModelsChange,
+  onOpenCodeProviderCatalogChange,
   onProjectChange,
   onRefreshProjects,
   onRestartOpenCode,
@@ -799,6 +801,7 @@ export function AppSidebar({
           query,
           signal,
         });
+        onOpenCodeProviderCatalogChange?.(providerResponse);
         let authMethodsResponse: OpenCodeAuthMethodsResponse | undefined;
 
         try {
@@ -848,7 +851,7 @@ export function AppSidebar({
         });
       }
     },
-    [activeProjectPath, disabledModelIds],
+    [activeProjectPath, disabledModelIds, onOpenCodeProviderCatalogChange],
   );
 
   const pollProviderConnection = useCallback(
@@ -1417,6 +1420,7 @@ export function AppSidebar({
       } else {
         next.add(modelKey);
       }
+      onOpenCodeDisabledModelsChange?.(Array.from(next));
       return next;
     });
     setModelProviders((current) =>
