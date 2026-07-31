@@ -15,7 +15,7 @@ import type {
   PluginSkillTab,
   SkillDefinition,
   SkillForm,
-} from "./types"
+} from "@/shared/types/app-sidebar"
 import {
   AddPluginForm,
   AddSkillForm,

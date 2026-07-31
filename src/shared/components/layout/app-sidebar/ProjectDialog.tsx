@@ -1,7 +1,7 @@
 import { ArrowLeftIcon, FolderIcon, PlusIcon, RefreshCwIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
-import type { AppSidebarProject, ProjectDialogView } from "./types";
+import type { AppSidebarProject, ProjectDialogView } from "@/shared/types/app-sidebar";
 
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 

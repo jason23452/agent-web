@@ -13,7 +13,7 @@ import type {
   ToolDefinition,
   ToolEditMode,
   ToolForm,
-} from "./types";
+} from "@/shared/types/app-sidebar";
 import {
   AgentsToolsList,
   AgentConfigPanel,

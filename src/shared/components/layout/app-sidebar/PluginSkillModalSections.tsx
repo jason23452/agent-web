@@ -10,7 +10,7 @@ import type {
   SkillDefinition,
   SkillForm,
   SkillInstallTarget,
-} from "./types"
+} from "@/shared/types/app-sidebar"
 
 type PluginsListProps = {
   filteredPlugins: PluginDefinition[]

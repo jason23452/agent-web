@@ -22,14 +22,14 @@ import type {
   ToolEditMode,
   ToolForm,
   InstallResult,
-} from "./types";
+} from "@/shared/types/app-sidebar";
 import {
   getPermissionLabel,
   getPermissionVariant,
   agentToYaml,
   getToolPermissionKey,
   taskPermissionFor,
-} from "./utils";
+} from "@/shared/utils/app-sidebar";
 import { agentColors, availableModels, modelVariants } from "./config";
 
 

@@ -28,7 +28,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/shared/components/ui/menu";
-import type { McpDialogView, McpForm, McpServer } from "./types";
+import type { McpDialogView, McpForm, McpServer } from "@/shared/types/app-sidebar";
 
 type McpServersDialogProps = {
   filteredServers: McpServer[];

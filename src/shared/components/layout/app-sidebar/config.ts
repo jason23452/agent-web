@@ -10,7 +10,7 @@ import type {
   SkillForm,
   ToolDefinition,
   ToolForm,
-} from "./types";
+} from "@/shared/types/app-sidebar";
 
 export const initialMcpServers: McpServer[] = [
   {

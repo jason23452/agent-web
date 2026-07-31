@@ -76,7 +76,7 @@ import type {
   SkillDefinition,
   ToolDefinition,
   ToolEditMode,
-} from "@/shared/components/layout/app-sidebar/types";
+} from "@/shared/types/app-sidebar";
 import {
   agentToYaml,
   getSkillBasePath,
@@ -85,7 +85,7 @@ import {
   isCustomTool,
   isValidSkillName,
   taskPermissionFor,
-} from "@/shared/components/layout/app-sidebar/utils";
+} from "@/shared/utils/app-sidebar";
 
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 

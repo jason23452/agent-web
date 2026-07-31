@@ -6,5 +6,3 @@ export * from './PluginSkillModal';
 export * from './PluginSkillModalSections';
 export * from './ProjectDialog';
 export * from './config';
-export * from './types';
-export * from './utils';

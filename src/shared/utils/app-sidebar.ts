@@ -1,4 +1,4 @@
-import { initialToolDefinitions } from "./config";
+import { initialToolDefinitions } from "@/shared/components/layout/app-sidebar/config";
 import type {
   AgentDefinition,
   PermissionAction,
@@ -6,7 +6,7 @@ import type {
   SkillDefinition,
   SkillInstallTarget,
   ToolDefinition,
-} from "./types";
+} from "@/shared/types/app-sidebar";
 
 export function getToolPermissionKey(tool: string) {
   if (tool === "apply_patch" || tool === "write" || tool === "edit")

@@ -24,7 +24,7 @@ import {
   InputGroupInput,
 } from "@/shared/components/ui/input-group";
 import { Sidebar } from "@/shared/components/layout/app/Sidebar";
-import type { AppSidebarSession } from "./types";
+import type { AppSidebarSession } from "@/shared/types/app-sidebar";
 
 const navItems = [
   { icon: SparklesIcon, key: "new", label: "新對話" },
