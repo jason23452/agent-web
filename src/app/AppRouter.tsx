@@ -244,6 +244,16 @@ export function AppRouter() {
     }
   }, [])
 
+  const refreshOpenCodeProviderCatalog = useCallback(async (directory?: string | null, signal?: AbortSignal) => {
+    const queryDirectory = directory?.trim() || undefined
+    const providersResponse = await listOpenCodeProviders({
+      query: queryDirectory ? { directory: queryDirectory } : undefined,
+      signal,
+    })
+
+    if (!signal?.aborted) setOpenCodeProviderCatalog(providersResponse)
+  }, [])
+
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       void refreshProjects()
@@ -357,6 +367,21 @@ export function AppRouter() {
     ? getProjectPath(activeProjectName, projects)
     : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      void refreshOpenCodeProviderCatalog(activeProjectPath, controller.signal).catch(() => {
+        if (!controller.signal.aborted) setOpenCodeProviderCatalog(null)
+      })
+    }, 0)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timeoutId)
+    }
+  }, [activeProjectPath, refreshOpenCodeProviderCatalog])
+
   const activeOpenCodeSession = activeOpenCodeSessionDetail ?? openCodeSessions.find((session) => session.id === activeSessionId)
   const disabledOpenCodeModelKeySet = new Set(disabledOpenCodeModelKeys)
   const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
