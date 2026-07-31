@@ -42,11 +42,9 @@ export function NpmPackagesPanel({
   onStageInstalls,
   onTargetChange,
   onToggleDeletePackage,
-  packageJsonPath,
   packages,
   packagesToInstall,
   packagesToDelete,
-  root,
   target,
 }: NpmPackagesPanelProps) {
   const projectTargetUnavailable = target === "project" && !activeProjectName;
@@ -106,7 +104,7 @@ export function NpmPackagesPanel({
             disabled={loading || applying || projectTargetUnavailable || pendingInstallCount === 0}
             onClick={onStageInstalls}
           >
-            新增到待更新
+            新增
           </Button>
         </div>
 
