@@ -212,14 +212,6 @@ export function NpmPackagesPanel({
             {packages.length}
           </Badge>
         </div>
-
-        {(root || packageJsonPath) && (
-          <div className="grid gap-1 rounded-2xl border border-border/70 bg-gradient-to-r from-muted/60 to-background px-4 py-3 text-xs shadow-sm">
-            {root && <p className="break-all text-muted-foreground">root: <span className="font-mono text-foreground">{root}</span></p>}
-            {packageJsonPath && <p className="break-all text-muted-foreground">package.json: <span className="font-mono text-foreground">{packageJsonPath}</span></p>}
-          </div>
-        )}
-
         {loading ? (
           <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-center text-muted-foreground text-sm">
             正在讀取 npm packages...
