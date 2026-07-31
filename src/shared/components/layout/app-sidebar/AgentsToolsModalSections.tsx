@@ -33,17 +33,17 @@ import {
 import { agentColors, availableModels, modelVariants } from "./config";
 
 
-export function getAgentScopeLabel(scope: AgentDefinition["scope"]) {
+function getAgentScopeLabel(scope: AgentDefinition["scope"]) {
   return scope === "system" ? "系統" : "自訂";
 }
 
-export function getAgentModeLabel(mode: AgentDefinition["mode"]) {
+function getAgentModeLabel(mode: AgentDefinition["mode"]) {
   if (mode === "primary") return "主要智能體";
   if (mode === "subagent") return "子智能體";
   return "全部";
 }
 
-export function getAgentModeVariant(
+function getAgentModeVariant(
   mode: AgentDefinition["mode"],
 ): "default" | "secondary" | "warning" {
   if (mode === "primary") return "default";
@@ -51,17 +51,17 @@ export function getAgentModeVariant(
   return "secondary";
 }
 
-export function getToolSourceLabel(source: ToolDefinition["source"]) {
+function getToolSourceLabel(source: ToolDefinition["source"]) {
   return source === "built-in" ? "內建" : "自訂";
 }
 
-export function getToolTargetLabel(target?: ToolDefinition["installTarget"]) {
+function getToolTargetLabel(target?: ToolDefinition["installTarget"]) {
   if (target === "global") return "全域";
   if (target === "project") return "專案";
   return "自訂";
 }
 
-export function getToolFormEntryPath(
+function getToolFormEntryPath(
   name: string,
   installTarget: NonNullable<ToolDefinition["installTarget"]> = "project",
 ) {
@@ -72,7 +72,7 @@ export function getToolFormEntryPath(
   return `${prefix}/${relativePath}`;
 }
 
-export function isDefaultToolEntry(form: ToolForm) {
+function isDefaultToolEntry(form: ToolForm) {
   return !form.entry || form.entry === getToolFormEntryPath(form.name, form.installTarget);
 }
 

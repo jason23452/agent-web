@@ -1,7 +1,7 @@
 import { HomeIcon, PanelLeftIcon, PanelRightIcon } from "lucide-react"
 import { AgentSwitcher } from "@/shared/components/layout/app/AgentSwitcher"
 import { ContextMeter } from "@/shared/components/layout/context/ContextMeter"
-import { ModelSwitcher } from "@/shared/components/layout/ModelSwitcher"
+import { ModelSwitcher } from "@/shared/components/layout/app/ModelSwitcher"
 import { TopNav } from "@/shared/components/layout/app/TopNav"
 import { Button } from "@/shared/components/ui/button"
 import type { Agent, ModelOption, ModelRateLimitUsage, TokenUsage } from "@/shared/types/workspace"

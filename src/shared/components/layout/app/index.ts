@@ -4,3 +4,4 @@ export * from './AppTopbar';
 export * from './Sidebar';
 export * from './TopNav';
 export * from './AgentSwitcher';
+export * from './ModelSwitcher';
