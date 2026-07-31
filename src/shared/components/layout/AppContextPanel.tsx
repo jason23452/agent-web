@@ -19,19 +19,23 @@ type AppContextPanelProps = {
   onCreateFile?: (directory: string, itemName?: string) => void
   onCreateFolder?: (directory: string, itemName?: string) => void
   onCreateItem?: (itemType: CreateItemType, directory: string, itemName: string) => Promise<void> | void
-  onDeleteNode?: (node: FileTreeNode) => void
+  onDeleteNode?: (node: FileTreeNode) => Promise<void> | void
   onUploadFiles?: (files: readonly File[], targetDirectory: string) => Promise<void> | void
   onPreviewFile: (file: FileTreeNode) => void
 }
 
 export function AppContextPanel({ fileTree, message, loading = false, onClose, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
   const [createItemOpen, setCreateItemOpen] = useState(false)
+  const [createItemDirectory, setCreateItemDirectory] = useState(".")
   const [createItemType, setCreateItemType] = useState<CreateItemType>("file")
   const [createItemName, setCreateItemName] = useState("")
   const [createItemLoading, setCreateItemLoading] = useState(false)
   const [createItemError, setCreateItemError] = useState("")
 
-  function openCreateItemPanel(itemType: CreateItemType) {
+  const [deleteNode, setDeleteNode] = useState<FileTreeNode | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  function openCreateItemPanel(itemType: CreateItemType, directory = ".") {
     if (!projectActive) {
       return
     }
@@ -39,7 +43,27 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
     setCreateItemType(itemType)
     setCreateItemName("")
     setCreateItemError("")
+    setCreateItemDirectory(directory)
     setCreateItemOpen(true)
+  }
+
+  async function submitDeleteNode() {
+    if (!deleteNode || !onDeleteNode) {
+      setDeleteNode(null)
+      return
+    }
+
+    try {
+      setDeleteLoading(true)
+
+      await onDeleteNode(deleteNode)
+    } catch {
+      // 錯誤將由父層回傳至 error bar，modal 仍可關閉後再進行重試。
+      return
+    } finally {
+      setDeleteLoading(false)
+      setDeleteNode(null)
+    }
   }
 
   async function submitCreateItem() {
@@ -49,8 +73,6 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
       return
     }
 
-    const targetDirectory = "."
-
     if (!onCreateItem) {
       const fallbackAction = createItemType === "folder" ? onCreateFolder : onCreateFile
       if (!fallbackAction) {
@@ -58,7 +80,7 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
         return
       }
 
-      fallbackAction(targetDirectory, nextName)
+      fallbackAction(createItemDirectory, nextName)
       setCreateItemOpen(false)
       setCreateItemName("")
       return
@@ -68,7 +90,7 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
       setCreateItemLoading(true)
       setCreateItemError("")
 
-      await onCreateItem(createItemType, ".", nextName)
+      await onCreateItem(createItemType, createItemDirectory, nextName)
 
       setCreateItemOpen(false)
       setCreateItemName("")
@@ -105,6 +127,44 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
       </Button>
     </div>
   )
+
+  function handleCreateFile(directory: string) {
+    if (!projectActive) {
+      return
+    }
+
+    if (onCreateItem) {
+      openCreateItemPanel("file", directory)
+      return
+    }
+
+    if (onCreateFile) {
+      onCreateFile(directory)
+    }
+  }
+
+  function handleCreateFolder(directory: string) {
+    if (!projectActive) {
+      return
+    }
+
+    if (onCreateItem) {
+      openCreateItemPanel("folder", directory)
+      return
+    }
+
+    if (onCreateFolder) {
+      onCreateFolder(directory)
+    }
+  }
+
+  function requestDeleteNode(node: FileTreeNode) {
+    if (!projectActive) {
+      return
+    }
+
+    setDeleteNode(node)
+  }
 
   return (
     <Sidebar
@@ -164,9 +224,9 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
         ) : (
           <FileTree
             nodes={fileTree}
-            onCreateFile={onCreateFile}
-            onCreateFolder={onCreateFolder}
-            onDeleteNode={onDeleteNode}
+            onCreateFile={handleCreateFile}
+            onCreateFolder={handleCreateFolder}
+            onDeleteNode={requestDeleteNode}
             onPreviewFile={onPreviewFile}
             onUploadFiles={onUploadFiles}
           />
@@ -210,8 +270,35 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
             />
           </label>
           {createItemError ? <p className="text-destructive text-xs">{createItemError}</p> : null}
-          <p className="text-muted-foreground text-xs">將會建立到專案根目錄</p>
+          <p className="text-muted-foreground text-xs">將會建立到：{createItemDirectory}</p>
         </div>
+      </ModalShell>
+
+      <ModalShell
+        ariaLabel="確認刪除"
+        bodyClassName="grid gap-4 p-5"
+        closeAriaLabel="關閉刪除確認"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setDeleteNode(null)} size="sm" variant="outline">
+              取消
+            </Button>
+            <Button loading={deleteLoading} onClick={() => void submitDeleteNode()} size="sm" variant="destructive">
+              刪除
+            </Button>
+          </div>
+        }
+        maxWidth="max-w-[420px]"
+        footerClassName="justify-end"
+        onOpenChange={(openState) => {
+          if (!openState) {
+            setDeleteNode(null)
+          }
+        }}
+        open={Boolean(deleteNode)}
+        title="確認刪除"
+      >
+        <p className="text-sm">確定要刪除「{deleteNode?.name ?? ""}」嗎？此操作無法復原。</p>
       </ModalShell>
     </Sidebar>
   )

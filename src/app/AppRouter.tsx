@@ -534,9 +534,6 @@ export function AppRouter() {
   const deleteContextNode = useCallback(async (node: FileTreeNode) => {
     if (!activeProjectPath) return
 
-    const confirmDelete = window.confirm(`確定要刪除「${node.name}」嗎？此操作無法復原。`)
-    if (!confirmDelete) return
-
     const nodePath = normalizeDirectoryInput(node.path || toRelativePath(activeProjectPath, node.absolute || node.id))
     if (!nodePath || nodePath === ".") {
       setContextFileTreeError("無法刪除此節點。")
