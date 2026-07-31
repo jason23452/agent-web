@@ -74,6 +74,25 @@ function getFilePreviewContent(file: AppFilePreviewFile) {
   return file.content ?? getFileSample(file)
 }
 
+function getFileRevisionKey(file: AppFilePreviewFile) {
+  const text = file.content ?? ""
+  let hash = 0
+
+  for (let index = 0; index < text.length; index++) {
+    hash = (hash << 5) - hash + text.charCodeAt(index)
+    hash &= hash
+  }
+
+  return [
+    file.id,
+    file.contentType ?? "",
+    file.contentLoading ? "loading" : "loaded",
+    file.contentError ?? "",
+    text.length,
+    Math.abs(hash).toString(36),
+  ].join("|")
+}
+
 function summarizeText(text: string, limit = 240) {
   const compact = text.replace(/\s+/g, " ").trim()
   return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
@@ -87,11 +106,12 @@ export function AppFilePreviewDialog({
   onLocalUpload,
 }: AppFilePreviewDialogProps) {
   if (!file) return null
+  const fileKey = getFileRevisionKey(file)
 
   return (
     <AppFilePreviewDialogContent
       file={file}
-      key={file.id}
+      key={fileKey}
       onClose={onClose}
       onPin={onPin}
       onLibraryUpload={onLibraryUpload}
@@ -130,17 +150,6 @@ function AppFilePreviewDialogContent({
   const previewCodeRef = useRef<HTMLPreElement>(null)
   const attachMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const nextContent = getFilePreviewContent(file)
-
-    setSavedContent(nextContent)
-    setDraftContent(nextContent)
-    setEditStatus("未修改")
-    setSelectionPin(null)
-    setSelectionLineRange(null)
-    setDialogPins([])
-  }, [file.id, file.content, file.contentType, file.contentError])
 
   const metadata = [file.size, file.date, file.type.toUpperCase()].filter(Boolean).join(" · ")
   const metadataText = metadata || file.type.toUpperCase()

@@ -41,6 +41,8 @@ const EMPTY_AGENT: Agent = {
   status: "idle",
 }
 
+const NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE = "尚未啟用專案，請先到側邊欄開啟專案。"
+
 export function AppRouter() {
   const [route, setRoute] = useState<AppRoute>(() => readBrowserRoute())
   const [activeAgentId, setActiveAgentId] = useState("")
@@ -299,6 +301,29 @@ export function AppRouter() {
     }
   }, [activeProjectPath, triggerContextFileTreeReload])
 
+  const reloadContextFileTree = useCallback(async (directory: string, signal: AbortSignal) => {
+    setContextFileTreeLoading(true)
+    setContextFileTreeError(null)
+
+    try {
+      const tree = await buildWorkspaceFileTree(directory, signal)
+      if (signal.aborted) return
+
+      setContextFileTree(tree)
+    } catch (error) {
+      if (signal.aborted) return
+
+      setContextFileTree(mockFileTree)
+      setContextFileTreeError(
+        error instanceof Error ? error.message : "讀取專案檔案樹失敗，將使用示例資料。",
+      )
+    } finally {
+      if (!signal.aborted) {
+        setContextFileTreeLoading(false)
+      }
+    }
+  }, [])
+
   const deleteContextNode = useCallback(async (node: FileTreeNode) => {
     if (!activeProjectPath) return
 
@@ -394,10 +419,6 @@ export function AppRouter() {
 
   useEffect(() => {
     if (!activeProjectPath) {
-      setContextFileTree([])
-      setContextFileTreeLoading(false)
-      setContextFileTreeError("尚未啟用專案，請先到側邊欄開啟專案。")
-
       return
     }
 
@@ -405,29 +426,10 @@ export function AppRouter() {
 
     const controller = new AbortController()
 
-    setContextFileTreeLoading(true)
-    setContextFileTreeError(null)
-
-    void buildWorkspaceFileTree(directory, controller.signal)
-      .then((tree) => {
-        if (controller.signal.aborted) return
-
-        setContextFileTree(tree)
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return
-
-        setContextFileTree(mockFileTree)
-        setContextFileTreeError(
-          error instanceof Error ? error.message : "讀取專案檔案樹失敗，將使用示例資料。",
-        )
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setContextFileTreeLoading(false)
-      })
+    Promise.resolve().then(() => reloadContextFileTree(directory, controller.signal))
 
     return () => controller.abort()
-  }, [activeProjectPath, contextFileTreeVersion])
+  }, [activeProjectPath, contextFileTreeVersion, reloadContextFileTree])
 
   const createSession = useCallback(async () => {
     if (!checkedProjectName || !activeProjectPath) {
@@ -515,14 +517,20 @@ export function AppRouter() {
       <HomeRoute />
     )
 
+  const renderedContextFileTree = activeProjectPath ? contextFileTree : []
+  const renderedContextFileTreeLoading = activeProjectPath ? contextFileTreeLoading : false
+  const renderedContextFileTreeError = activeProjectPath
+    ? contextFileTreeError
+    : NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE
+
   return (
     <AppShell
       ariaLabel="AICaht agent workspace"
       aside={
           <AppContextPanel
-            fileTree={contextFileTree}
-            loading={contextFileTreeLoading}
-            message={contextFileTreeError}
+            fileTree={renderedContextFileTree}
+            loading={renderedContextFileTreeLoading}
+            message={renderedContextFileTreeError}
             projectActive={Boolean(activeProjectPath)}
             open={contextPanelOpen}
             onClose={() => setContextPanelOpen(false)}
