@@ -1,22 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
-import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
+import { HomeRoute } from "@/features/home/router"
 import { fileTree as mockFileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
-import {
-  getFileTypeByName,
-  createOrUpdateProjectFile,
-  createProjectDirectory,
-  listProjectFiles,
-  readProjectFileContent,
-  deleteProjectFile,
-  type OpenCodeProjectFileNode,
-} from "@/features/workspace/api/files"
+import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, readProjectFileContent } from "@/features/workspace/api/files"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { listProjectSessions, toWorkspaceSession } from "@/features/workspace/api/sessions"
-import { WorkspaceProjectRoute, WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
-import { WORKSPACE_ROUTE_PATH, WorkspaceRoute } from "@/features/workspace/router"
+import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
+import { WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
-import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus, restartOpenCodeRuntime, type OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
+import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
 import type { Agent, Attachment, FileNode, PinContext, Project, Session } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
@@ -25,252 +17,28 @@ import { AppShell } from "@/shared/components/layout/AppShell"
 import { AppSidebar } from "@/shared/components/layout/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/AppTopbar"
 import { ChatComposer } from "@/shared/components/layout/ChatComposer"
-
-type AppRoute =
-  | { name: "home" }
-  | { name: "workspace" }
-  | { name: "workspaceProject"; projectName: string }
+import {
+  buildWorkspaceFileTree,
+  combineRelativePath,
+  decodeTextContent,
+  getProjectPath,
+  getProjectRouteName,
+  getRestartInProgressOperation,
+  getRoutePath,
+  normalizeDirectoryInput,
+  readBrowserRoute,
+  readFileAsBase64,
+  toRelativePath,
+  type AppRoute,
+  waitForOpenCodeRestartOperation,
+  waitForOpenCodeRuntimeReady,
+} from "@/app/appRouterUtils"
 
 const EMPTY_AGENT: Agent = {
   id: "no-primary-agent",
   name: "無 primary agent",
   provider: "OpenCode",
   status: "idle",
-}
-
-const OPENCODE_RESTART_WAIT_TIMEOUT_MS = 70_000
-const OPENCODE_RESTART_POLL_MS = 1_000
-
-function readBrowserRoute(): AppRoute {
-  const pathname = window.location.pathname.replace(/\/+$/, "") || HOME_ROUTE_PATH
-
-  if (pathname === WORKSPACE_ROUTE_PATH) {
-    return { name: "workspace" }
-  }
-
-  if (pathname.startsWith(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`)) {
-    const encodedProjectName = pathname.slice(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`.length).split("/")[0]
-    if (!encodedProjectName) return { name: "workspace" }
-
-    try {
-      return { name: "workspaceProject", projectName: decodeURIComponent(encodedProjectName) }
-    } catch {
-      return { name: "workspace" }
-    }
-  }
-
-  return { name: "home" }
-}
-
-function getRoutePath(route: AppRoute) {
-  if (route.name === "workspace") return WORKSPACE_ROUTE_PATH
-  if (route.name === "workspaceProject") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}`
-
-  return HOME_ROUTE_PATH
-}
-
-function getProjectRouteName(projectPath: string) {
-  const normalizedPath = projectPath.replace(/\\/g, "/").replace(/\/+$/, "")
-  const name = normalizedPath.split("/").filter(Boolean).at(-1)
-
-  return name || "project"
-}
-
-function getProjectPath(name: string, projects: Project[]) {
-  const matchedProject = projects.find((project) => {
-    return project.id === name || project.name === name || getProjectRouteName(project.path) === name
-  })
-
-  return matchedProject?.path ?? `/workspace/projects/${name}`
-}
-
-function normalizePath(value: string) {
-  return value.replace(/\\/g, "/").replace(/\/+$/, "")
-}
-
-function normalizeDirectoryInput(path: string) {
-  const normalized = normalizePath(path).replace(/^\.\/+/, "").trim()
-
-  if (!normalized || normalized === ".") return "."
-  return normalized
-}
-
-function combineRelativePath(directory: string, entryName: string) {
-  const normalizedDirectory = normalizeDirectoryInput(directory)
-  const normalizedName = normalizeDirectoryInput(entryName)
-
-  if (!normalizedName || normalizedName === ".") return normalizedDirectory === "." ? normalizedName : normalizedDirectory
-  if (!normalizedDirectory || normalizedDirectory === ".") return normalizedName
-
-  return `${normalizedDirectory}/${normalizedName}`
-}
-
-function readFileAsBase64(file: File) {
-  return file.arrayBuffer().then((buffer) => {
-    const bytes = new Uint8Array(buffer)
-    let raw = ""
-
-    for (let i = 0; i < bytes.length; i += 8_192) {
-      const chunk = bytes.subarray(i, i + 8_192)
-      raw += String.fromCharCode(...chunk)
-    }
-
-    return btoa(raw)
-  })
-}
-
-function toRelativePath(directory: string, absolutePath: string) {
-  const normalizedDirectory = normalizePath(directory)
-  const normalizedPath = normalizePath(absolutePath)
-
-  if (!normalizedDirectory || !normalizedPath) return normalizeDirectoryInput(absolutePath)
-
-  if (!normalizedPath.startsWith(normalizedDirectory)) {
-    return normalizeDirectoryInput(absolutePath)
-  }
-
-  const relativePath = normalizedPath.slice(normalizedDirectory.length)
-
-  return normalizeDirectoryInput(relativePath)
-}
-
-function toFileTreeId(directory: string, file: OpenCodeProjectFileNode, fallbackPath?: string) {
-  if (file.absolute) return file.absolute
-
-  const candidatePath = normalizeDirectoryInput(fallbackPath || file.path || file.name)
-  const normalizedDirectory = normalizeDirectoryInput(directory)
-  const relativePath = candidatePath ? toRelativePath(directory, candidatePath) : "."
-
-  return relativePath === "." ? normalizedDirectory || "root" : `${normalizedDirectory}/${relativePath}`
-}
-
-function decodeTextContent(raw: string, encoding: string | undefined) {
-  if (encoding !== "base64") return raw
-
-  try {
-    const binary = atob(raw)
-    const bytes = new Uint8Array(binary.length)
-
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i)
-    }
-
-    return new TextDecoder().decode(bytes)
-  } catch {
-    return raw
-  }
-}
-
-function sortWorkspaceFiles(first: OpenCodeProjectFileNode, second: OpenCodeProjectFileNode) {
-  if (first.type !== second.type) {
-    return first.type === "directory" ? -1 : 1
-  }
-
-  return first.name.localeCompare(second.name, "zh-Hant", { sensitivity: "base" })
-}
-
-async function buildWorkspaceFileTree(directory: string, signal: AbortSignal): Promise<FileTreeNode[]> {
-  const cache = new Map<string, OpenCodeProjectFileNode[]>()
-
-  async function listDirectory(path: string) {
-    const normalizedPath = normalizeDirectoryInput(path)
-
-    if (cache.has(normalizedPath)) return cache.get(normalizedPath) ?? []
-
-    const next = await listProjectFiles(directory, normalizedPath, { signal })
-    const filtered = next
-      .filter((item) => !item.ignored)
-      .slice()
-      .sort(sortWorkspaceFiles)
-
-    cache.set(normalizedPath, filtered)
-
-    return filtered
-  }
-
-  async function buildNodes(path: string): Promise<FileTreeNode[]> {
-    const entries = await listDirectory(path)
-
-    return Promise.all(
-      entries.map(async (entry) => {
-        const candidatePath = entry.path || entry.absolute || (path === "." ? entry.name : `${path}/${entry.name}`)
-        const queryPath = toRelativePath(directory, candidatePath)
-
-        if (entry.type === "directory") {
-          const children = await buildNodes(queryPath)
-
-          return {
-            id: toFileTreeId(directory, entry, queryPath),
-            name: entry.name,
-            type: "folder",
-            path: queryPath,
-            children,
-          } satisfies FileTreeNode
-        }
-
-        return {
-          id: toFileTreeId(directory, entry, queryPath),
-          name: entry.name,
-          path: queryPath,
-          type: getFileTypeByName(entry.name),
-        } satisfies FileTreeNode
-      }),
-    )
-  }
-
-  return buildNodes(".")
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
-function isRuntimeOperation(value: unknown): value is OpenCodeRuntimeOperation {
-  return isRecord(value) && typeof value.operationID === "string" && typeof value.status === "string"
-}
-
-function getRestartInProgressOperation(error: unknown): OpenCodeRuntimeOperation | null {
-  if (!(error instanceof ApiError)) return null
-  if (error.status !== 409 || error.code !== "OPENCODE_RESTART_IN_PROGRESS") return null
-
-  return isRuntimeOperation(error.details) ? error.details : null
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
-}
-
-async function waitForOpenCodeRestartOperation(operationID: string) {
-  const deadline = Date.now() + OPENCODE_RESTART_WAIT_TIMEOUT_MS
-
-  while (Date.now() <= deadline) {
-    const { operation } = await getOpenCodeRuntimeOperation(operationID)
-    if (operation.status === "ready") return operation
-    if (operation.status === "failed") {
-      throw new Error(operation.error || "OpenCode runtime restart failed.")
-    }
-
-    await sleep(OPENCODE_RESTART_POLL_MS)
-  }
-
-  throw new Error("OpenCode runtime restart did not finish before the timeout.")
-}
-
-async function waitForOpenCodeRuntimeReady() {
-  const deadline = Date.now() + OPENCODE_RESTART_WAIT_TIMEOUT_MS
-
-  while (Date.now() <= deadline) {
-    const status = await getOpenCodeRuntimeStatus()
-    if (!status.operation && status.upstream.ready) return
-    if (status.operation?.status === "ready" && status.upstream.ready) return
-    if (status.operation?.status === "failed") {
-      throw new Error(status.operation.error || "OpenCode runtime restart failed.")
-    }
-
-    await sleep(OPENCODE_RESTART_POLL_MS)
-  }
-
-  throw new Error("OpenCode runtime did not become ready before the timeout.")
 }
 
 export function AppRouter() {
