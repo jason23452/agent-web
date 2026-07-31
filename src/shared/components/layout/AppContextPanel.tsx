@@ -2,6 +2,7 @@ import { FolderOpenIcon, XIcon } from "lucide-react"
 import { FileTree, type FileTreeNode } from "@/shared/components/layout/FileTree"
 import { Sidebar } from "@/shared/components/layout/Sidebar"
 import { Button } from "@/shared/components/ui/button"
+import { Skeleton } from "@/shared/components/ui/skeleton"
 
 type AppContextPanelProps = {
   fileTree: FileTreeNode[]
@@ -33,9 +34,23 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
         </div>
 
         {loading ? (
-          <div className="grid min-h-24 place-items-center gap-2 rounded-lg border border-dashed bg-muted/30 p-4 text-muted-foreground text-sm">
-            <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-            <span>載入專案檔案中...</span>
+          <div className="grid min-h-24 gap-2 rounded-lg  bg-muted/30 p-3">
+            {Array.from({ length: 8 }).map((_, index) => {
+              const widthClass =
+                index % 3 === 0
+                  ? "w-[72%]"
+                  : index % 3 === 1
+                    ? "w-[84%]"
+                    : "w-[68%]"
+
+              return (
+                <div className="flex items-center gap-2" key={`context-skeleton-${index}`}>
+                  <Skeleton className="size-4 shrink-0 rounded-md" />
+                  <Skeleton className={`h-4 flex-1 ${widthClass}`} />
+                  <Skeleton className="h-3 w-12" />
+                </div>
+              )
+            })}
           </div>
         ) : message ? (
           <p className="rounded-lg border border-dashed bg-destructive/10 p-3 text-destructive text-sm">{message}</p>

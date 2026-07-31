@@ -15,6 +15,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/shared/components/ui/tabs"
+import { Skeleton } from "@/shared/components/ui/skeleton"
 import type { FileNode, PinContext } from "@/shared/types/workspace"
 import { cn } from "@/shared/utils/cn"
 
@@ -335,9 +336,24 @@ function AppFilePreviewDialogContent({
               )}
 
               {isLoadingContent ? (
-                <div className="grid min-h-72 place-items-center gap-2 p-6 text-center text-sm text-white/70">
-                  <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-white/40 border-r-transparent" />
-                  <span>載入檔案內容中...</span>
+                <div className="grid min-h-72 gap-3 overflow-hidden p-4">
+                  <div className="mb-1 flex items-center gap-3 border-b border-white/10 pb-3">
+                    <Skeleton className="h-4 w-24 bg-white/20" />
+                    <Skeleton className="h-4 w-16 bg-white/20" />
+                  </div>
+
+                  {Array.from({ length: 28 }).map((_, index) => {
+                    const widthClass =
+                      index % 4 === 0
+                        ? "w-[92%]"
+                        : index % 4 === 1
+                          ? "w-[78%]"
+                          : index % 4 === 2
+                            ? "w-[84%]"
+                            : "w-[72%]"
+
+                    return <Skeleton key={`preview-skeleton-${index}`} className={`${widthClass} h-4 bg-white/20`} />
+                  })}
                 </div>
               ) : hasContentError ? (
                 <pre className="h-[min(62vh,560px)] min-h-72 overflow-auto rounded-none border border-destructive/60 bg-destructive/10 p-4 font-mono text-[#fca5a5] text-xs leading-6">
