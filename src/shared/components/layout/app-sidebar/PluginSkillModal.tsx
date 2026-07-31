@@ -6,7 +6,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/shared/components/ui/input-group"
-import { ModalShell } from "@/shared/components/layout/ModalShell"
+import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell"
 import type {
   InstallResult,
   PluginDefinition,

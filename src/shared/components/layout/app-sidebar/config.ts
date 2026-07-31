@@ -1,4 +1,4 @@
-import type { ModelProvider } from "@/shared/components/layout/UserSettingsModal";
+import type { ModelProvider } from "@/shared/components/layout/settings/UserSettingsModal";
 import type {
   AgentDefinition,
   AgentForm,

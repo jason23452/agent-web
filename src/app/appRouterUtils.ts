@@ -7,7 +7,7 @@ import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus } from "@/shared/
 import type { OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
 import type { Project } from "@/shared/types/workspace"
 import { type OpenCodeProjectFileNode } from "@/features/workspace/api/files"
-import type { FileTreeNode } from "@/shared/components/layout/FileTree"
+import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
 
 export type AppRoute =
   | { name: "home" }

@@ -1,11 +1,11 @@
 import { FileIcon, FolderPlusIcon, FolderOpenIcon, PlusIcon, XIcon } from "lucide-react"
 import { useState } from "react"
-import { FileTree, type FileTreeNode } from "@/shared/components/layout/FileTree"
-import { Sidebar } from "@/shared/components/layout/Sidebar"
+import { FileTree, type FileTreeNode } from "@/shared/components/layout/context/FileTree"
+import { Sidebar } from "@/shared/components/layout/app/Sidebar"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
 import { Skeleton } from "@/shared/components/ui/skeleton"
-import { ModalShell } from "@/shared/components/layout/ModalShell"
+import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell"
 
 type CreateItemType = "file" | "folder"
 

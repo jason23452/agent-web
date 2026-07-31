@@ -23,7 +23,7 @@ import {
   UserSettingsModal,
   type ModelProvider,
   type UserSettingsSection,
-} from "@/shared/components/layout/UserSettingsModal";
+} from "@/shared/components/layout/settings/UserSettingsModal";
 import { AgentsToolsModal } from "@/shared/components/layout/app-sidebar/AgentsToolsModal";
 import { AppSidebarPanel } from "@/shared/components/layout/app-sidebar/AppSidebarPanel";
 import { McpServersDialog } from "@/shared/components/layout/app-sidebar/McpServersDialog";

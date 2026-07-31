@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
-import { ModalShell } from "@/shared/components/layout/ModalShell";
+import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import type {
   AgentConfigMode,
   AgentDialogView,

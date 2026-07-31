@@ -23,7 +23,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/shared/components/ui/input-group";
-import { Sidebar } from "@/shared/components/layout/Sidebar";
+import { Sidebar } from "@/shared/components/layout/app/Sidebar";
 import type { AppSidebarSession } from "./types";
 
 const navItems = [

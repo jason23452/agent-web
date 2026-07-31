@@ -1,7 +1,7 @@
 import { XIcon } from "lucide-react";
 import type { NpmPackageEntry, NpmPackageScope } from "@/shared/api/opencodeNpmPackages";
 import { Button } from "@/shared/components/ui/button";
-import { ModalShell } from "@/shared/components/layout/ModalShell";
+import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import { cn } from "@/shared/utils/cn";
 import { DeploymentPlatformsPanel, PlatformManagementPanel } from "./UserSettingsPlatformPanels";
 import { ModelProvidersPanel } from "./UserSettingsModelProviders";
