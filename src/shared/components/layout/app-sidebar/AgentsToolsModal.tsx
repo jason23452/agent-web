@@ -157,24 +157,24 @@ export function AgentsToolsModal({
 }: AgentsToolsModalProps) {
   return (
     <ModalShell
-      ariaLabel="代理與工具"
+      ariaLabel="智能體與工具"
       backButton={
         view !== "list"
           ? {
-               ariaLabel: "返回代理與工具列表",
-              onClick: () => onAgentDialogViewChange("list"),
-            }
-          : undefined
+               ariaLabel: "返回智能體與工具列表",
+                onClick: () => onAgentDialogViewChange("list"),
+              }
+            : undefined
       }
       bodyClassName="p-0"
-      closeAriaLabel="關閉代理與工具"
+      closeAriaLabel="關閉智能體與工具"
       description={
         view === "list"
             ? agentsLoading && agentToolTab === "agents"
-             ? "載入 OpenCode 代理..."
-             : toolsLoading && agentToolTab === "tools"
-               ? "載入 OpenCode 工具..."
-             : `共 ${agentToolTab === "agents" ? agents.length : toolDefinitions.length} 筆`
+             ? "載入 OpenCode 智能體..."
+              : toolsLoading && agentToolTab === "tools"
+                ? "載入 OpenCode 工具..."
+              : `共 ${agentToolTab === "agents" ? agents.length : toolDefinitions.length} 筆`
           : view === "tool-config"
             ? "JS / TS 自訂工具"
             : view === "tool-detail"
@@ -206,31 +206,33 @@ export function AgentsToolsModal({
         </>
         }
         headerActions={
-        <button
-            aria-label={agentToolTab === "tools" ? "新增工具" : "新增代理"}
-           className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-           onClick={agentToolTab === "tools" ? onOpenAddToolMode : onOpenAddAgentMode}
-           type="button"
-        >
-          <PlusIcon aria-hidden="true" className="size-4" />
-        </button>
+          view === "list" && (
+            <Button
+              onClick={agentToolTab === "tools" ? onOpenAddToolMode : onOpenAddAgentMode}
+              size="sm"
+              variant="outline"
+            >
+              <PlusIcon aria-hidden="true" />
+              {agentToolTab === "tools" ? "新增工具" : "新增智能體"}
+            </Button>
+          )
       }
       onOpenChange={onOpenChange}
       open={open}
         title={
         view === "list"
-          ? "代理 / 工具"
-          : view === "detail"
-             ? "代理設定"
-             : view === "tool-config"
-              ? toolEditMode === "add"
-                ? "新增工具"
-                : "編輯工具"
-              : view === "tool-detail"
-                ? "工具說明"
-                : agentEditMode === "add"
-                  ? "新增代理"
-                  : "編輯代理"
+           ? "智能體 / 工具"
+           : view === "detail"
+              ? "智能體設定"
+              : view === "tool-config"
+                ? toolEditMode === "add"
+                  ? "新增工具"
+                  : "編輯工具"
+                : view === "tool-detail"
+                  ? "工具說明"
+                  : agentEditMode === "add"
+                    ? "新增智能體"
+                    : "編輯智能體"
       }
     >
       {view === "list" && (

@@ -38,8 +38,8 @@ export function getAgentScopeLabel(scope: AgentDefinition["scope"]) {
 }
 
 export function getAgentModeLabel(mode: AgentDefinition["mode"]) {
-  if (mode === "primary") return "主要代理";
-  if (mode === "subagent") return "子代理";
+  if (mode === "primary") return "主要智能體";
+  if (mode === "subagent") return "子智能體";
   return "全部";
 }
 
@@ -120,7 +120,7 @@ export function AgentsToolsList({
           onClick={() => onAgentToolTabChange("agents")}
           type="button"
         >
-          代理
+           智能體
         </button>
         <button
           className={`h-8 rounded-md font-medium text-sm transition ${agentToolTab === "tools" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
@@ -138,7 +138,7 @@ export function AgentsToolsList({
               className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm"
               role="status"
             >
-            載入 OpenCode 代理...
+            載入 OpenCode 智能體...
             </div>
           )}
 
@@ -153,7 +153,7 @@ export function AgentsToolsList({
 
            {!agentsLoading && !agentsError && agents.length === 0 && (
              <div className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm">
-              尚無 OpenCode 代理。
+              尚無 OpenCode 智能體。
              </div>
            )}
 
@@ -164,7 +164,7 @@ export function AgentsToolsList({
               className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
               id="built-in-agents-title"
             >
-              內建代理
+               內建智能體
             </h3>
             <ul className="grid gap-1">
               {systemAgents.map((agent) => (
@@ -207,7 +207,7 @@ export function AgentsToolsList({
                 ))}
                 {systemAgents.length === 0 && (
                   <li className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-muted-foreground text-sm">
-                    尚未有內建代理
+                    尚未有內建智能體
                   </li>
                 )}
             </ul>
@@ -218,7 +218,7 @@ export function AgentsToolsList({
               className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
               id="custom-agents-title"
             >
-              自訂代理
+               自訂智能體
             </h3>
             <ul className="grid gap-1">
               {customAgents.map((agent) => (
@@ -271,7 +271,7 @@ export function AgentsToolsList({
                 ))}
                 {customAgents.length === 0 && (
                   <li className="rounded-lg border border-dashed bg-muted/35 px-3 py-4 text-muted-foreground text-sm">
-                    尚未有自訂代理
+                    尚未有自訂智能體
                   </li>
                 )}
             </ul>
@@ -889,7 +889,7 @@ export function AgentDetailPanel({
               })}
             </div>
             <p className="text-muted-foreground text-xs">
-              工具清單可直接關聯到代理。自訂工具可補充專屬指引。</p>
+               工具清單可直接關聯到智能體。自訂工具可補充專屬指引。</p>
           </section>
 
           <section
@@ -898,7 +898,7 @@ export function AgentDetailPanel({
           >
             <div className="flex items-center justify-between gap-3">
               <h4 className="font-semibold text-sm" id="agent-subagents-title">
-                可呼叫子代理
+                可呼叫子智能體
               </h4>
               <Badge size="sm" variant="secondary">
                 {selectedAgent.subagents.length}
@@ -940,7 +940,7 @@ export function AgentDetailPanel({
                         指引
                         <Textarea
                           aria-label={`${subagent?.name ?? subagentId} 指引`}
-                           placeholder="可選：輸入這個子代理的自訂指引。"
+                           placeholder="可選：輸入這個子智能體的自訂指引。"
                           readOnly
                           rows={3}
                           value={
@@ -954,14 +954,14 @@ export function AgentDetailPanel({
               })}
               {selectedAgent.subagents.length === 0 && (
                 <p className="rounded-md border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">
-                    尚未有可呼叫子代理
+                    尚未有可呼叫子智能體
                 </p>
                 )}
               </div>
               <p className="text-muted-foreground text-xs">
-                可將子代理加入可呼叫清單，供代理在對話中轉接任務。</p>
+                可將子智能體加入可呼叫清單，供智能體在對話中轉接任務。</p>
               <p className="text-muted-foreground text-xs">
-                任務權限目前支援 Object 寫法，可針對不同可呼叫子代理設定 allow / ask / deny。
+                任務權限目前支援 Object 寫法，可針對不同可呼叫子智能體設定 allow / ask / deny。
               </p>
           </section>
 
@@ -1014,7 +1014,7 @@ export function AgentDetailPanel({
               ))}
             </div>
             <p className="text-muted-foreground text-xs">
-               代理可使用以下技能清單，並可為每項技能補充自訂指引。</p>
+               智能體可使用以下技能清單，並可為每項技能補充自訂指引。</p>
           </section>
 
           <section
@@ -1061,11 +1061,11 @@ export function AgentDetailPanel({
       <div className="flex justify-end">
         {selectedAgent.scope === "custom" ? (
           <Button onClick={() => onOpenEditAgentMode(selectedAgent)} size="sm">
-            編輯代理
+            編輯智能體
           </Button>
         ) : (
           <p className="text-muted-foreground text-xs">
-            系統代理不會提供直接編輯，可複製其 YAML 並建立自訂代理後再修改。
+            系統智能體不會提供直接編輯，可複製其 YAML 並建立自訂智能體後再修改。
           </p>
         )}
       </div>
@@ -1168,9 +1168,9 @@ export function AgentConfigPanel({
         <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-2 text-muted-foreground text-sm">
-              代理名稱
+               智能體名稱
               <Input
-                aria-label="代理名稱"
+                 aria-label="智能體名稱"
                 onChange={(event) =>
                   onAgentFormChange((current) => ({
                     ...current,
@@ -1222,8 +1222,8 @@ export function AgentConfigPanel({
                 }
                 value={agentForm.mode}
               >
-                <option value="primary">主要代理</option>
-                <option value="subagent">子代理</option>
+                <option value="primary">主要智能體</option>
+                <option value="subagent">子智能體</option>
                 <option value="all">全部</option>
               </select>
             </label>
@@ -1295,14 +1295,14 @@ export function AgentConfigPanel({
           <label className="grid gap-2 text-muted-foreground text-sm">
               描述
             <Textarea
-              aria-label="代理描述"
+               aria-label="智能體描述"
               onChange={(event) =>
                 onAgentFormChange((current) => ({
                   ...current,
                   description: event.target.value,
                 }))
               }
-              placeholder="請用一到兩句描述此代理的核心職責。"
+              placeholder="請用一到兩句描述此智能體的核心職責。"
               rows={3}
               value={agentForm.description}
             />
@@ -1326,7 +1326,7 @@ export function AgentConfigPanel({
                   }
                   type="checkbox"
                 />
-                 停用代理
+                 停用智能體
               </label>
               {agentForm.mode === "subagent" && (
                 <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm">
@@ -1438,14 +1438,14 @@ export function AgentConfigPanel({
             <label className="grid gap-2 text-muted-foreground text-sm">
                系統提示詞
               <Textarea
-              aria-label="代理系統提示詞"
+               aria-label="智能體系統提示詞"
                 onChange={(event) =>
                   onAgentFormChange((current) => ({
                     ...current,
                     systemPrompt: event.target.value,
                   }))
                 }
-                placeholder="輸入此代理的自訂系統提示詞。"
+                placeholder="輸入此智能體的自訂系統提示詞。"
                 rows={5}
                 value={agentForm.systemPrompt}
               />
@@ -1610,7 +1610,7 @@ export function AgentConfigPanel({
           <section className="grid gap-2">
             <div className="flex items-center justify-between">
               <h4 className="font-semibold text-sm text-foreground">
-                 可呼叫子代理
+                 可呼叫子智能體
               </h4>
               <Badge size="sm" variant="secondary">
                 {agentForm.subagents.length}
@@ -1646,7 +1646,7 @@ export function AgentConfigPanel({
                            : "新增指引"}
                       </Button>
                       <button
-                        aria-label={`移除子代理 ${subagent?.name ?? subagentId}`}
+                        aria-label={`移除子智能體 ${subagent?.name ?? subagentId}`}
                         className="grid size-6 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
                         onClick={() => onRemoveFormSubagent(subagentId)}
                         type="button"
@@ -1665,7 +1665,7 @@ export function AgentConfigPanel({
                               event.target.value,
                             )
                           }
-                           placeholder={`可選：輸入這個子代理的自訂指引。`}
+                           placeholder={`可選：輸入這個子智能體的自訂指引。`}
                           rows={3}
                           value={agentForm.subagentGuidance[subagentId] ?? ""}
                         />
@@ -1676,7 +1676,7 @@ export function AgentConfigPanel({
               })}
                 {agentForm.subagents.length === 0 && (
                   <p className="rounded-md border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">
-                    尚未有可呼叫子代理
+                    尚未有可呼叫子智能體
                   </p>
               )}
             </div>
@@ -1699,11 +1699,11 @@ export function AgentConfigPanel({
                 variant="outline"
               >
                 <PlusIcon aria-hidden="true" />
-           新增子代理
+           新增子智能體
               </Button>
             </div>
             <p className="text-muted-foreground text-xs">
-               任務權限可用 Object 語法，限制特定可呼叫子代理的任務權限。
+                任務權限可用 Object 語法，限制特定可呼叫子智能體的任務權限。
             </p>
           </section>
 
@@ -1842,15 +1842,15 @@ export function AgentConfigPanel({
                 ))}
             </div>
             <p className="text-muted-foreground text-xs">
-              任務權限支援 Object 語法，可設定可呼叫子代理的任務權限（allow / ask / deny）。
+               任務權限支援 Object 語法，可設定可呼叫子智能體的任務權限（allow / ask / deny）。
             </p>
           </section>
         </div>
       ) : (
         <label className="grid gap-2 text-muted-foreground text-sm">
-          OpenCode 代理 Markdown（.md）
+           OpenCode 智能體 Markdown（.md）
           <Textarea
-            aria-label="OpenCode 代理 Markdown"
+            aria-label="OpenCode 智能體 Markdown"
             className="font-mono"
             onChange={(event) => onAgentYamlChange(event.target.value)}
             rows={16}
@@ -1861,7 +1861,7 @@ export function AgentConfigPanel({
       )}
       <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-muted-foreground text-xs">
-            請維持 OpenCode 代理 Markdown 格式，必要時可貼上自訂代理檔案內容。</p>
+            請維持 OpenCode 智能體 Markdown 格式，必要時可貼上自訂智能體檔案內容。</p>
         <Button
           disabled={
             agentConfigMode === "interface"
@@ -1870,7 +1870,7 @@ export function AgentConfigPanel({
           }
           onClick={onSubmitAgentConfig}
         >
-          {agentEditMode === "add" ? "新增代理" : "更新代理"}
+          {agentEditMode === "add" ? "新增智能體" : "更新智能體"}
         </Button>
       </div>
     </div>
