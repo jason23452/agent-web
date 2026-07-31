@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
-import { fileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
+import { fileTree as mockFileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
+import {
+  getFileTypeByName,
+  listProjectFiles,
+  readProjectFileContent,
+  type OpenCodeProjectFileNode,
+} from "@/features/workspace/api/files"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { listProjectSessions, toWorkspaceSession } from "@/features/workspace/api/sessions"
@@ -11,6 +17,7 @@ import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus, restartOpenCodeR
 import type { Agent, Attachment, FileNode, PinContext, Project, Session } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/AppFilePreviewDialog"
+import type { FileTreeNode } from "@/shared/components/layout/FileTree"
 import { AppShell } from "@/shared/components/layout/AppShell"
 import { AppSidebar } from "@/shared/components/layout/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/AppTopbar"
@@ -72,6 +79,119 @@ function getProjectPath(name: string, projects: Project[]) {
   })
 
   return matchedProject?.path ?? `/workspace/projects/${name}`
+}
+
+function normalizePath(value: string) {
+  return value.replace(/\\/g, "/").replace(/\/+$/, "")
+}
+
+function normalizeDirectoryInput(path: string) {
+  const normalized = normalizePath(path).replace(/^\.\/+/, "").trim()
+
+  if (!normalized || normalized === ".") return "."
+  return normalized
+}
+
+function toRelativePath(directory: string, absolutePath: string) {
+  const normalizedDirectory = normalizePath(directory)
+  const normalizedPath = normalizePath(absolutePath)
+
+  if (!normalizedDirectory || !normalizedPath) return normalizeDirectoryInput(absolutePath)
+
+  if (!normalizedPath.startsWith(normalizedDirectory)) {
+    return normalizeDirectoryInput(absolutePath)
+  }
+
+  const relativePath = normalizedPath.slice(normalizedDirectory.length)
+
+  return normalizeDirectoryInput(relativePath)
+}
+
+function toFileTreeId(directory: string, file: OpenCodeProjectFileNode, fallbackPath?: string) {
+  if (file.absolute) return file.absolute
+
+  const candidatePath = normalizeDirectoryInput(fallbackPath || file.path || file.name)
+  const normalizedDirectory = normalizeDirectoryInput(directory)
+  const relativePath = candidatePath ? toRelativePath(directory, candidatePath) : "."
+
+  return relativePath === "." ? normalizedDirectory || "root" : `${normalizedDirectory}/${relativePath}`
+}
+
+function decodeTextContent(raw: string, encoding: string | undefined) {
+  if (encoding !== "base64") return raw
+
+  try {
+    const binary = atob(raw)
+    const bytes = new Uint8Array(binary.length)
+
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return raw
+  }
+}
+
+function sortWorkspaceFiles(first: OpenCodeProjectFileNode, second: OpenCodeProjectFileNode) {
+  if (first.type !== second.type) {
+    return first.type === "directory" ? -1 : 1
+  }
+
+  return first.name.localeCompare(second.name, "zh-Hant", { sensitivity: "base" })
+}
+
+async function buildWorkspaceFileTree(directory: string, signal: AbortSignal): Promise<FileTreeNode[]> {
+  const cache = new Map<string, OpenCodeProjectFileNode[]>()
+
+  async function listDirectory(path: string) {
+    const normalizedPath = normalizeDirectoryInput(path)
+
+    if (cache.has(normalizedPath)) return cache.get(normalizedPath) ?? []
+
+    const next = await listProjectFiles(directory, normalizedPath, { signal })
+    const filtered = next
+      .filter((item) => !item.ignored)
+      .slice()
+      .sort(sortWorkspaceFiles)
+
+    cache.set(normalizedPath, filtered)
+
+    return filtered
+  }
+
+  async function buildNodes(path: string): Promise<FileTreeNode[]> {
+    const entries = await listDirectory(path)
+
+    return Promise.all(
+      entries.map(async (entry) => {
+        const candidatePath = entry.path || entry.absolute || (path === "." ? entry.name : `${path}/${entry.name}`)
+        const queryPath = toRelativePath(directory, candidatePath)
+
+        if (entry.type === "directory") {
+          const children = await buildNodes(queryPath)
+
+          return {
+            id: toFileTreeId(directory, entry, queryPath),
+            name: entry.name,
+            type: "folder",
+            path: queryPath,
+            children,
+          } satisfies FileTreeNode
+        }
+
+        return {
+          id: toFileTreeId(directory, entry, queryPath),
+          name: entry.name,
+          path: queryPath,
+          type: getFileTypeByName(entry.name),
+        } satisfies FileTreeNode
+      }),
+    )
+  }
+
+  return buildNodes(".")
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -145,6 +265,9 @@ export function AppRouter() {
   const [projectSessions, setProjectSessions] = useState<Session[]>([])
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [contextFileTree, setContextFileTree] = useState<FileTreeNode[]>(mockFileTree)
+  const [contextFileTreeLoading, setContextFileTreeLoading] = useState(false)
+  const [contextFileTreeError, setContextFileTreeError] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -297,8 +420,42 @@ export function AppRouter() {
   const defaultProjectPath = projects[0]?.path ?? recentProjects[0]?.path ?? "/workspace/projects/test-web"
   const defaultProjectName = getProjectRouteName(defaultProjectPath)
   const activeProjectName = checkedProjectName ?? defaultProjectName
-  const activeProjectPath = checkedProjectName ? getProjectPath(activeProjectName, projects) : ""
+  const activeProjectPath = checkedProjectName ? getProjectPath(activeProjectName, projects) : defaultProjectPath
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
+
+  const openProjectFile = useCallback(async (file: FileTreeNode) => {
+    if (!activeProjectPath) {
+      setPreviewFile(file)
+      return
+    }
+
+    const queryPath = toRelativePath(activeProjectPath, file.absolute || file.path || file.id)
+    setPreviewFile({
+      ...file,
+      contentLoading: true,
+      contentError: null,
+      contentType: undefined,
+    })
+
+    try {
+      const response = await readProjectFileContent(activeProjectPath, queryPath)
+
+      setPreviewFile({
+        ...file,
+        content: response.type === "text" ? decodeTextContent(response.content, response.encoding) : undefined,
+        contentType: response.type,
+        contentLoading: false,
+        contentError: null,
+      })
+    } catch (error) {
+      setPreviewFile({
+        ...file,
+        contentLoading: false,
+        contentError: error instanceof Error ? error.message : getApiErrorMessage(error),
+        contentType: "text",
+      })
+    }
+  }, [activeProjectPath])
 
   const createProject = useCallback(async (name: string) => {
     const response = await createManagedProject({
@@ -333,6 +490,35 @@ export function AppRouter() {
 
     navigateToRoute({ name: "workspace" }, { replace: true })
   }, [navigateToRoute, projects, route])
+
+  useEffect(() => {
+    const directory = activeProjectPath
+
+    const controller = new AbortController()
+
+    setContextFileTreeLoading(true)
+    setContextFileTreeError(null)
+
+    void buildWorkspaceFileTree(directory, controller.signal)
+      .then((tree) => {
+        if (controller.signal.aborted) return
+
+        setContextFileTree(tree)
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+
+        setContextFileTree(mockFileTree)
+        setContextFileTreeError(
+          error instanceof Error ? error.message : "讀取專案檔案樹失敗，將使用示例資料。",
+        )
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setContextFileTreeLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [activeProjectPath])
 
   const createSession = useCallback(async () => {
     if (!checkedProjectName || !activeProjectPath) {
@@ -423,7 +609,16 @@ export function AppRouter() {
   return (
     <AppShell
       ariaLabel="AICaht agent workspace"
-      aside={<AppContextPanel fileTree={fileTree} open={contextPanelOpen} onClose={() => setContextPanelOpen(false)} onPreviewFile={setPreviewFile} />}
+      aside={
+        <AppContextPanel
+          fileTree={contextFileTree}
+          loading={contextFileTreeLoading}
+          message={contextFileTreeError}
+          open={contextPanelOpen}
+          onClose={() => setContextPanelOpen(false)}
+          onPreviewFile={openProjectFile}
+        />
+        }
       asideOpen={contextPanelOpen}
       composer={
         <ChatComposer

@@ -65,6 +65,14 @@ function getFileSample(file: AppFilePreviewFile) {
   return `/* ${file.name} */\n此檔案可在預覽中檢視，也可以交給 Agent 或手動編輯。`
 }
 
+function getFilePreviewContent(file: AppFilePreviewFile) {
+  if (file.contentType === "binary") {
+    return `/* ${file.name} */\n此為二進位檔案，無法直接以文字預覽。`
+  }
+
+  return file.content ?? getFileSample(file)
+}
+
 function summarizeText(text: string, limit = 240) {
   const compact = text.replace(/\s+/g, " ").trim()
   return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
@@ -104,7 +112,9 @@ function AppFilePreviewDialogContent({
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
 }) {
-  const initialContent = getFileSample(file)
+  const isLoadingContent = file.contentLoading
+  const hasContentError = Boolean(file.contentError)
+  const initialContent = getFilePreviewContent(file)
   const [activeTab, setActiveTab] = useState<WorkTab>("agent")
   const [savedContent, setSavedContent] = useState(initialContent)
   const [draftContent, setDraftContent] = useState(initialContent)
@@ -119,6 +129,17 @@ function AppFilePreviewDialogContent({
   const previewCodeRef = useRef<HTMLPreElement>(null)
   const attachMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const nextContent = getFilePreviewContent(file)
+
+    setSavedContent(nextContent)
+    setDraftContent(nextContent)
+    setEditStatus("未修改")
+    setSelectionPin(null)
+    setSelectionLineRange(null)
+    setDialogPins([])
+  }, [file.id, file.content, file.contentType, file.contentError])
 
   const metadata = [file.size, file.date, file.type.toUpperCase()].filter(Boolean).join(" · ")
   const metadataText = metadata || file.type.toUpperCase()
@@ -313,10 +334,24 @@ function AppFilePreviewDialogContent({
                 </button>
               )}
 
-              {file.type === "img" ? (
+              {isLoadingContent ? (
+                <div className="grid min-h-72 place-items-center gap-2 p-6 text-center text-sm text-white/70">
+                  <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-white/40 border-r-transparent" />
+                  <span>載入檔案內容中...</span>
+                </div>
+              ) : hasContentError ? (
+                <pre className="h-[min(62vh,560px)] min-h-72 overflow-auto rounded-none border border-destructive/60 bg-destructive/10 p-4 font-mono text-[#fca5a5] text-xs leading-6">
+                  {file.contentError}
+                </pre>
+              ) : file.type === "img" ? (
                 <div className="grid min-h-72 place-items-center gap-2 p-6 text-center text-sm text-white/70">
                   <FileIcon aria-hidden="true" className="size-9 opacity-50" />
                   <span>圖片預覽：{file.name}</span>
+                </div>
+              ) : file.contentType === "binary" ? (
+                <div className="grid min-h-72 place-items-center gap-2 p-6 text-center text-sm text-white/70">
+                  <FileIcon aria-hidden="true" className="size-9 opacity-50" />
+                  <span>目前為二進位檔案，無法以純文字方式預覽。</span>
                 </div>
               ) : (
                 <pre

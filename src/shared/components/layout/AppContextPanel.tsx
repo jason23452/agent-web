@@ -6,11 +6,13 @@ import { Button } from "@/shared/components/ui/button"
 type AppContextPanelProps = {
   fileTree: FileTreeNode[]
   open: boolean
+  loading?: boolean
+  message?: string | null
   onClose: () => void
   onPreviewFile: (file: FileTreeNode) => void
 }
 
-export function AppContextPanel({ fileTree, open, onClose, onPreviewFile }: AppContextPanelProps) {
+export function AppContextPanel({ fileTree, message, loading = false, onClose, onPreviewFile, open }: AppContextPanelProps) {
   return (
     <Sidebar
       aria-label="Context panel"
@@ -30,7 +32,18 @@ export function AppContextPanel({ fileTree, open, onClose, onPreviewFile }: AppC
           <p className="font-medium text-muted-foreground text-xs">Project files</p>
         </div>
 
-        <FileTree nodes={fileTree} onPreviewFile={onPreviewFile} />
+        {loading ? (
+          <div className="grid min-h-24 place-items-center gap-2 rounded-lg border border-dashed bg-muted/30 p-4 text-muted-foreground text-sm">
+            <span aria-hidden="true" className="size-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+            <span>載入專案檔案中...</span>
+          </div>
+        ) : message ? (
+          <p className="rounded-lg border border-dashed bg-destructive/10 p-3 text-destructive text-sm">{message}</p>
+        ) : fileTree.length === 0 ? (
+          <p className="rounded-lg border border-dashed bg-muted/40 p-3 text-muted-foreground text-sm">目前沒有可顯示的專案檔案。</p>
+        ) : (
+          <FileTree nodes={fileTree} onPreviewFile={onPreviewFile} />
+        )}
       </section>
     </Sidebar>
   )

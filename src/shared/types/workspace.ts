@@ -27,15 +27,22 @@ export type Project = {
   path: string
 }
 
-export type FileType = "folder" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
+export type FileType = "folder" | "file" | "tsx" | "ts" | "html" | "css" | "md" | "json" | "img"
 
 export type FileNode = {
   id: string
   name: string
+  absolute?: string
+  path?: string
   type: FileType
+  content?: string
+  contentType?: "binary" | "text"
+  contentError?: string | null
+  contentLoading?: boolean
   size?: string
   date?: string
   children?: FileNode[]
+  ignored?: boolean
 }
 
 export type PlanStep = {
