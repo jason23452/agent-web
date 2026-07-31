@@ -19,27 +19,6 @@ function getUsagePercent(item: TokenUsage) {
   return Math.round(Math.min((item.used / item.limit) * 100, 100))
 }
 
-function getUsageClasses(percent: number) {
-  if (percent >= 95) {
-    return {
-      indicator: "bg-destructive",
-      text: "text-destructive",
-    }
-  }
-
-  if (percent >= 78) {
-    return {
-      indicator: "bg-warning",
-      text: "text-warning",
-    }
-  }
-
-  return {
-    indicator: "bg-success",
-    text: "text-success",
-  }
-}
-
 function formatResetAt(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -52,9 +31,10 @@ export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
   const primary = usage[0]
   if (!primary) return null
 
+  const usageProgressColor = "lab(15.204 0 -0.00000596046)"
+
   const percent = getUsagePercent(primary)
   const hasUsage = primary.limit > 0 && Boolean(primary.modelLabel)
-  const usageClasses = getUsageClasses(percent)
   const spinnerRotation = `${Math.round(percent * 3.6)}deg`
 
   return (
@@ -66,8 +46,8 @@ export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
     >
       <Spinner
         aria-hidden="true"
-        className={`size-3.5 animate-none transition-transform ${usageClasses.text}`}
-        style={{ transform: `rotate(${spinnerRotation})` }}
+        className="size-3.5 animate-none transition-transform"
+        style={{ transform: `rotate(${spinnerRotation})`, color: usageProgressColor }}
       />
       <span className="font-mono font-semibold text-xs">{percent}%</span>
 
@@ -100,7 +80,7 @@ export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
           </button>
         </div>
         {rateLimitUsage?.entries.length ? (
-          <div className="grid gap-3">
+          <div className="grid gap-3 max-h-[250px] overflow-y-auto">
             {rateLimitUsage.entries.map((entry) => {
               const limit = entry.limit ?? 0
               const used = entry.used ?? (entry.remaining !== undefined && limit > 0 ? Math.max(limit - entry.remaining, 0) : 0)
@@ -131,7 +111,10 @@ export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
                   </div>
                   <Progress aria-label={`${entry.label} ${quotaTab} usage`} className="gap-0" max={100} value={value}>
                     <ProgressTrack className="h-1.5 bg-muted">
-                      <ProgressIndicator className={getUsageClasses(usedPercent).indicator} />
+                      <ProgressIndicator
+                        className="bg-black/0"
+                        style={{ backgroundColor: usageProgressColor }}
+                      />
                     </ProgressTrack>
                   </Progress>
                   {entry.resetAt ? <span className="text-muted-foreground text-xs">{formatResetAt(entry.resetAt)}</span> : null}
@@ -149,11 +132,10 @@ export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
           </p>
         )}
         <div className="mt-3 grid gap-3 border-border/70 border-t pt-3">
-          {usage.map((item) => {
-            const itemPercent = getUsagePercent(item)
-            const itemClasses = getUsageClasses(itemPercent)
+            {usage.map((item) => {
+              const itemPercent = getUsagePercent(item)
 
-            return (
+              return (
               <div className="grid gap-1.5" key={item.label}>
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className="font-medium">{item.label}</span>
@@ -169,7 +151,10 @@ export function ContextMeter({ rateLimitUsage, usage }: ContextMeterProps) {
                   value={itemPercent}
                 >
                   <ProgressTrack className="h-1.5 bg-muted">
-                    <ProgressIndicator className={itemClasses.indicator} />
+                    <ProgressIndicator
+                      className="bg-black/0"
+                      style={{ backgroundColor: usageProgressColor }}
+                    />
                   </ProgressTrack>
                 </Progress>
               </div>

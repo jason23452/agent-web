@@ -16,7 +16,17 @@ export type OpenCodeUsageResponse = {
   error?: string;
   fetchedAt: string;
   providerID: string;
-  source: "anthropic-oauth" | "openai-wham" | "unsupported";
+  source:
+    | "anthropic-oauth"
+    | "crof-usage"
+    | "github-copilot-internal"
+    | "kimi-usage"
+    | "nano-gpt-usage"
+    | "neuralwatt-quota"
+    | "openai-wham"
+    | "openrouter-credits"
+    | "unsupported"
+    | "zai-quota";
 };
 
 export type OpenCodeSessionContextUsageResponse = TokenUsage & {

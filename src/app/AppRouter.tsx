@@ -303,16 +303,35 @@ export function AppRouter() {
 
   useEffect(() => {
     const fallbackProviderID = openCodeProviderCatalog?.connected.find((providerID) => providerID !== "opencode")
-    const providerID = activeOpenCodeSessionDetail?.model?.providerID ?? activeAgent.providerID ?? fallbackProviderID
-    if (!providerID) {
+    const primaryProviderID = activeOpenCodeSessionDetail?.model?.providerID ?? activeAgent.providerID ?? fallbackProviderID
+    const providerIDs = Array.from(new Set([
+      primaryProviderID,
+      ...(openCodeProviderCatalog?.connected ?? []),
+    ].filter((providerID): providerID is string => Boolean(providerID) && providerID !== "opencode")))
+
+    if (providerIDs.length === 0) {
       setModelRateLimitUsage(null)
       return
     }
 
     const controller = new AbortController()
-    void getOpenCodeCurrentUsage(providerID, { signal: controller.signal })
-      .then((usage) => {
-        if (!controller.signal.aborted) setModelRateLimitUsage(usage)
+    void Promise.all(providerIDs.map((providerID) => getOpenCodeCurrentUsage(providerID, { signal: controller.signal }).catch(() => null)))
+      .then((results) => {
+        if (controller.signal.aborted) return
+
+        const usages = results.filter((usage): usage is NonNullable<typeof usage> => Boolean(usage))
+        const entries = usages.flatMap((usage) => usage.entries.map((entry) => ({
+          ...entry,
+          label: usages.length > 1 ? `${usage.providerID} · ${entry.label}` : entry.label,
+        })))
+        const errors = usages.map((usage) => usage.error).filter(Boolean)
+
+        setModelRateLimitUsage({
+          entries,
+          error: entries.length === 0 ? errors.join(" · ") || undefined : undefined,
+          fetchedAt: usages[0]?.fetchedAt,
+          providerID: usages.length > 1 ? "All providers" : usages[0]?.providerID,
+        })
       })
       .catch(() => {
         if (!controller.signal.aborted) setModelRateLimitUsage(null)
