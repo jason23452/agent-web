@@ -69,8 +69,12 @@ type UserSettingsModalProps = {
   npmPackagesToInstall: string[];
   npmPackagesToDelete: string[];
   npmPackageTarget: NpmPackageScope;
+  modelSettingsApplying?: boolean;
+  modelSettingsChanged?: boolean;
   onClose: () => void;
+  onApplyModelSettings: () => Promise<void> | void;
   onApplyNpmPackageChanges: () => Promise<void> | void;
+  onCancelModelSettings: () => void;
   onCancelNpmPackageChanges: () => void;
   onClearNpmPackageDelete: () => void;
   disconnectingProviderId: string | null;
@@ -113,8 +117,12 @@ export function UserSettingsModal({
   npmPackagesToInstall,
   npmPackagesToDelete,
   npmPackageTarget,
+  modelSettingsApplying = false,
+  modelSettingsChanged = false,
   onClose,
+  onApplyModelSettings,
   onApplyNpmPackageChanges,
+  onCancelModelSettings,
   onCancelNpmPackageChanges,
   onClearNpmPackageDelete,
   disconnectingProviderId,
@@ -141,6 +149,7 @@ export function UserSettingsModal({
   selectedProvider,
 }: UserSettingsModalProps) {
   const hasNpmPackageChanges = npmPackagesToInstall.length > 0 || npmPackagesToDelete.length > 0;
+  const showBatchFooter = section === "npm-packages" || section === "models";
 
   return (
     <ModalShell
@@ -159,7 +168,7 @@ export function UserSettingsModal({
           onSectionChange={onSectionChange}
         />
 
-        <div className={cn("grid min-h-0", section === "npm-packages" ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]")}>
+        <div className={cn("grid min-h-0", showBatchFooter ? "grid-rows-[minmax(0,1fr)_auto]" : "grid-rows-[minmax(0,1fr)]")}>
           <main className="relative min-h-0 overflow-y-auto px-10 py-8 max-sm:px-5">
             <button
               aria-label="關閉使用者設定"
@@ -253,6 +262,44 @@ export function UserSettingsModal({
                   size="lg"
                 >
                   {npmPackagesApplying ? "更新中..." : "更新"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {section === "models" && (
+            <div
+              className={cn(
+                "flex shrink-0 flex-wrap items-center justify-between gap-3 border-border/70 border-t bg-background px-10 py-4 max-sm:px-5",
+                modelSettingsChanged && "border-amber-300 bg-amber-50/80",
+              )}
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-sm">
+                  {modelSettingsChanged ? "模型開關變更尚未更新" : "尚未變更模型開關"}
+                </p>
+                <p className="mt-0.5 text-muted-foreground text-xs">
+                  {modelSettingsChanged
+                    ? "按更新後才會正式寫入 OpenCode volume 的 model-settings.json。"
+                    : "模型開關會先暫存在前端，不會立即寫入 JSON。"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  disabled={modelSettingsApplying || !modelSettingsChanged}
+                  onClick={onCancelModelSettings}
+                  size="lg"
+                  variant="outline"
+                >
+                  取消
+                </Button>
+                <Button
+                  disabled={modelSettingsApplying || !modelSettingsChanged}
+                  loading={modelSettingsApplying}
+                  onClick={() => void onApplyModelSettings()}
+                  size="lg"
+                >
+                  {modelSettingsApplying ? "更新中..." : "更新"}
                 </Button>
               </div>
             </div>

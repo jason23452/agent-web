@@ -12,6 +12,10 @@ import {
   type OpenCodeAgent,
 } from "@/shared/api/opencodeAgents";
 import {
+  getOpenCodeModelSettings,
+  updateOpenCodeModelSettings,
+} from "@/shared/api/opencodeModelSettings";
+import {
   completeOpenCodeProviderAuth,
   disconnectOpenCodeProviderAuth,
   disposeOpenCodeInstance,
@@ -534,6 +538,14 @@ function toModelProvider(
   } satisfies ModelProvider;
 }
 
+function areSetsEqual<T>(left: Set<T>, right: Set<T>) {
+  if (left.size !== right.size) return false;
+  for (const item of left) {
+    if (!right.has(item)) return false;
+  }
+  return true;
+}
+
 
 function getNpmPackageNameFromSpec(spec: string) {
   const normalized = spec.trim().toLowerCase();
@@ -653,6 +665,8 @@ export function AppSidebar({
   const [modelProviderSearch, setModelProviderSearch] = useState("");
   const [modelSearch, setModelSearch] = useState("");
   const [disabledModelIds, setDisabledModelIds] = useState<Set<string>>(() => new Set());
+  const [persistedDisabledModelIds, setPersistedDisabledModelIds] = useState<Set<string>>(() => new Set());
+  const [modelSettingsApplying, setModelSettingsApplying] = useState(false);
   const [modelProviders, setModelProviders] = useState<ModelProvider[]>(
     initialModelProviders,
   );
@@ -727,6 +741,7 @@ export function AppSidebar({
     modelProviders.find(
       (provider) => provider.id === selectedModelProviderId,
     ) ?? null;
+  const modelSettingsChanged = !areSetsEqual(disabledModelIds, persistedDisabledModelIds);
   const filteredModelProviders = modelProviders.filter((provider) => {
     const keyword = modelProviderSearch.trim().toLowerCase();
     if (!keyword) return true;
@@ -792,6 +807,26 @@ export function AppSidebar({
     return () => window.clearTimeout(timeoutId);
   }, [loadNpmPackages, userSettingsOpen, userSettingsSection]);
 
+  const applyDisabledModelKeys = useCallback((disabledModelKeys: string[], options: { persisted?: boolean } = {}) => {
+    const next = new Set(disabledModelKeys);
+    setDisabledModelIds(next);
+    if (options.persisted) setPersistedDisabledModelIds(new Set(next));
+    onOpenCodeDisabledModelsChange?.(Array.from(next));
+    return next;
+  }, [onOpenCodeDisabledModelsChange]);
+
+  const applyModelEnabledStates = useCallback((disabledModels: Set<string>) => {
+    setModelProviders((current) =>
+      current.map((provider) => ({
+        ...provider,
+        availableModels: (provider.availableModels ?? []).map((model) => ({
+          ...model,
+          enabled: !disabledModels.has(model.key),
+        })),
+      })),
+    );
+  }, []);
+
   const loadModelProviders = useCallback(
     async (signal?: AbortSignal) => {
       const directory = activeProjectPath?.trim() || undefined;
@@ -802,23 +837,34 @@ export function AppSidebar({
           query,
           signal,
         });
-        let authMethodsResponse: OpenCodeAuthMethodsResponse | undefined;
-
-        try {
-          authMethodsResponse = await getOpenCodeProviderAuthMethods({
+        const modelKeys = providerResponse.all.flatMap((provider) =>
+          Object.values(provider.models).map((model) => `${provider.id}/${model.id}`),
+        );
+        const [authMethodsResponseResult, modelSettingsResponse] = await Promise.allSettled([
+          getOpenCodeProviderAuthMethods({
             query,
             signal,
-          });
-        } catch {
-          authMethodsResponse = undefined;
-        }
+          }),
+          updateOpenCodeModelSettings({ modelKeys }, { signal }),
+        ]);
+        let authMethodsResponse: OpenCodeAuthMethodsResponse | undefined;
+
+        if (authMethodsResponseResult.status === "fulfilled") authMethodsResponse = authMethodsResponseResult.value;
 
         if (signal?.aborted) return;
+        const resolvedModelSettings = modelSettingsResponse.status === "fulfilled"
+          ? modelSettingsResponse.value
+          : await getOpenCodeModelSettings({ signal });
+        if (signal?.aborted) return;
+        const nextDisabledModelIds = applyDisabledModelKeys(
+          resolvedModelSettings.disabledModelKeys,
+          { persisted: true },
+        );
         onOpenCodeProviderCatalogChange?.(providerResponse);
 
         const nextProviders = providerResponse.all
           .map((provider) =>
-            toModelProvider(provider, providerResponse, authMethodsResponse, disabledModelIds),
+            toModelProvider(provider, providerResponse, authMethodsResponse, nextDisabledModelIds),
           )
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -857,7 +903,7 @@ export function AppSidebar({
         });
       }
     },
-    [activeProjectPath, disabledModelIds, onOpenCodeProviderCatalogChange, selectedModelProviderId],
+    [activeProjectPath, applyDisabledModelKeys, onOpenCodeProviderCatalogChange, selectedModelProviderId],
   );
 
   const markModelProviderConnected = useCallback((providerId: string) => {
@@ -1512,6 +1558,40 @@ export function AppSidebar({
         ),
       })),
     );
+  }
+
+  async function applyModelSettings() {
+    if (modelSettingsApplying) return;
+
+    const disabledModelKeys = Array.from(disabledModelIds);
+    setModelSettingsApplying(true);
+    try {
+      const response = await updateOpenCodeModelSettings({ disabledModelKeys });
+      const next = applyDisabledModelKeys(response.disabledModelKeys, { persisted: true });
+      applyModelEnabledStates(next);
+      toastManager.add({
+        id: `model-settings-updated-${Date.now()}`,
+        description: "模型開關狀態已更新到 OpenCode volume JSON。",
+        title: "模型設定已更新",
+        type: "success",
+      });
+    } catch (error) {
+      toastManager.add({
+        id: `model-settings-update-error-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "儲存模型開關失敗",
+        type: "error",
+      });
+    } finally {
+      setModelSettingsApplying(false);
+    }
+  }
+
+  function cancelModelSettings() {
+    const next = new Set(persistedDisabledModelIds);
+    setDisabledModelIds(next);
+    onOpenCodeDisabledModelsChange?.(Array.from(next));
+    applyModelEnabledStates(next);
   }
 
   async function disconnectModelProvider(providerId: string) {
@@ -2584,6 +2664,8 @@ export function AppSidebar({
         modelProviders={modelProviders}
         modelProviderSearch={modelProviderSearch}
         modelSearch={modelSearch}
+        modelSettingsApplying={modelSettingsApplying}
+        modelSettingsChanged={modelSettingsChanged}
         npmPackageInput={npmPackageInput}
         npmPackageJsonPath={npmPackageJsonPath}
         npmPackageRoot={npmPackageRoot}
@@ -2595,7 +2677,9 @@ export function AppSidebar({
         npmPackagesToDelete={npmPackagesToDelete}
         npmPackageTarget={npmPackageTarget}
         onClose={closeUserSettings}
+        onApplyModelSettings={applyModelSettings}
         onApplyNpmPackageChanges={applyNpmPackageChanges}
+        onCancelModelSettings={cancelModelSettings}
         onCancelNpmPackageChanges={cancelNpmPackageChanges}
         onClearNpmPackageDelete={clearNpmPackageDeletes}
         onRemoveNpmPackageInstall={removeNpmPackageInstall}
