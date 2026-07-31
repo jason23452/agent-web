@@ -3,8 +3,11 @@ import { HOME_ROUTE_PATH, HomeRoute } from "@/features/home/router"
 import { fileTree as mockFileTree, recentProjects, starterAttachments, tokenUsage } from "@/app/data/mockWorkspace"
 import {
   getFileTypeByName,
+  createOrUpdateProjectFile,
+  createProjectDirectory,
   listProjectFiles,
   readProjectFileContent,
+  deleteProjectFile,
   type OpenCodeProjectFileNode,
 } from "@/features/workspace/api/files"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
@@ -90,6 +93,30 @@ function normalizeDirectoryInput(path: string) {
 
   if (!normalized || normalized === ".") return "."
   return normalized
+}
+
+function combineRelativePath(directory: string, entryName: string) {
+  const normalizedDirectory = normalizeDirectoryInput(directory)
+  const normalizedName = normalizeDirectoryInput(entryName)
+
+  if (!normalizedName || normalizedName === ".") return normalizedDirectory === "." ? normalizedName : normalizedDirectory
+  if (!normalizedDirectory || normalizedDirectory === ".") return normalizedName
+
+  return `${normalizedDirectory}/${normalizedName}`
+}
+
+function readFileAsBase64(file: File) {
+  return file.arrayBuffer().then((buffer) => {
+    const bytes = new Uint8Array(buffer)
+    let raw = ""
+
+    for (let i = 0; i < bytes.length; i += 8_192) {
+      const chunk = bytes.subarray(i, i + 8_192)
+      raw += String.fromCharCode(...chunk)
+    }
+
+    return btoa(raw)
+  })
 }
 
 function toRelativePath(directory: string, absolutePath: string) {
@@ -268,6 +295,7 @@ export function AppRouter() {
   const [contextFileTree, setContextFileTree] = useState<FileTreeNode[]>(mockFileTree)
   const [contextFileTreeLoading, setContextFileTreeLoading] = useState(false)
   const [contextFileTreeError, setContextFileTreeError] = useState<string | null>(null)
+  const [contextFileTreeVersion, setContextFileTreeVersion] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
@@ -420,14 +448,13 @@ export function AppRouter() {
   const defaultProjectPath = projects[0]?.path ?? recentProjects[0]?.path ?? "/workspace/projects/test-web"
   const defaultProjectName = getProjectRouteName(defaultProjectPath)
   const activeProjectName = checkedProjectName ?? defaultProjectName
-  const activeProjectPath = checkedProjectName ? getProjectPath(activeProjectName, projects) : defaultProjectPath
+  const activeProjectPath = checkedProjectName
+    ? getProjectPath(activeProjectName, projects)
+    : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
 
   const openProjectFile = useCallback(async (file: FileTreeNode) => {
-    if (!activeProjectPath) {
-      setPreviewFile(file)
-      return
-    }
+    if (!activeProjectPath) return
 
     const queryPath = toRelativePath(activeProjectPath, file.absolute || file.path || file.id)
     setPreviewFile({
@@ -457,10 +484,119 @@ export function AppRouter() {
     }
   }, [activeProjectPath])
 
+  const triggerContextFileTreeReload = useCallback(() => {
+    setContextFileTreeVersion((current) => current + 1)
+  }, [])
+
+  const createContextProjectFile = useCallback(async (directory: string, itemName?: string) => {
+    if (!activeProjectPath) return
+
+    const fileName = itemName ?? window.prompt("輸入新檔名", "")?.trim()
+    if (!fileName) return
+
+    const targetDirectory = combineRelativePath(directory, fileName)
+
+    try {
+      await createOrUpdateProjectFile({
+        directory: activeProjectPath,
+        path: targetDirectory,
+        content: "",
+      })
+
+      setContextFileTreeError(null)
+      triggerContextFileTreeReload()
+    } catch (error) {
+      setContextFileTreeError(getApiErrorMessage(error))
+    }
+  }, [activeProjectPath, triggerContextFileTreeReload])
+
+  const createContextProjectFolder = useCallback(async (directory: string, itemName?: string) => {
+    if (!activeProjectPath) return
+
+    const folderName = itemName ?? window.prompt("輸入新資料夾名稱", "")?.trim()
+    if (!folderName) return
+
+    const targetDirectory = combineRelativePath(directory, folderName)
+
+    try {
+      await createProjectDirectory({
+        directory: activeProjectPath,
+        path: targetDirectory,
+      })
+
+      setContextFileTreeError(null)
+      triggerContextFileTreeReload()
+    } catch (error) {
+      setContextFileTreeError(getApiErrorMessage(error))
+    }
+  }, [activeProjectPath, triggerContextFileTreeReload])
+
+  const deleteContextNode = useCallback(async (node: FileTreeNode) => {
+    if (!activeProjectPath) return
+
+    const confirmDelete = window.confirm(`確定要刪除「${node.name}」嗎？此操作無法復原。`)
+    if (!confirmDelete) return
+
+    const nodePath = normalizeDirectoryInput(node.path || toRelativePath(activeProjectPath, node.absolute || node.id))
+    if (!nodePath || nodePath === ".") {
+      setContextFileTreeError("無法刪除此節點。")
+      return
+    }
+
+    const isFolder = node.type === "folder"
+
+    try {
+      await deleteProjectFile({
+        directory: activeProjectPath,
+        path: nodePath,
+        recursive: isFolder,
+      })
+
+      setContextFileTreeError(null)
+      triggerContextFileTreeReload()
+    } catch (error) {
+      setContextFileTreeError(getApiErrorMessage(error))
+    }
+  }, [activeProjectPath, triggerContextFileTreeReload])
+
+  const uploadContextFiles = useCallback(async (files: readonly File[], directory: string) => {
+    if (!activeProjectPath) return
+
+    const list = Array.from(files)
+    if (list.length === 0) return
+
+    setContextFileTreeLoading(true)
+
+    try {
+      const targetDirectory = normalizeDirectoryInput(directory)
+
+      await Promise.all(
+        list.map(async (item) => {
+          const encoded = await readFileAsBase64(item)
+          const filePath = combineRelativePath(targetDirectory, item.name)
+
+          return createOrUpdateProjectFile({
+            directory: activeProjectPath,
+            path: filePath,
+            content: encoded,
+            encoding: "base64",
+            overwrite: true,
+          })
+        }),
+      )
+
+      setContextFileTreeError(null)
+      triggerContextFileTreeReload()
+    } catch (error) {
+      setContextFileTreeError(getApiErrorMessage(error))
+    } finally {
+      setContextFileTreeLoading(false)
+    }
+  }, [activeProjectPath, triggerContextFileTreeReload])
+
   const createProject = useCallback(async (name: string) => {
     const response = await createManagedProject({
       displayName: name,
-      initializeReadme: true,
       name,
     })
     const nextProject = toWorkspaceProject(response.project)
@@ -492,6 +628,14 @@ export function AppRouter() {
   }, [navigateToRoute, projects, route])
 
   useEffect(() => {
+    if (!activeProjectPath) {
+      setContextFileTree([])
+      setContextFileTreeLoading(false)
+      setContextFileTreeError("尚未啟用專案，請先到側邊欄開啟專案。")
+
+      return
+    }
+
     const directory = activeProjectPath
 
     const controller = new AbortController()
@@ -518,7 +662,7 @@ export function AppRouter() {
       })
 
     return () => controller.abort()
-  }, [activeProjectPath])
+  }, [activeProjectPath, contextFileTreeVersion])
 
   const createSession = useCallback(async () => {
     if (!checkedProjectName || !activeProjectPath) {
@@ -610,14 +754,26 @@ export function AppRouter() {
     <AppShell
       ariaLabel="AICaht agent workspace"
       aside={
-        <AppContextPanel
-          fileTree={contextFileTree}
-          loading={contextFileTreeLoading}
-          message={contextFileTreeError}
-          open={contextPanelOpen}
-          onClose={() => setContextPanelOpen(false)}
-          onPreviewFile={openProjectFile}
-        />
+          <AppContextPanel
+            fileTree={contextFileTree}
+            loading={contextFileTreeLoading}
+            message={contextFileTreeError}
+            projectActive={Boolean(activeProjectPath)}
+            open={contextPanelOpen}
+            onClose={() => setContextPanelOpen(false)}
+            onCreateFile={createContextProjectFile}
+            onCreateFolder={createContextProjectFolder}
+            onCreateItem={(itemType, directory, itemName) => {
+              if (itemType === "file") {
+                return createContextProjectFile(directory, itemName)
+              }
+
+              return createContextProjectFolder(directory, itemName)
+            }}
+            onDeleteNode={deleteContextNode}
+            onUploadFiles={uploadContextFiles}
+            onPreviewFile={openProjectFile}
+          />
         }
       asideOpen={contextPanelOpen}
       composer={
@@ -633,10 +789,10 @@ export function AppRouter() {
       loadingLabel={layoutLoadingLabel}
       onCloseAside={() => setContextPanelOpen(false)}
       onCloseSidebar={() => setSidebarOpen(false)}
-      sidebar={
-        <AppSidebar
-          activeProjectPath={activeProjectPath}
-          activeSessionId={activeSessionId}
+        sidebar={
+          <AppSidebar
+            activeProjectPath={activeProjectPath || ""}
+            activeSessionId={activeSessionId}
           onCreateProject={createProject}
           onCreateSession={createSession}
           onDeleteProject={deleteProject}

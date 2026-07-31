@@ -16,6 +16,25 @@ export type OpenCodeFileContent = {
   type: "binary" | "text"
 }
 
+export type OpenCodeProjectFileWriteInput = {
+  directory: string
+  path: string
+  content: string
+  encoding?: "base64"
+  overwrite?: boolean
+}
+
+export type OpenCodeProjectFileDeleteInput = {
+  directory: string
+  path: string
+  recursive?: boolean
+}
+
+export type OpenCodeProjectDirectoryInput = {
+  directory: string
+  path: string
+}
+
 export function listProjectFiles(directory: string, path: string, config?: ApiRequestConfig) {
   return apiRequest<OpenCodeProjectFileNode[]>("/bff/opencode-proxy/file", {
     ...config,
@@ -35,6 +54,30 @@ export function readProjectFileContent(directory: string, path: string, config?:
       directory,
       path,
     },
+  })
+}
+
+export function createOrUpdateProjectFile(body: OpenCodeProjectFileWriteInput, config?: ApiRequestConfig) {
+  return apiRequest<{ path: string }>("/bff/files", {
+    ...config,
+    method: "POST",
+    body,
+  })
+}
+
+export function deleteProjectFile(body: OpenCodeProjectFileDeleteInput, config?: ApiRequestConfig) {
+  return apiRequest<{ path: string }>("/bff/files", {
+    ...config,
+    method: "DELETE",
+    body,
+  })
+}
+
+export function createProjectDirectory(body: OpenCodeProjectDirectoryInput, config?: ApiRequestConfig) {
+  return apiRequest<{ path: string }>("/bff/files/folder", {
+    ...config,
+    method: "POST",
+    body,
   })
 }
 
