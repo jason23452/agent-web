@@ -1,4 +1,4 @@
-import { PackageIcon, RocketIcon, ServerIcon, SettingsIcon } from "lucide-react";
+import { PackageIcon, RocketIcon, ServerIcon, SettingsIcon, SparklesIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { UserSettingsSection } from "./UserSettingsModal";
 
@@ -24,6 +24,12 @@ export function SettingsSidebar({
           icon={<SettingsIcon aria-hidden="true" className="size-4" />}
           label="模型商"
           onClick={() => onSectionChange("model-providers")}
+        />
+        <SettingsNavButton
+          active={activeSection === "models"}
+          icon={<SparklesIcon aria-hidden="true" className="size-4" />}
+          label="模型"
+          onClick={() => onSectionChange("models")}
         />
         <SettingsNavButton
           active={activeSection === "npm-packages"}

@@ -480,6 +480,7 @@ function toModelProvider(
   provider: OpenCodeProvider,
   providersResponse: OpenCodeProviderListResponse,
   authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
+  disabledModelIds: Set<string>,
 ) {
   const fallbackProvider = initialModelProviderById[provider.id];
   const [modelId, model] = pickDefaultProviderModel(
@@ -513,6 +514,20 @@ function toModelProvider(
     blacklist: fallbackProvider?.blacklist || "",
     authMethods: resolveAuthMethods(provider, authMethodsResponse, fallbackMethods),
     authMethodDetails: resolveAuthMethodDetails(provider, authMethodsResponse, fallbackMethods),
+    availableModels: Object.values(provider.models)
+      .map((model) => {
+        const key = `${provider.id}/${model.id}`;
+        return {
+          contextLimit: typeof model.limit?.context === "number" ? String(model.limit.context) : undefined,
+          enabled: !disabledModelIds.has(key),
+          id: model.id,
+          key,
+          name: model.name,
+          outputLimit: typeof model.limit?.output === "number" ? String(model.limit.output) : undefined,
+          status: model.status,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name)),
     badge: fallbackProvider?.badge,
     icon: fallbackProvider?.icon || provider.name.charAt(0).toUpperCase(),
   } satisfies ModelProvider;
@@ -633,6 +648,8 @@ export function AppSidebar({
   const [npmPackagesToInstall, setNpmPackagesToInstall] = useState<string[]>([]);
   const [npmPackagesToDelete, setNpmPackagesToDelete] = useState<string[]>([]);
   const [modelProviderSearch, setModelProviderSearch] = useState("");
+  const [modelSearch, setModelSearch] = useState("");
+  const [disabledModelIds, setDisabledModelIds] = useState<Set<string>>(() => new Set());
   const [modelProviders, setModelProviders] = useState<ModelProvider[]>(
     initialModelProviders,
   );
@@ -797,7 +814,7 @@ export function AppSidebar({
 
         const nextProviders = providerResponse.all
           .map((provider) =>
-            toModelProvider(provider, providerResponse, authMethodsResponse),
+            toModelProvider(provider, providerResponse, authMethodsResponse, disabledModelIds),
           )
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -831,7 +848,7 @@ export function AppSidebar({
         });
       }
     },
-    [activeProjectPath],
+    [activeProjectPath, disabledModelIds],
   );
 
   const pollProviderConnection = useCallback(
@@ -865,7 +882,7 @@ export function AppSidebar({
   );
 
   useEffect(() => {
-    if (!userSettingsOpen || userSettingsSection !== "model-providers") return;
+    if (!userSettingsOpen || !["model-providers", "models"].includes(userSettingsSection)) return;
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
@@ -1389,6 +1406,26 @@ export function AppSidebar({
       current.map((provider) =>
         provider.id === providerId ? { ...provider, ...updates } : provider,
       ),
+    );
+  }
+
+  function toggleAvailableModel(modelKey: string, enabled: boolean) {
+    setDisabledModelIds((current) => {
+      const next = new Set(current);
+      if (enabled) {
+        next.delete(modelKey);
+      } else {
+        next.add(modelKey);
+      }
+      return next;
+    });
+    setModelProviders((current) =>
+      current.map((provider) => ({
+        ...provider,
+        availableModels: (provider.availableModels ?? []).map((model) =>
+          model.key === modelKey ? { ...model, enabled } : model,
+        ),
+      })),
     );
   }
 
@@ -2502,7 +2539,9 @@ export function AppSidebar({
         activeProjectName={activeProjectName}
         disconnectingProviderId={disconnectingProviderId}
         filteredModelProviders={filteredModelProviders}
+        modelProviders={modelProviders}
         modelProviderSearch={modelProviderSearch}
+        modelSearch={modelSearch}
         npmPackageInput={npmPackageInput}
         npmPackageJsonPath={npmPackageJsonPath}
         npmPackageRoot={npmPackageRoot}
@@ -2519,6 +2558,8 @@ export function AppSidebar({
         onClearNpmPackageDelete={clearNpmPackageDeletes}
         onRemoveNpmPackageInstall={removeNpmPackageInstall}
         onModelProviderSearchChange={setModelProviderSearch}
+        onModelSearchChange={setModelSearch}
+        onModelToggle={toggleAvailableModel}
         onNpmPackageInputChange={setNpmPackageInput}
         onNpmPackageTargetChange={changeNpmPackageTarget}
         onOpenChange={(settingsOpen) => {
@@ -2549,6 +2590,7 @@ export function AppSidebar({
           setUserSettingsSection(nextSection);
           setSelectedModelProviderId(null);
           setSelectedProviderAuthMethod(null);
+          if (nextSection !== "models") setModelSearch("");
         }}
         open={userSettingsOpen}
         providerAuthApplying={providerAuthApplying}

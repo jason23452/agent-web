@@ -6,11 +6,13 @@ import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import { cn } from "@/shared/utils/cn";
 import { DeploymentPlatformsPanel, PlatformManagementPanel } from "./UserSettingsPlatformPanels";
 import { ModelProvidersPanel } from "./UserSettingsModelProviders";
+import { ModelsPanel } from "./UserSettingsModelsPanel";
 import { NpmPackagesPanel } from "./UserSettingsNpmPackagesPanel";
 import { SettingsSidebar } from "./UserSettingsSidebar";
 
 export type UserSettingsSection =
   | "model-providers"
+  | "models"
   | "npm-packages"
   | "platform-management"
   | "deployment-platforms";
@@ -35,6 +37,15 @@ export type ModelProvider = {
   blacklist: string;
   authMethods: string[];
   authMethodDetails?: OpenCodeAuthMethod[];
+  availableModels?: Array<{
+    contextLimit?: string;
+    enabled: boolean;
+    id: string;
+    key: string;
+    name: string;
+    outputLimit?: string;
+    status?: "alpha" | "beta" | "deprecated" | "active";
+  }>;
   verificationCode?: string;
   verificationInstructions?: string;
   verificationMethodIndex?: number;
@@ -45,7 +56,9 @@ export type ModelProvider = {
 type UserSettingsModalProps = {
   activeProjectName?: string;
   filteredModelProviders: ModelProvider[];
+  modelProviders: ModelProvider[];
   modelProviderSearch: string;
+  modelSearch: string;
   npmPackageInput: string;
   npmPackageJsonPath?: string;
   npmPackageRoot?: string;
@@ -62,6 +75,8 @@ type UserSettingsModalProps = {
   onClearNpmPackageDelete: () => void;
   disconnectingProviderId: string | null;
   onModelProviderSearchChange: (value: string) => void;
+  onModelSearchChange: (value: string) => void;
+  onModelToggle: (modelKey: string, enabled: boolean) => void;
   onNpmPackageInputChange: (value: string) => void;
   onNpmPackageTargetChange: (target: NpmPackageScope) => void;
   onOpenChange: (open: boolean) => void;
@@ -85,7 +100,9 @@ type UserSettingsModalProps = {
 export function UserSettingsModal({
   activeProjectName,
   filteredModelProviders,
+  modelProviders,
   modelProviderSearch,
+  modelSearch,
   npmPackageInput,
   npmPackageJsonPath,
   npmPackageRoot,
@@ -102,6 +119,8 @@ export function UserSettingsModal({
   onClearNpmPackageDelete,
   disconnectingProviderId,
   onModelProviderSearchChange,
+  onModelSearchChange,
+  onModelToggle,
   onNpmPackageInputChange,
   onNpmPackageTargetChange,
   onOpenChange,
@@ -165,6 +184,13 @@ export function UserSettingsModal({
                 selectedAuthMethod={selectedAuthMethod}
                 providerAuthApplying={providerAuthApplying}
                 selectedProvider={selectedProvider}
+              />
+            ) : section === "models" ? (
+              <ModelsPanel
+                modelProviders={modelProviders}
+                modelSearch={modelSearch}
+                onModelSearchChange={onModelSearchChange}
+                onModelToggle={onModelToggle}
               />
             ) : section === "npm-packages" ? (
               <NpmPackagesPanel
