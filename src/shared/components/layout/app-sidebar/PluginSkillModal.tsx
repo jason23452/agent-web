@@ -10,6 +10,8 @@ import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell"
 import type {
   InstallResult,
   PluginDefinition,
+  PluginConfigMode,
+  PluginConfigScope,
   PluginForm,
   PluginSkillDialogView,
   PluginSkillTab,
@@ -31,18 +33,30 @@ type PluginSkillModalProps = {
   onAddPlugin: () => void
   onAddSkill: () => void
   onConfirmBatchUpdate: () => void
+  onCancelBatchUpdate: () => void
   onOpenChange: (open: boolean) => void
   onPluginFormChange: Dispatch<SetStateAction<PluginForm>>
   onPluginInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
+  onPluginConfigScopeChange: (scope: PluginConfigScope) => void
+  onPluginConfigModeChange: (mode: PluginConfigMode) => void
+  onPluginDocumentChange: (content: string) => void
+  onPluginRefresh: () => void
   onSearchChange: Dispatch<SetStateAction<string>>
   onSkillFormChange: Dispatch<SetStateAction<SkillForm>>
   onSkillInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onTabChange: Dispatch<SetStateAction<PluginSkillTab>>
-  onTogglePlugin: (pluginId: string) => void
+  onEditPlugin: (plugin: PluginDefinition) => void
+  onViewPlugin: (plugin: PluginDefinition) => void
+  onDeletePlugin: (pluginId: string) => void
   onToggleSkill: (skillId: string) => void
   onViewChange: Dispatch<SetStateAction<PluginSkillDialogView>>
   open: boolean
   pluginForm: PluginForm
+  pluginConfigMode: PluginConfigMode
+  pluginConfigScope: PluginConfigScope
+  pluginDocument: string
+  pluginConfigLoading: boolean
+  pluginReadOnly: boolean
   pluginInstallResult: InstallResult | null
   plugins: PluginDefinition[]
   search: string
@@ -61,18 +75,30 @@ export function PluginSkillModal({
   onAddPlugin,
   onAddSkill,
   onConfirmBatchUpdate,
+  onCancelBatchUpdate,
   onOpenChange,
   onPluginFormChange,
   onPluginInstallResultChange,
+  onPluginConfigScopeChange,
+  onPluginConfigModeChange,
+  onPluginDocumentChange,
+  onPluginRefresh,
   onSearchChange,
   onSkillFormChange,
   onSkillInstallResultChange,
   onTabChange,
-  onTogglePlugin,
+  onEditPlugin,
+  onViewPlugin,
+  onDeletePlugin,
   onToggleSkill,
   onViewChange,
   open,
   pluginForm,
+  pluginConfigMode,
+  pluginConfigScope,
+  pluginDocument,
+  pluginConfigLoading,
+  pluginReadOnly,
   pluginInstallResult,
   plugins,
   search,
@@ -95,21 +121,17 @@ export function PluginSkillModal({
       }
       bodyClassName="p-0"
       closeAriaLabel="關閉外掛與技能設定"
-      description={
-        <>
-          Plugins {plugins.length} · Skills {skillSettings.length}
-        </>
-      }
+       description={<>Plugin {plugins.length} · Skill {skillSettings.length}</>}
       footer={
         <>
           <p className="text-muted-foreground text-xs">
             按下更新會重新啟動 OpenCode server。
           </p>
           <div className="flex items-center gap-2">
-            <Button onClick={() => onOpenChange(false)} size="lg" variant="outline">
-              關閉
+             <Button disabled={!hasChanges} onClick={onCancelBatchUpdate} size="lg" variant="outline">
+               取消
             </Button>
-            <Button disabled={!hasChanges} onClick={onConfirmBatchUpdate} size="lg">
+             <Button disabled={!hasChanges} onClick={onConfirmBatchUpdate} size="lg">
               更新
             </Button>
           </div>
@@ -138,21 +160,22 @@ export function PluginSkillModal({
       }}
       open={open}
       title={
-        view === "add-plugin"
+        view === "add-plugin" || view === "plugin-detail"
           ? "新增 Plugin"
           : view === "add-skill"
             ? "新增 Skill"
             : "外掛/技能"
       }
     >
-      <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
+       <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
         {view === "list" ? (
           <>
-            <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
+              <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
               <button
                 className={`h-8 rounded-md font-medium text-sm transition ${tab === "plugins" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
                 onClick={() => {
-                  onTabChange("plugins")
+                onTabChange("plugins")
+                  onPluginConfigModeChange("interface")
                   onSearchChange("")
                 }}
                 type="button"
@@ -169,7 +192,31 @@ export function PluginSkillModal({
               >
                 技能
               </button>
-            </div>
+             </div>
+
+             {tab === "plugins" && pluginConfigMode === "document" ? (
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <button className="text-muted-foreground text-xs hover:text-foreground" onClick={() => onPluginConfigModeChange("interface")} type="button">
+                      返回 Plugin 清單
+                    </button>
+                    <span className="text-muted-foreground">/</span>
+                    <p className="font-semibold text-muted-foreground text-xs uppercase tracking-wide">Plugin 文件</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select aria-label="Plugin 設定範圍" className="h-8 rounded-md border border-input bg-background px-2 text-xs" onChange={(event) => onPluginConfigScopeChange(event.target.value as PluginConfigScope)} value={pluginConfigScope}>
+                      <option value="project">當前 Project</option>
+                      <option value="global">Global</option>
+                    </select>
+                    <Button disabled={pluginConfigLoading} onClick={onPluginRefresh} size="xs" variant="outline">重新整理</Button>
+                  </div>
+                </div>
+                <label className="text-muted-foreground text-xs" htmlFor="opencode-plugin-document">直接編輯 opencode.jsonc</label>
+                <textarea className="min-h-96 rounded-lg border border-border bg-muted/30 p-3 font-mono text-xs outline-none focus:ring-2 focus:ring-ring" id="opencode-plugin-document" onChange={(event) => onPluginDocumentChange(event.target.value)} value={pluginDocument} />
+              </div>
+            ) : (
+            <>
 
             <InputGroup data-size="sm">
               <InputGroupAddon>
@@ -196,13 +243,15 @@ export function PluginSkillModal({
                     <XIcon aria-hidden="true" className="size-3.5" />
                   </button>
                 </InputGroupAddon>
-              )}
+             )}
             </InputGroup>
 
             {tab === "plugins" && (
-              <PluginsList
+                  <PluginsList
                 filteredPlugins={filteredPlugins}
-                onTogglePlugin={onTogglePlugin}
+                onEditPlugin={onEditPlugin}
+                onViewPlugin={onViewPlugin}
+                onDeletePlugin={onDeletePlugin}
                 plugins={plugins}
               />
             )}
@@ -214,8 +263,10 @@ export function PluginSkillModal({
                 skillSettings={skillSettings}
               />
             )}
-          </>
-        ) : view === "add-plugin" ? (
+             </>
+             )}
+           </>
+        ) : view === "add-plugin" || view === "plugin-detail" ? (
           <AddPluginForm
             form={pluginForm}
             installResult={pluginInstallResult}
@@ -223,6 +274,7 @@ export function PluginSkillModal({
             onFormChange={onPluginFormChange}
             onInstallResultChange={onPluginInstallResultChange}
             onSubmit={onAddPlugin}
+            readOnly={pluginReadOnly}
           />
         ) : (
           <AddSkillForm

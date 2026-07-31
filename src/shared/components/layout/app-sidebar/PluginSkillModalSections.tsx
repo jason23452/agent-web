@@ -1,78 +1,76 @@
 import type { Dispatch, SetStateAction } from "react"
+import { MoreHorizontalIcon } from "lucide-react"
 import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
+import { Textarea } from "@/shared/components/ui/textarea"
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/shared/components/ui/menu"
 import type {
   InstallResult,
   PluginDefinition,
   PluginForm,
-  PluginInstallMethod,
   SkillDefinition,
   SkillForm,
   SkillInstallTarget,
 } from "@/shared/types/app-sidebar"
+import { officialPluginExamples } from "./config"
 
 type PluginsListProps = {
   filteredPlugins: PluginDefinition[]
-  onTogglePlugin: (pluginId: string) => void
+  onEditPlugin: (plugin: PluginDefinition) => void
+  onViewPlugin: (plugin: PluginDefinition) => void
+  onDeletePlugin: (pluginId: string) => void
   plugins: PluginDefinition[]
 }
 
 export function PluginsList({
   filteredPlugins,
-  onTogglePlugin,
+  onEditPlugin,
+  onViewPlugin,
+  onDeletePlugin,
   plugins,
 }: PluginsListProps) {
   return (
     <section className="grid gap-2" aria-labelledby="plugins-settings-title">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-semibold text-sm" id="plugins-settings-title">
-          Plugins
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-wide" id="plugins-settings-title">
+          已設定 Plugin
         </h3>
         <Badge size="sm" variant="secondary">
-          {plugins.filter((plugin) => plugin.enabled).length} enabled
+          {plugins.length}
         </Badge>
       </div>
-      <ul className="grid gap-2">
+      <ul className="grid gap-1">
         {filteredPlugins.map((plugin) => (
-          <li className="rounded-lg bg-muted/55 px-4 py-3" key={plugin.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <span className="truncate font-semibold text-sm">
-                    {plugin.name}
-                  </span>
-                  <Badge size="sm" variant={plugin.enabled ? "success" : "secondary"}>
-                    {plugin.enabled ? "enabled" : "disabled"}
+          <li className="rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent" key={plugin.id}>
+            <div className="group flex w-full items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-semibold text-sm">{plugin.name}</span>
+                  <Badge size="sm" variant={plugin.source === "local" ? "info" : "outline"}>
+                    {plugin.source === "local" ? "本機自訂外掛" : "遠端外掛"}
                   </Badge>
-                  <Badge size="sm" variant="outline">
-                    {plugin.source}
-                  </Badge>
-                  {plugin.installTarget && (
-                    <Badge size="sm" variant="info">
-                      {plugin.installTarget}
-                    </Badge>
-                  )}
                 </div>
-                <p className="mt-1 text-muted-foreground text-xs leading-5">
-                  {plugin.description}
+                <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
+                  {plugin.description || (plugin.source === "local" ? "Project local Plugin" : "NPM Plugin")}
                 </p>
-                {plugin.archiveName && (
-                  <p className="mt-1 truncate text-muted-foreground text-xs">
-                    Archive: {plugin.archiveName}
+                {plugin.source === "local" && (
+                  <p className="mt-0.5 truncate font-mono text-muted-foreground text-xs">
+                    {plugin.entry}
                   </p>
                 )}
-                <p className="mt-1 truncate font-mono text-muted-foreground text-xs">
-                  {plugin.entry}
-                </p>
               </div>
-              <Button
-                onClick={() => onTogglePlugin(plugin.id)}
-                size="sm"
-                variant={plugin.enabled ? "outline" : "secondary"}
-              >
-                {plugin.enabled ? "停用" : "啟用"}
-              </Button>
+              <Menu>
+                <MenuTrigger aria-label={`${plugin.name} 操作`} className="ms-auto grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                </MenuTrigger>
+                <MenuPopup align="end" className="min-w-36">
+                  <MenuItem onClick={() => onViewPlugin(plugin)}>檢視</MenuItem>
+                  <MenuItem onClick={() => onEditPlugin(plugin)}>編輯</MenuItem>
+                  <MenuSeparator />
+                  <MenuItem onClick={() => onDeletePlugin(plugin.id)} variant="destructive">刪除</MenuItem>
+                </MenuPopup>
+              </Menu>
             </div>
           </li>
         ))}
@@ -166,6 +164,7 @@ type AddPluginFormProps = {
   onFormChange: Dispatch<SetStateAction<PluginForm>>
   onInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onSubmit: () => void
+  readOnly?: boolean
 }
 
 export function AddPluginForm({
@@ -175,39 +174,60 @@ export function AddPluginForm({
   onFormChange,
   onInstallResultChange,
   onSubmit,
+  readOnly = false,
 }: AddPluginFormProps) {
   return (
     <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
       <div className="grid gap-1">
         <h3 className="font-semibold text-sm">新增 Plugin</h3>
         <p className="text-muted-foreground text-xs leading-5">
-          依 OpenCode 官方方式載入：npm 寫入 config，local/archive 放到 plugins 目錄。
+          遠端外掛從套件來源載入；自訂外掛會建立在目前的 .opencode/plugins/ 目錄。
         </p>
       </div>
+      {(
+      <div className="grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist" aria-label="Plugin 新增模式">
+          <button
+            disabled={readOnly}
+          aria-selected={form.method === "npm"}
+          className={`h-8 rounded-md font-medium text-sm transition ${form.method === "npm" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => {
+            onInstallResultChange(null)
+            onFormChange((current) => ({ ...current, method: "npm" }))
+          }}
+          type="button"
+        >
+          遠端外掛
+        </button>
+          <button
+            disabled={readOnly}
+          aria-selected={form.method === "local"}
+          className={`h-8 rounded-md font-medium text-sm transition ${form.method === "local" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => {
+            onInstallResultChange(null)
+            onFormChange((current) => ({ ...current, method: "local" }))
+          }}
+          type="button"
+        >
+          自訂外掛
+        </button>
+      </div>
+      )}
+      {form.method === "local" && (
+        <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-900">
+          <input
+            checked={form.customPluginEnabled}
+            onChange={(event) => onFormChange((current) => ({ ...current, customPluginEnabled: event.target.checked }))}
+            type="checkbox"
+          />
+          是否開啟自訂 Plugin
+        </label>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1 text-muted-foreground text-xs">
-          來源
+            {form.method === "npm" ? "設定範圍" : "檔案範圍"}
           <select
             className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            onChange={(event) => {
-              onInstallResultChange(null)
-              onFormChange((current) => ({
-                ...current,
-                method: event.target.value as PluginInstallMethod,
-              }))
-            }}
-            value={form.method}
-          >
-            <option value="npm">npm package</option>
-            <option value="local">local file</option>
-            <option value="archive">archive</option>
-          </select>
-        </label>
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          Install target
-          <select
-            className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            disabled={form.method === "npm"}
+            disabled={readOnly}
             onChange={(event) =>
               onFormChange((current) => ({
                 ...current,
@@ -221,28 +241,13 @@ export function AddPluginForm({
           </select>
         </label>
       </div>
-      {form.method === "archive" ? (
+      {form.method === "npm" ? (
         <label className="grid gap-1 text-muted-foreground text-xs">
-          Plugin archive
-          <Input
-            aria-label="Plugin 壓縮檔"
-            accept=".zip,.tar,.tgz,.gz"
-            onChange={(event) => {
-              onInstallResultChange(null)
-              onFormChange((current) => ({
-                ...current,
-                archiveName: event.target.files?.[0]?.name ?? "",
-              }))
-            }}
-            type="file"
-          />
-        </label>
-      ) : (
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          {form.method === "npm" ? "NPM package" : "Plugin name"}
+          NPM package（可輸入多個，以逗號、空白或換行分隔）
           <Input
             aria-label="Plugin 名稱"
-            autoFocus
+            autoFocus={!readOnly}
+            disabled={readOnly}
             onChange={(event) => {
               onInstallResultChange(null)
               onFormChange((current) => ({
@@ -250,34 +255,43 @@ export function AddPluginForm({
                 name: event.target.value,
               }))
             }}
-            placeholder={
-              form.method === "npm" ? "opencode-helicone-session" : "project-hooks"
-            }
+              placeholder="opencode-helicone-session, opencode-wakatime"
             value={form.name}
           />
         </label>
-      )}
-      {form.method === "local" && (
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          Local entry
-          <Input
-            aria-label="Local plugin entry"
-            onChange={(event) => {
-              onInstallResultChange(null)
-              onFormChange((current) => ({
-                ...current,
-                entry: event.target.value,
-              }))
-            }}
-            placeholder="./.opencode/plugins/my-plugin.ts"
-            value={form.entry}
-          />
-        </label>
+      ) : (
+        <>
+          <label className="grid gap-1 text-muted-foreground text-xs">
+            Plugin 檔案名稱
+            <Input aria-label="Plugin 檔案名稱" disabled={readOnly || !form.customPluginEnabled} onChange={(event) => onFormChange((current) => ({ ...current, name: event.target.value }))} placeholder="my-plugin" value={form.name} />
+          </label>
+          <label className="grid gap-1 text-muted-foreground text-xs">
+            Plugin 程式碼
+            <Textarea aria-label="Plugin 程式碼" className="min-h-56 font-mono text-xs" disabled={readOnly || !form.customPluginEnabled} onChange={(event) => onFormChange((current) => ({ ...current, code: event.target.value }))} value={form.code} />
+          </label>
+          <label className="flex items-center gap-2 text-muted-foreground text-xs">
+            <input checked={form.useOfficialExample} disabled={readOnly || !form.customPluginEnabled} onChange={(event) => onFormChange((current) => ({ ...current, useOfficialExample: event.target.checked }))} type="checkbox" />
+            使用 OpenCode 官方範例
+          </label>
+          {form.useOfficialExample && (
+            <label className="grid gap-1 text-muted-foreground text-xs">
+              官方範例
+              <select className="h-9 rounded-lg border border-input bg-background px-2 text-sm" disabled={readOnly || !form.customPluginEnabled} onChange={(event) => {
+                const example = officialPluginExamples.find((item) => item.id === event.target.value)
+                onFormChange((current) => ({ ...current, officialExample: event.target.value, code: example?.code ?? current.code }))
+              }} value={form.officialExample}>
+                {officialPluginExamples.map((example) => <option key={example.id} value={example.id}>{example.name}</option>)}
+              </select>
+              <span>{officialPluginExamples.find((item) => item.id === form.officialExample)?.description}</span>
+            </label>
+          )}
+        </>
       )}
       <label className="grid gap-1 text-muted-foreground text-xs">
         描述
         <Input
           aria-label="Plugin 描述"
+          disabled={readOnly || (form.method === "local" && !form.customPluginEnabled)}
           onChange={(event) =>
             onFormChange((current) => ({
               ...current,
@@ -288,11 +302,6 @@ export function AddPluginForm({
           value={form.description}
         />
       </label>
-      {form.method === "archive" && form.archiveName && (
-        <p className="truncate text-muted-foreground text-xs">
-          已選擇：{form.archiveName}
-        </p>
-      )}
       {installResult && (
         <div
           className={`rounded-md border px-3 py-2 text-xs ${installResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
@@ -301,16 +310,13 @@ export function AddPluginForm({
         </div>
       )}
       <p className="text-muted-foreground text-xs">
-        npm: `plugin` config array；local: `.opencode/plugins/` 或
-        `~/.config/opencode/plugins/`；archive: 解壓到 plugin directory。
+        {form.method === "npm" ? "會寫入目前 scope 的 opencode.jsonc plugin 陣列。" : "會寫入目前 scope 的 .opencode/plugins/ 目錄，並由 OpenCode 自動載入。"}
       </p>
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel} size="sm" variant="outline">
           取消
         </Button>
-        <Button onClick={onSubmit} size="sm" type="button">
-          新增 Plugin
-        </Button>
+        {!readOnly && <Button onClick={onSubmit} size="sm" type="button">更新 Plugin</Button>}
       </div>
     </div>
   )

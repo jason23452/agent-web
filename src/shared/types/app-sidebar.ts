@@ -48,8 +48,10 @@ export type McpForm = Pick<
 
 export type McpDialogView = "list" | "add" | "edit";
 export type ProjectDialogView = "list" | "create";
-export type PluginSkillDialogView = "list" | "add-plugin" | "add-skill";
+export type PluginSkillDialogView = "list" | "add-plugin" | "add-skill" | "plugin-detail";
 export type PluginSkillTab = "plugins" | "skills";
+export type PluginConfigMode = "interface" | "document";
+export type PluginConfigScope = "project" | "global";
 export type PermissionAction = "allow" | "ask" | "deny";
 export type PermissionValue = PermissionAction | Record<string, PermissionAction>;
 
@@ -74,6 +76,10 @@ export type PluginForm = {
   entry: string;
   installTarget: "project" | "global";
   archiveName: string;
+  code: string;
+  useOfficialExample: boolean;
+  officialExample: string;
+  customPluginEnabled: boolean;
 };
 
 export type SkillInstallTarget =

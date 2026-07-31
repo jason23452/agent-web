@@ -202,7 +202,80 @@ export const emptyPluginForm: PluginForm = {
   entry: "",
   installTarget: "project",
   archiveName: "",
+  code: `import type { Plugin } from "@opencode-ai/plugin";
+
+export const MyPlugin: Plugin = async () => ({
+  // Add plugin hooks here.
+});
+`,
+  useOfficialExample: false,
+  officialExample: "basic",
+  customPluginEnabled: false,
 };
+
+export const officialPluginExamples = [
+  {
+    id: "basic",
+    name: "基本 Plugin",
+    description: "官方基本結構範例。",
+    code: `export const ExamplePlugin = async ({ client, directory, worktree }) => {
+  await client.app.log({
+    body: {
+      service: "example-plugin",
+      level: "info",
+      message: "Plugin initialized",
+      extra: { directory, worktree },
+    },
+  });
+
+  return {};
+};
+`,
+  },
+  {
+    id: "env-protection",
+    name: ".env 保護",
+    description: "阻止 OpenCode 讀取 .env 檔案。",
+    code: `export const EnvProtection = async () => ({
+  "tool.execute.before": async (input, output) => {
+    if (input.tool === "read" && output.args.filePath.includes(".env")) {
+      throw new Error("Do not read .env files");
+    }
+  },
+});
+`,
+  },
+  {
+    id: "inject-env",
+    name: "注入環境變數",
+    description: "將環境變數注入 Shell 執行。",
+    code: `export const InjectEnvPlugin = async () => ({
+  "shell.env": async (input, output) => {
+    output.env.PROJECT_ROOT = input.cwd;
+  },
+});
+`,
+  },
+  {
+    id: "custom-tools",
+    name: "自訂工具",
+    description: "透過 Plugin 新增自訂工具。",
+    code: `import { type Plugin, tool } from "@opencode-ai/plugin";
+
+export const CustomToolsPlugin: Plugin = async () => ({
+  tool: {
+    hello: tool({
+      description: "Say hello.",
+      args: {},
+      async execute() {
+        return "Hello from OpenCode plugin";
+      },
+    }),
+  },
+});
+`,
+  },
+] as const;
 
 export const emptySkillForm: SkillForm = {
   name: "",

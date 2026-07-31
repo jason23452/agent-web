@@ -33,10 +33,18 @@ import {
   listEffectiveProjectTools,
   readToolRegistryEntry,
   testToolScript,
+  upsertPluginRegistryEntry,
+  deletePluginRegistryEntry,
+  listOpenCodeRegistryEntries,
   upsertToolRegistryEntry,
   type OpenCodeRegistryEntry,
 } from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
+import {
+  applyOpenCodeConfig,
+  getOpenCodeConfig,
+  type OpenCodeConfigScope,
+} from "@/shared/api/opencodeProjectConfig";
 import {
   UserSettingsModal,
   type ModelProvider,
@@ -58,7 +66,6 @@ import {
   emptyToolForm,
   initialMcpServers,
   initialModelProviders,
-  initialPlugins,
   initialSkillSettings,
   initialToolDefinitions,
 } from "@/shared/components/layout/app-sidebar/config";
@@ -74,6 +81,8 @@ import type {
   McpServer,
   McpDialogView,
   PluginDefinition,
+  PluginConfigMode,
+  PluginConfigScope,
   PluginSkillDialogView,
   PluginSkillTab,
   ProjectDialogView,
@@ -606,10 +615,19 @@ export function AppSidebar({
   const [pluginSkillTab, setPluginSkillTab] =
     useState<PluginSkillTab>("plugins");
   const [pluginSkillSearch, setPluginSkillSearch] = useState("");
-  const [plugins, setPlugins] = useState<PluginDefinition[]>(initialPlugins);
+   const [plugins, setPlugins] = useState<PluginDefinition[]>([]);
+   const [pluginConfigMode, setPluginConfigMode] = useState<PluginConfigMode>("interface");
+   const [pluginConfigScope, setPluginConfigScope] = useState<PluginConfigScope>("project");
+   const [pluginDocument, setPluginDocument] = useState("");
+   const [, setPluginConfig] = useState<Record<string, unknown>>({});
+   const [pluginConfigLoading, setPluginConfigLoading] = useState(false);
   const [skillSettings, setSkillSettings] =
     useState<SkillDefinition[]>(initialSkillSettings);
-  const [pluginForm, setPluginForm] = useState(emptyPluginForm);
+   const [pluginForm, setPluginForm] = useState(emptyPluginForm);
+   const [editingPluginId, setEditingPluginId] = useState<string | null>(null);
+   const [pluginReadOnly, setPluginReadOnly] = useState(false);
+   const [pendingPluginFiles, setPendingPluginFiles] = useState<Record<string, string>>({});
+   const [pendingPluginDeletes, setPendingPluginDeletes] = useState<string[]>([]);
   const [skillForm, setSkillForm] = useState(emptySkillForm);
   const [pluginInstallResult, setPluginInstallResult] =
     useState<InstallResult | null>(null);
@@ -1460,7 +1478,39 @@ export function AppSidebar({
     setBatchUpdateNotice(`${label} 更新中，正在重新啟動 OpenCode server...`);
 
     try {
+      if (scope === "plugins-skills" && pluginConfigMode === "document") {
+        await applyOpenCodeConfig(pluginConfigScope, {
+          content: pluginDocument,
+          restart: false,
+          wait: false,
+          reason: "plugin-document-updated",
+        }, pluginConfigScope === "project" ? activeProjectName : undefined);
+      } else if (scope === "plugins-skills") {
+        for (const [name, code] of Object.entries(pendingPluginFiles)) {
+          await upsertPluginRegistryEntry(
+            pluginConfigScope,
+            name,
+            { content: code, filename: `${name}.ts`, restart: false, wait: false, reason: "plugin-file-added" },
+            pluginConfigScope === "project" ? activeProjectName : undefined,
+          );
+        }
+        for (const name of pendingPluginDeletes) {
+          await deletePluginRegistryEntry(
+            pluginConfigScope,
+            name,
+            pluginConfigScope === "project" ? activeProjectName : undefined,
+          );
+        }
+        await applyOpenCodeConfig(pluginConfigScope, {
+          config: { plugin: plugins.filter((plugin) => plugin.source === "npm").map((plugin) => plugin.name) },
+          restart: false,
+          wait: false,
+          reason: "plugin-list-updated",
+        }, pluginConfigScope === "project" ? activeProjectName : undefined);
+      }
       await onRestartOpenCode(`Apply ${label} modal updates`);
+      setPendingPluginFiles({});
+      setPendingPluginDeletes([]);
 
       if (scope === "agents-tools") {
         setAgentsToolsHasChanges(false);
@@ -1524,6 +1574,7 @@ export function AppSidebar({
   function openPluginSkillSettings() {
     setPluginSkillDialogView("list");
     setPluginSkillTab("plugins");
+    setPluginConfigMode("interface");
     setPluginSkillSearch("");
     setPluginSkillDialogOpen(true);
   }
@@ -1766,105 +1817,169 @@ export function AppSidebar({
     setSelectedProviderAuthMethod(null);
   }
 
-  function togglePlugin(pluginId: string) {
-    setPlugins((current) =>
-      current.map((plugin) =>
-        plugin.id === pluginId
-          ? { ...plugin, enabled: !plugin.enabled }
-          : plugin,
-      ),
-    );
-    setPluginSkillHasChanges(true);
+  const loadPluginConfig = useCallback(async () => {
+    if (pluginConfigScope === "project" && !activeProjectName) {
+      setPlugins([]);
+      setPluginDocument("");
+      setPluginConfig({});
+      return;
+    }
+
+    setPluginConfigLoading(true);
+    try {
+      const [response, localResponse] = await Promise.all([
+        getOpenCodeConfig(pluginConfigScope as OpenCodeConfigScope, activeProjectName),
+        listOpenCodeRegistryEntries(pluginConfigScope, "plugins", activeProjectName),
+      ]);
+      const configuredPlugins = Array.isArray(response.config.plugin)
+        ? response.config.plugin.filter((item): item is string => typeof item === "string")
+        : [];
+      const localPlugins = localResponse.entries.map((entry) => entry.name);
+      setPluginConfig(response.config);
+      setPluginDocument(response.content);
+      setPlugins([
+        ...configuredPlugins.map((name): PluginDefinition => ({
+        id: name,
+        name,
+        description: "OpenCode opencode.jsonc plugin 設定。",
+          source: "npm",
+        entry: name,
+        enabled: true,
+        config: "",
+        })),
+        ...localPlugins.filter((name) => !configuredPlugins.includes(name)).map((name) => ({
+          id: `local-${name}`,
+          name,
+          description: "載入 .opencode/plugins/ 的本機自訂外掛。",
+          source: "local" as const,
+          entry: `.opencode/plugins/${name}.ts`,
+          enabled: true,
+          config: "",
+        })),
+      ]);
+      setPluginSkillHasChanges(false);
+    } catch (error) {
+      setPluginInstallResult({ status: "error", message: `載入 Plugin 設定失敗：${getApiErrorMessage(error)}` });
+    } finally {
+      setPluginConfigLoading(false);
+    }
+  }, [activeProjectName, pluginConfigScope]);
+
+  useEffect(() => {
+    if (!pluginSkillDialogOpen || pluginSkillTab !== "plugins") return;
+    const timeoutId = window.setTimeout(() => {
+      void loadPluginConfig();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadPluginConfig, pluginSkillDialogOpen, pluginSkillTab]);
+
+  function changePluginConfigScope(scope: PluginConfigScope) {
+    setPluginConfigScope(scope);
+    setPluginSkillHasChanges(false);
+  }
+
+  function cancelPluginSkillChanges() {
+    void loadPluginConfig();
+    setSkillSettings(initialSkillSettings);
+    setPluginForm(emptyPluginForm);
+    setSkillForm(emptySkillForm);
+    setPluginInstallResult(null);
+    setSkillInstallResult(null);
+    setPendingPluginFiles({});
+    setPendingPluginDeletes([]);
+    setPluginSkillHasChanges(false);
     setBatchUpdateNotice("");
   }
 
   function addPluginFromOfficialSource() {
-    const method = pluginForm.method;
-    const archiveName = pluginForm.archiveName.trim();
-    const rawName =
-      method === "archive"
-        ? archiveName.replace(/\.(zip|tar|tgz|tar\.gz)$/i, "")
-        : pluginForm.name.trim();
-    const pluginName = rawName
-      .replace(/[^a-zA-Z0-9_@/-]+/g, "-")
-      .replace(/^-|-$/g, "");
+    const pluginNames = pluginForm.method === "npm"
+      ? [...new Set(pluginForm.name.split(/[\s,]+/).map((name) => name.trim()).filter(Boolean))]
+      : [pluginForm.name.trim()];
 
-    if (!pluginName) {
+    if (pluginNames.length === 0) {
       setPluginInstallResult({
         status: "error",
         message:
-          method === "archive"
-            ? "請先選擇 plugin 壓縮檔。"
-            : "請輸入 plugin 名稱。",
+          "請輸入 npm Plugin package name。",
       });
       return;
     }
 
-    if (
-      method === "archive" &&
-      !/\.(zip|tar|tgz|tar\.gz)$/i.test(archiveName)
-    ) {
+    if (pluginForm.method === "local" && !pluginForm.customPluginEnabled) {
       setPluginInstallResult({
         status: "error",
-        message: "只支援 .zip、.tar、.tgz、.tar.gz 壓縮檔。",
+        message: "請先勾選「是否開啟自訂 Plugin」才能建立自訂 Plugin。",
       });
       return;
     }
 
-    if (method === "local" && !pluginForm.entry.trim()) {
-      setPluginInstallResult({
-        status: "error",
-        message: "Local plugin 需要指定 .js 或 .ts entry path。",
-      });
-      return;
-    }
-
-    const targetDirectory =
-      pluginForm.installTarget === "project"
-        ? `.opencode/plugins/${pluginName}`
-        : `~/.config/opencode/plugins/${pluginName}`;
-    const entry =
-      method === "npm"
-        ? pluginName
-        : method === "local"
-          ? pluginForm.entry.trim()
-          : `${targetDirectory}/index.ts`;
-    const nextPlugin: PluginDefinition = {
-      id: `${method}-${Date.now()}`,
-      name: pluginName,
-      description:
-        pluginForm.description.trim() ||
-        (method === "npm"
-          ? "透過 opencode.json plugin array 載入的 npm plugin。"
-          : "透過 OpenCode plugins directory 自動載入的本地 plugin。"),
-      source: method,
-      entry,
-      enabled: true,
-      config:
-        method === "npm"
-          ? JSON.stringify({ plugin: [pluginName] }, null, 2)
-          : JSON.stringify({ directory: targetDirectory }, null, 2),
-      archiveName: method === "archive" ? archiveName : undefined,
-      installTarget: method === "npm" ? undefined : pluginForm.installTarget,
-    };
-
-    setPlugins((current) =>
-      current.some(
-        (plugin) => plugin.name === pluginName && plugin.source === method,
-      )
-        ? current
-        : [nextPlugin, ...current],
+    const description = pluginForm.description.trim() || (
+      pluginForm.method === "npm"
+        ? "透過 opencode.jsonc 的 plugin 陣列載入。"
+        : "載入目前 scope .opencode/plugins/ 的本機自訂外掛。"
     );
+    const nextPlugins: PluginDefinition[] = pluginNames.map((pluginName) => ({
+      id: pluginName,
+      name: pluginName,
+      description,
+      source: pluginForm.method === "npm" ? "npm" : "local",
+      entry: pluginForm.method === "npm" ? pluginName : `.opencode/plugins/${pluginName}.ts`,
+      enabled: true,
+      config: "",
+    }));
+
+    setPlugins((current) => {
+      if (editingPluginId) {
+        return current.map((plugin) => plugin.id === editingPluginId ? { ...nextPlugins[0]!, id: editingPluginId } : plugin);
+      }
+      const existing = new Set(current.map((plugin) => plugin.name));
+      return [...nextPlugins.filter((plugin) => !existing.has(plugin.name)), ...current];
+    });
+    if (pluginForm.method === "local") {
+      setPendingPluginFiles((current) => ({ ...current, [pluginNames[0]!]: pluginForm.code }));
+    }
+    setPluginConfigScope(pluginForm.installTarget);
     setPluginInstallResult({
       status: "success",
-      message:
-        method === "npm"
-          ? `已新增 npm plugin：請寫入 opencode.json 的 plugin array。`
-          : `已新增 local plugin：OpenCode 會從 ${entry} 載入。`,
+      message: pluginForm.method === "local"
+        ? `已加入 ${pluginNames[0]}，按更新後寫入 plugins 目錄。`
+        : `已加入 ${nextPlugins.length} 個遠端外掛，按更新後批次寫入 opencode.jsonc。`,
     });
     setPluginForm(emptyPluginForm);
+    setEditingPluginId(null);
     setPluginSkillTab("plugins");
     setPluginSkillDialogView("list");
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
+  }
+
+  function editPlugin(plugin: PluginDefinition) {
+    setPluginReadOnly(false);
+    setEditingPluginId(plugin.id);
+    setPluginForm({
+      ...emptyPluginForm,
+      method: plugin.source === "local" ? "local" : "npm",
+      name: plugin.name,
+      description: plugin.description,
+      customPluginEnabled: plugin.source === "local",
+      entry: plugin.entry,
+    });
+    setPluginSkillDialogView("add-plugin");
+  }
+
+  function viewPlugin(plugin: PluginDefinition) {
+    editPlugin(plugin);
+    setPluginReadOnly(true);
+    setPluginSkillDialogView("plugin-detail");
+  }
+
+  function deletePlugin(pluginId: string) {
+    const plugin = plugins.find((item) => item.id === pluginId);
+    setPlugins((current) => current.filter((plugin) => plugin.id !== pluginId));
+    if (plugin?.source === "local") {
+      setPendingPluginDeletes((current) => [...new Set([...current, plugin.name])]);
+    }
     setPluginSkillHasChanges(true);
     setBatchUpdateNotice("");
   }
@@ -2751,19 +2866,35 @@ export function AppSidebar({
         hasChanges={pluginSkillHasChanges}
         onAddPlugin={addPluginFromOfficialSource}
         onAddSkill={addSkillFromOfficialSource}
-        onConfirmBatchUpdate={() => confirmBatchUpdate("plugins-skills")}
+         onConfirmBatchUpdate={() => confirmBatchUpdate("plugins-skills")}
+         onCancelBatchUpdate={cancelPluginSkillChanges}
         onOpenChange={setPluginSkillDialogOpen}
         onPluginFormChange={setPluginForm}
+         onPluginConfigScopeChange={changePluginConfigScope}
+         onPluginConfigModeChange={setPluginConfigMode}
+        onPluginDocumentChange={(content) => {
+          setPluginDocument(content);
+          setPluginSkillHasChanges(true);
+          setBatchUpdateNotice("");
+        }}
+         onPluginRefresh={() => void loadPluginConfig()}
         onPluginInstallResultChange={setPluginInstallResult}
         onSearchChange={setPluginSkillSearch}
         onSkillFormChange={setSkillForm}
         onSkillInstallResultChange={setSkillInstallResult}
         onTabChange={setPluginSkillTab}
-        onTogglePlugin={togglePlugin}
+         onEditPlugin={editPlugin}
+         onViewPlugin={viewPlugin}
+         onDeletePlugin={deletePlugin}
         onToggleSkill={toggleSkill}
         onViewChange={setPluginSkillDialogView}
         open={pluginSkillDialogOpen}
         pluginForm={pluginForm}
+        pluginConfigMode={pluginConfigMode}
+        pluginConfigScope={pluginConfigScope}
+        pluginDocument={pluginDocument}
+         pluginConfigLoading={pluginConfigLoading}
+         pluginReadOnly={pluginReadOnly}
         pluginInstallResult={pluginInstallResult}
         plugins={plugins}
         search={pluginSkillSearch}

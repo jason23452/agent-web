@@ -76,6 +76,21 @@ export function listEffectiveProjectTools(
   );
 }
 
+export function listOpenCodeRegistryEntries(
+  scope: OpenCodeRegistryScope,
+  kind: OpenCodeRegistryKind,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest<OpenCodeRegistryListResponse>(
+    `/bff/opencode-registry/${scope}/${kind}`,
+    {
+      ...config,
+      query: { ...config?.query, project: scope === "project" ? project : undefined },
+    },
+  );
+}
+
 export function readToolRegistryEntry(
   scope: OpenCodeRegistryScope,
   name: string,
@@ -103,6 +118,34 @@ export function upsertToolRegistryEntry(
     body,
     method: "PUT",
     query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function upsertPluginRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  body: OpenCodeRegistryUpsertBody,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/plugins/${encodeURIComponent(name)}`, {
+    ...config,
+    body,
+    method: "PUT",
+    query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function deletePluginRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/plugins/${encodeURIComponent(name)}`, {
+    ...config,
+    method: "DELETE",
+    query: { ...config?.query, project: scope === "project" ? project : undefined, restart: false, wait: false },
   });
 }
 
