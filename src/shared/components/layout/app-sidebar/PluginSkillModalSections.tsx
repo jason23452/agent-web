@@ -256,7 +256,7 @@ export function AddPluginForm({
       )}
       {form.method === "npm" ? (
         <label className="grid gap-1 text-muted-foreground text-xs">
-          NPM package（可輸入多個，以逗號、空白或換行分隔）
+          遠端外掛名稱（可輸入多個，以逗號、空白或換行分隔）
           <Input
             aria-label="Plugin 名稱"
             autoFocus={!readOnly}
