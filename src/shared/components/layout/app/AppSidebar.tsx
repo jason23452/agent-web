@@ -2140,6 +2140,13 @@ export function AppSidebar({
     setBatchUpdateNotice("");
   }
 
+  function togglePluginProject(plugin: PluginDefinition, enabled: boolean) {
+    if (plugin.installTarget !== "global") return;
+    setPlugins((current) => current.map((item) => item.id === plugin.id ? { ...item, useInProject: enabled } : item));
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
+  }
+
   function toPluginConfigEntry(plugin: PluginDefinition, scope: PluginConfigScope): string {
     if (plugin.source === "local") {
       return scope === "global"
@@ -3106,7 +3113,8 @@ export function AppSidebar({
         onTabChange={setPluginSkillTab}
          onEditPlugin={editPlugin}
          onViewPlugin={viewPlugin}
-         onDeletePlugin={deletePlugin}
+          onDeletePlugin={deletePlugin}
+          onTogglePluginProject={pluginConfigScope === "project" ? togglePluginProject : undefined}
          onToggleSkill={toggleSkill}
          onDeleteSkill={deleteSkill}
           onEditSkill={editSkill}

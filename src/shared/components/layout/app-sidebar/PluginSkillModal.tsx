@@ -53,6 +53,7 @@ type PluginSkillModalProps = {
   onEditPlugin: (plugin: PluginDefinition) => void
   onViewPlugin: (plugin: PluginDefinition) => void
   onDeletePlugin: (pluginId: string) => void
+  onTogglePluginProject?: (plugin: PluginDefinition, enabled: boolean) => void
   onToggleSkill: (skillId: string) => void
   onDeleteSkill?: (skill: SkillDefinition) => void
   onEditSkill?: (skill: SkillDefinition) => void
@@ -110,6 +111,7 @@ export function PluginSkillModal({
   onEditPlugin,
   onViewPlugin,
   onDeletePlugin,
+  onTogglePluginProject,
   onToggleSkill,
   onDeleteSkill,
   onEditSkill,
@@ -312,6 +314,7 @@ export function PluginSkillModal({
                   onEditPlugin={onEditPlugin}
                   onViewPlugin={onViewPlugin}
                   onDeletePlugin={onDeletePlugin}
+                  onTogglePluginProject={onTogglePluginProject}
                   plugins={plugins}
                 />
               )

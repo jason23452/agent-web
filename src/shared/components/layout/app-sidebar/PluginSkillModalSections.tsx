@@ -23,6 +23,7 @@ type PluginsListProps = {
   onViewPlugin: (plugin: PluginDefinition) => void
   onDeletePlugin: (pluginId: string) => void
   plugins: PluginDefinition[]
+  onTogglePluginProject?: (plugin: PluginDefinition, enabled: boolean) => void
 }
 
 export function PluginsList({
@@ -31,6 +32,7 @@ export function PluginsList({
   onViewPlugin,
   onDeletePlugin,
   plugins,
+  onTogglePluginProject,
 }: PluginsListProps) {
   return (
     <section className="grid gap-2" aria-labelledby="plugins-settings-title">
@@ -62,6 +64,13 @@ export function PluginsList({
                   </p>
                 )}
               </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {plugin.installTarget === "global" && onTogglePluginProject && (
+                  <label className="flex items-center gap-2 text-muted-foreground text-xs">
+                    <Checkbox checked={plugin.useInProject !== false} onCheckedChange={(checked) => onTogglePluginProject(plugin, checked === true)} />
+                    <span className="whitespace-nowrap">此 Project 使用 Global Plugin</span>
+                  </label>
+                )}
               <Menu>
                 <MenuTrigger aria-label={`${plugin.name} 操作`} className="ms-auto grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <MoreHorizontalIcon aria-hidden="true" className="size-4" />
@@ -73,6 +82,7 @@ export function PluginsList({
                   <MenuItem onClick={() => onDeletePlugin(plugin.id)} variant="destructive">刪除</MenuItem>
                 </MenuPopup>
               </Menu>
+              </div>
             </div>
           </li>
         ))}
@@ -149,7 +159,7 @@ export function SkillsList({
             {skill.inherited && onToggleGlobalSkill ? (
               <label className="flex shrink-0 items-center gap-2 text-xs">
                 <Checkbox checked={skill.enabled} onCheckedChange={(checked) => onToggleGlobalSkill(skill, checked === true)} />
-                <span>在此專案啟用</span>
+                <span>此 Project 使用 Global Skill</span>
               </label>
             ) : (
               <Button onClick={() => onToggleSkill(skill.id)} size="sm" variant={skill.enabled ? "outline" : "secondary"}>
