@@ -32,7 +32,7 @@ import {
   getToolPermissionKey,
   taskPermissionFor,
 } from "@/shared/utils/app-sidebar";
-import { agentColors, availableModels, modelVariants } from "./config";
+import { agentColors, modelVariants } from "./config";
 
 
 function getAgentScopeLabel(scope: AgentDefinition["scope"]) {
@@ -1438,6 +1438,7 @@ export function AgentConfigPanel({
   agentForm,
   agentYaml,
   agents,
+  availableModels,
   availableSkillNames,
   editingAgentId,
   guidanceSkill,
@@ -1470,6 +1471,7 @@ export function AgentConfigPanel({
   agentForm: AgentForm;
   agentYaml: string;
   agents: AgentDefinition[];
+  availableModels: string[];
   availableSkillNames: string[];
   editingAgentId: string | null;
   guidanceSkill: string | null;

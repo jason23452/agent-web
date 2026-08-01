@@ -29,7 +29,7 @@ function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileType }
 }
 
 export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, onPreviewFile, onUploadFiles }: FileTreeProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(["src"]))
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
 
   function toggleNode(id: string) {
     setExpandedIds((current) => {

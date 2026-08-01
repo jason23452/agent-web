@@ -57,6 +57,15 @@ export function createProjectSession(directory: string, body: CreateProjectSessi
   });
 }
 
+export function updateProjectSession(sessionID: string, directory: string, body: { title?: string }, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeSession>(`/bff/opencode-proxy/session/${encodeURIComponent(sessionID)}`, {
+    ...config,
+    body,
+    method: "PATCH",
+    query: { ...config?.query, directory },
+  })
+}
+
 export function toWorkspaceSession(session: OpenCodeSession): Session {
   return {
     id: session.id,

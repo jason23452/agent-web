@@ -57,6 +57,9 @@ export type WorkspaceMessage = {
   title?: string
   body: string
   plan?: PlanStep[]
+  createdAt?: number
+  modelLabel?: string
+  status?: "complete" | "error" | "streaming"
 }
 
 export type TokenUsage = {
@@ -109,6 +112,7 @@ export type Attachment = {
   id: string
   name: string
   meta: string
+  path?: string
   isImage?: boolean
 }
 

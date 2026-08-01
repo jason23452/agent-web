@@ -37,6 +37,7 @@ type AgentsToolsModalProps = {
   agentsError?: string | null;
   agentsLoading?: boolean;
   agentsToolsHasChanges: boolean;
+  availableModels: string[];
   availableSkillNames: string[];
   batchUpdateNotice: string;
   commandEditMode: "add" | "edit";
@@ -121,6 +122,7 @@ export function AgentsToolsModal({
   agentsError,
   agentsLoading = false,
   agentsToolsHasChanges,
+  availableModels,
   availableSkillNames,
   batchUpdateNotice,
   commandEditMode,
@@ -388,6 +390,7 @@ export function AgentsToolsModal({
           agentForm={agentForm}
           agentYaml={agentYaml}
           agents={agents}
+          availableModels={availableModels}
           availableSkillNames={availableSkillNames}
           editingAgentId={editingAgentId}
           guidanceSkill={guidanceSkill}

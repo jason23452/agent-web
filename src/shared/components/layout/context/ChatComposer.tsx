@@ -6,28 +6,34 @@ import type { Attachment, PinContext, ThinkingVariantOption } from "@/shared/typ
 
 type ChatComposerProps = {
   attachments: Attachment[]
-  onAddAttachment: () => void
   onClearPin: () => void
   onRemoveAttachment: (id: string) => void
+  onSubmit: (text: string, attachments: Attachment[], pinContext: PinContext | null) => Promise<boolean> | boolean
+  onUploadFiles: (files: readonly File[]) => Promise<void>
   onThinkingVariantChange?: (variantKey: string) => void
   pinContext: PinContext | null
+  sending?: boolean
   selectedThinkingVariant?: string
   thinkingVariants?: ThinkingVariantOption[]
 }
 
 export function ChatComposer({
   attachments,
-  onAddAttachment,
   onClearPin,
   onRemoveAttachment,
+  onSubmit,
+  onUploadFiles,
   onThinkingVariantChange,
   pinContext,
   selectedThinkingVariant = "default",
   thinkingVariants = [],
+  sending = false,
 }: ChatComposerProps) {
   const [value, setValue] = useState("")
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -42,7 +48,10 @@ export function ChatComposer({
       className="bg-[linear-gradient(to_top,var(--background)_78%,transparent)] px-[clamp(18px,5vw,64px)] pb-6 pt-3.5"
       onSubmit={(event) => {
         event.preventDefault()
-        setValue("")
+        if ((!value.trim() && !pinContext) || sending) return
+        void Promise.resolve(onSubmit(value, attachments, pinContext)).then((submitted) => {
+          if (submitted !== false) setValue("")
+        })
       }}
     >
       <div className="mx-auto grid max-w-[820px] gap-2">
@@ -92,34 +101,53 @@ export function ChatComposer({
                   <button
                     className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => {
-                      onAddAttachment()
+                      setUploadError(null)
+                      fileInputRef.current?.click()
                       setUploadOpen(false)
                     }}
                     type="button"
                   >
                     <UploadIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
                     <span className="grid min-w-0 gap-0.5 leading-none">
-                      <strong className="truncate font-semibold leading-5">從檔案庫選取</strong>
-                      <span className="text-muted-foreground text-xs leading-5">引用專案其他檔案作為參考。</span>
+                      <strong className="truncate font-semibold leading-5">上傳至專案</strong>
+                      <span className="text-muted-foreground text-xs leading-5">將檔案寫入目前專案並附加到訊息。</span>
                     </span>
                   </button>
                   <button
                     className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={() => {
-                      onAddAttachment()
+                      setUploadError(null)
+                      fileInputRef.current?.click()
                       setUploadOpen(false)
                     }}
                     type="button"
                   >
                     <PaperclipIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
                     <span className="grid min-w-0 gap-0.5 leading-none">
-                      <strong className="truncate font-semibold leading-5">上傳本機檔案</strong>
+                      <strong className="truncate font-semibold leading-5">選擇本機檔案</strong>
                       <span className="text-muted-foreground text-xs leading-5">加入額外文件或截圖。</span>
                     </span>
                   </button>
                 </div>
               )}
             </span>
+
+            <input
+              accept="*/*"
+              className="hidden"
+              multiple
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? [])
+                event.target.value = ""
+                if (files.length === 0) return
+
+                void onUploadFiles(files).catch((error: unknown) => {
+                  setUploadError(error instanceof Error ? error.message : "上傳檔案失敗")
+                })
+              }}
+              ref={fileInputRef}
+              type="file"
+            />
 
             <textarea
               aria-label="詢問 AICaht"
@@ -143,14 +171,14 @@ export function ChatComposer({
               <Button aria-label="語音輸入" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" size="icon" variant="ghost">
                 <MicIcon aria-hidden="true" />
               </Button>
-              <Button aria-label="送出訊息" className="size-11 min-h-11 min-w-11 rounded-full border-primary bg-primary text-primary-foreground shadow-none before:hidden hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-35" disabled={!value.trim() && !pinContext} size="icon" type="submit">
+              <Button aria-label="送出訊息" className="size-11 min-h-11 min-w-11 rounded-full border-primary bg-primary text-primary-foreground shadow-none before:hidden hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-35" disabled={(!value.trim() && !pinContext) || sending} loading={sending} size="icon" type="submit">
                 <SendIcon aria-hidden="true" />
               </Button>
             </div>
           </div>
           
         </div>
-        <p className="text-center text-muted-foreground text-xs">原型提示：目前使用 mock data，後續可接 OpenCode agent API 與 tool logs。</p>
+        {uploadError ? <p className="text-center text-destructive text-xs">{uploadError}</p> : <p className="text-center text-muted-foreground text-xs">訊息會送至目前專案的 OpenCode session。</p>}
       </div>
     </form>
   )

@@ -52,7 +52,11 @@ export function getApiErrorMessage(error: unknown): string {
 
 export async function apiRequest<TResponse>(endpoint: string, config: ApiRequestConfig = {}): Promise<TResponse> {
   const response = await fetch(buildApiUrl(endpoint, config.query), {
-    body: config.body === undefined ? undefined : JSON.stringify(config.body),
+    body: config.body === undefined
+      ? undefined
+      : config.body instanceof FormData
+        ? config.body
+        : JSON.stringify(config.body),
     headers: buildHeaders(config),
     method: config.method ?? "GET",
     signal: config.signal,
@@ -74,7 +78,7 @@ export async function apiRequest<TResponse>(endpoint: string, config: ApiRequest
   return data as TResponse;
 }
 
-function buildApiUrl(endpoint: string, query?: QueryParams): string {
+export function buildApiUrl(endpoint: string, query?: QueryParams): string {
   const baseUrl = resolveApiBaseUrl();
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const url = new URL(endpoint.replace(/^\/+/, ""), normalizedBaseUrl);
@@ -91,7 +95,7 @@ function buildHeaders(config: ApiRequestConfig): Headers {
   const headers = new Headers(config.headers);
   headers.set("Accept", "application/json");
 
-  if (config.body !== undefined && !headers.has("Content-Type")) {
+  if (config.body !== undefined && !(config.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 

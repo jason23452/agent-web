@@ -16,6 +16,7 @@ export type OpenCodeConfigResponse = {
 export type OpenCodeConfigApplyBody = {
   config?: Record<string, unknown>;
   content?: string;
+  mcp?: Record<string, unknown>;
   reason?: string;
   restart?: boolean;
   wait?: boolean;

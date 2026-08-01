@@ -5,7 +5,6 @@ import { WORKSPACE_ROUTE_PATH } from "@/features/workspace/router"
 import { getFileTypeByName, listProjectFiles } from "@/features/workspace/api/files"
 import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus } from "@/shared/api/opencodeRuntime"
 import type { OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
-import type { Project } from "@/shared/types/workspace"
 import { type OpenCodeProjectFileNode } from "@/features/workspace/api/files"
 import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
 
@@ -50,14 +49,6 @@ export function getProjectRouteName(projectPath: string) {
   const name = normalizedPath.split("/").filter(Boolean).at(-1)
 
   return name || "project"
-}
-
-export function getProjectPath(name: string, projects: Project[]) {
-  const matchedProject = projects.find((project) => {
-    return project.id === name || project.name === name || getProjectRouteName(project.path) === name
-  })
-
-  return matchedProject?.path ?? `/workspace/projects/${name}`
 }
 
 function normalizePath(value: string) {

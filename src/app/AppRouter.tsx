@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from "react"
 import { HomeRoute } from "@/features/home/router"
-import { fileTree as mockFileTree, recentProjects, starterAttachments } from "@/app/data/mockWorkspace"
 import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, readProjectFileContent } from "@/features/workspace/api/files"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
-import { getProjectSession, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
+import { createProjectSession, getProjectSession, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
+import { listSessionMessages, sendSessionPrompt, toWorkspaceMessages } from "@/features/workspace/api/messages"
 import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
+import { consumeOpenCodeEvents, type OpenCodeEvent } from "@/shared/api/opencodeEvents"
 import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
 import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders"
 import { getOpenCodeCurrentUsage, getOpenCodeSessionContextUsage } from "@/shared/api/opencodeUsage"
-import type { Agent, Attachment, FileNode, ModelOption, ModelRateLimitUsage, PinContext, Project, Session, ThinkingVariantOption, TokenUsage } from "@/shared/types/workspace"
+import type { Agent, Attachment, FileNode, ModelOption, ModelRateLimitUsage, PinContext, Project, Session, ThinkingVariantOption, TokenUsage, WorkspaceMessage } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
 import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
@@ -23,7 +24,6 @@ import {
   buildWorkspaceFileTree,
   combineRelativePath,
   decodeTextContent,
-  getProjectPath,
   getProjectRouteName,
   getRestartInProgressOperation,
   getRoutePath,
@@ -112,6 +112,16 @@ function getModelVariants(variants: unknown) {
   return []
 }
 
+function formatAttachmentSize(size: number) {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getEventPayload(event: OpenCodeEvent) {
+  return event.payload ?? event
+}
+
 function buildOpenCodeModelOptions(providers: OpenCodeProviderListResponse | null): ModelOption[] {
   if (!providers) return []
 
@@ -173,7 +183,7 @@ export function AppRouter() {
   const [previewFile, setPreviewFile] = useState<FileNode | null>(null)
   const [layoutLoading, setLayoutLoading] = useState(false)
   const [layoutLoadingLabel, setLayoutLoadingLabel] = useState("Loading...")
-  const [projects, setProjects] = useState<Project[]>(recentProjects)
+  const [projects, setProjects] = useState<Project[]>([])
   const [projectsError, setProjectsError] = useState<string | null>(null)
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [openCodeProviderCatalog, setOpenCodeProviderCatalog] = useState<OpenCodeProviderListResponse | null>(null)
@@ -187,11 +197,19 @@ export function AppRouter() {
   const [projectSessions, setProjectSessions] = useState<Session[]>([])
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
-  const [contextFileTree, setContextFileTree] = useState<FileTreeNode[]>(mockFileTree)
+  const [contextFileTree, setContextFileTree] = useState<FileTreeNode[]>([])
   const [contextFileTreeLoading, setContextFileTreeLoading] = useState(false)
   const [contextFileTreeError, setContextFileTreeError] = useState<string | null>(null)
   const [contextFileTreeVersion, setContextFileTreeVersion] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [workspaceMessages, setWorkspaceMessages] = useState<WorkspaceMessage[]>([])
+  const [messagesError, setMessagesError] = useState<string | null>(null)
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [messageSending, setMessageSending] = useState(false)
+
+  const triggerContextFileTreeReload = useCallback(() => {
+    setContextFileTreeVersion((current) => current + 1)
+  }, [])
 
   useEffect(() => {
     function syncRouteFromBrowser() {
@@ -360,11 +378,8 @@ export function AppRouter() {
     }
   }, [checkedProjectName, navigateToRoute])
 
-  const defaultProjectPath = projects[0]?.path ?? recentProjects[0]?.path ?? "/workspace/projects/test-web"
-  const defaultProjectName = getProjectRouteName(defaultProjectPath)
-  const activeProjectName = checkedProjectName ?? defaultProjectName
   const activeProjectPath = checkedProjectName
-    ? getProjectPath(activeProjectName, projects)
+    ? projects.find((project) => project.id === checkedProjectName || project.name === checkedProjectName)?.path ?? null
     : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
 
@@ -453,6 +468,82 @@ export function AppRouter() {
     return () => controller.abort()
   }, [activeProjectPath, activeSessionId])
 
+  const loadWorkspaceMessages = useCallback(async (sessionID: string, directory: string, signal?: AbortSignal, options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading !== false
+    if (showLoading) setMessagesLoading(true)
+    setMessagesError(null)
+
+    try {
+      const response = await listSessionMessages(sessionID, directory, { signal })
+      if (signal?.aborted) return response
+
+      const nextMessages = toWorkspaceMessages(response)
+      setWorkspaceMessages(nextMessages)
+      return response
+    } catch (error) {
+      if (!signal?.aborted) {
+        setWorkspaceMessages([])
+        setMessagesError(getApiErrorMessage(error))
+      }
+      return null
+    } finally {
+      if (showLoading && !signal?.aborted) setMessagesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeProjectPath || !activeSessionId) {
+      const timeoutId = window.setTimeout(() => {
+        setWorkspaceMessages([])
+        setMessagesError(null)
+        setMessagesLoading(false)
+      }, 0)
+
+      return () => window.clearTimeout(timeoutId)
+    }
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => {
+      void loadWorkspaceMessages(activeSessionId, activeProjectPath, controller.signal)
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [activeProjectPath, activeSessionId, loadWorkspaceMessages])
+
+  useEffect(() => {
+    if (!activeProjectPath) return
+
+    const controller = new AbortController()
+    void consumeOpenCodeEvents(activeProjectPath, (event) => {
+      const payload = getEventPayload(event)
+      const properties = payload.properties ?? {}
+      const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
+
+      if (payload.type === "session.status" && sessionID === activeSessionId) {
+        const status = properties.status
+        if (status && typeof status === "object" && "type" in status && status.type === "idle") {
+          setMessageSending(false)
+          void loadWorkspaceMessages(activeSessionId, activeProjectPath, undefined, { showLoading: false })
+        }
+      }
+
+      if ((payload.type === "message.updated" || payload.type === "message.part.updated" || payload.type === "session.idle") && sessionID === activeSessionId) {
+        void loadWorkspaceMessages(activeSessionId, activeProjectPath, undefined, { showLoading: false })
+      }
+
+      if (payload.type === "file.edited") {
+        triggerContextFileTreeReload()
+      }
+    }, controller.signal).catch((error) => {
+      if (!controller.signal.aborted) console.warn(getApiErrorMessage(error))
+    })
+
+    return () => controller.abort()
+  }, [activeProjectPath, activeSessionId, loadWorkspaceMessages, triggerContextFileTreeReload])
+
   useEffect(() => {
     const fallbackProviderID = openCodeProviderCatalog?.connected.find((providerID) => providerID !== "opencode")
     const primaryProviderID = selectedModel?.providerID ?? activeOpenCodeSessionDetail?.model?.providerID ?? activeAgent.providerID ?? fallbackProviderID
@@ -524,10 +615,6 @@ export function AppRouter() {
     }
   }, [activeProjectPath])
 
-  const triggerContextFileTreeReload = useCallback(() => {
-    setContextFileTreeVersion((current) => current + 1)
-  }, [])
-
   const createContextProjectFile = useCallback(async (directory: string, itemName?: string) => {
     if (!activeProjectPath) return
 
@@ -583,10 +670,8 @@ export function AppRouter() {
     } catch (error) {
       if (signal.aborted) return
 
-      setContextFileTree(mockFileTree)
-      setContextFileTreeError(
-        error instanceof Error ? error.message : "讀取專案檔案樹失敗，將使用示例資料。",
-      )
+      setContextFileTree([])
+      setContextFileTreeError(error instanceof Error ? error.message : "讀取專案檔案樹失敗。")
     } finally {
       if (!signal.aborted) {
         setContextFileTreeLoading(false)
@@ -709,7 +794,12 @@ export function AppRouter() {
     }
 
     setSessionsError(null)
-    setActiveSessionId(null)
+
+    const response = await createProjectSession(activeProjectPath, { title: "新對話" })
+    const nextSession = toWorkspaceSession(response)
+    setOpenCodeSessions((current) => [response, ...current.filter((session) => session.id !== response.id)])
+    setProjectSessions((current) => [nextSession, ...current.filter((session) => session.id !== nextSession.id)])
+    setActiveSessionId(response.id)
     navigateToWorkspaceProject(checkedProjectName)
     setSidebarOpen(false)
     setContextPanelOpen(false)
@@ -750,10 +840,35 @@ export function AppRouter() {
     }
   }, [activeProjectPath])
 
-  function addAttachment() {
-    const next = starterAttachments.find((item) => !attachments.some((attachment) => attachment.id === item.id))
-    if (next) setAttachments((current) => [...current, next])
-  }
+  const uploadChatFiles = useCallback(async (files: readonly File[]) => {
+    if (!activeProjectPath) throw new Error("請先開啟專案後再上傳檔案。")
+
+    const uploaded = await Promise.all(Array.from(files).map(async (file) => {
+      const encoded = await readFileAsBase64(file)
+      await createOrUpdateProjectFile({
+        content: encoded,
+        directory: activeProjectPath,
+        encoding: "base64",
+        overwrite: true,
+        path: file.name,
+      })
+
+      return {
+        id: file.name,
+        isImage: file.type.startsWith("image/"),
+        meta: formatAttachmentSize(file.size),
+        name: file.name,
+        path: file.name,
+      } satisfies Attachment
+    }))
+
+    setAttachments((current) => [
+      ...current.filter((attachment) => !uploaded.some((item) => item.id === attachment.id)),
+      ...uploaded,
+    ])
+    setContextFileTreeError(null)
+    triggerContextFileTreeReload()
+  }, [activeProjectPath, triggerContextFileTreeReload])
 
   function removeAttachment(id: string) {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
@@ -769,6 +884,71 @@ export function AppRouter() {
     closeMobileSurfaces()
   }
 
+  const sendMessage = useCallback(async (text: string, selectedAttachments: Attachment[], context: PinContext | null): Promise<boolean> => {
+    if (!activeProjectPath) {
+      setMessagesError("請先開啟專案後再傳送訊息。")
+      return false
+    }
+
+    const promptText = [
+      text.trim(),
+      context ? `\n\nContext: ${context.label}\n${context.text}` : "",
+      selectedAttachments.length > 0
+        ? `\n\nReferenced project files:\n${selectedAttachments.map((attachment) => `- ${attachment.path ?? attachment.name}`).join("\n")}`
+        : "",
+    ].filter(Boolean).join("")
+    if (!promptText.trim()) return false
+
+    try {
+      let sessionID = activeSessionId
+      if (!sessionID) {
+        const response = await createProjectSession(activeProjectPath, { title: text.trim().slice(0, 80) || "新對話" })
+        const nextSession = toWorkspaceSession(response)
+        sessionID = response.id
+        setOpenCodeSessions((current) => [response, ...current])
+        setProjectSessions((current) => [nextSession, ...current])
+        setActiveSessionId(sessionID)
+      }
+
+      setMessageSending(true)
+      setMessagesError(null)
+      await sendSessionPrompt(sessionID, activeProjectPath, {
+        agent: activeAgent.id === EMPTY_AGENT.id ? undefined : activeAgent.id,
+        model: selectedModel ? {
+          modelID: selectedModel.id,
+          providerID: selectedModel.providerID,
+          ...(selectedThinkingVariant !== "default" ? { variant: selectedThinkingVariant } : {}),
+        } : undefined,
+        text: promptText,
+      })
+      setAttachments([])
+      setPinContext(null)
+
+      let attempts = 0
+      const refreshUntilComplete = async () => {
+        attempts += 1
+        const response = await listSessionMessages(sessionID!, activeProjectPath).catch(() => null)
+        if (response) {
+          setWorkspaceMessages(toWorkspaceMessages(response))
+          const lastAssistant = [...response].reverse().find((message) => message.info.role === "assistant")
+          if (lastAssistant?.info.time?.completed || lastAssistant?.info.error || attempts >= 120) {
+            setMessageSending(false)
+            return
+          }
+        }
+
+        if (attempts < 120) window.setTimeout(() => void refreshUntilComplete(), 1_000)
+        else setMessageSending(false)
+      }
+      window.setTimeout(() => void refreshUntilComplete(), 500)
+      return true
+    } catch (error) {
+      setMessageSending(false)
+      setMessagesError(getApiErrorMessage(error))
+      return false
+    }
+  }, [activeAgent.id, activeProjectPath, activeSessionId, selectedModel, selectedThinkingVariant])
+
   function changeProject(projectPath: string) {
     navigateToWorkspaceProject(getProjectRouteName(projectPath))
   }
@@ -780,11 +960,11 @@ export function AppRouter() {
 
   const mainRoute =
     route.name === "workspace" ? (
-      <WorkspaceRoute />
+      <WorkspaceRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
     ) : route.name === "workspaceProject" ? (
-      <WorkspaceProjectRoute />
+      <WorkspaceProjectRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
     ) : (
-      <HomeRoute />
+      <HomeRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
     )
 
   const renderedContextFileTree = activeProjectPath ? contextFileTree : []
@@ -824,11 +1004,13 @@ export function AppRouter() {
       composer={
         <ChatComposer
           attachments={attachments}
-          onAddAttachment={addAttachment}
+          onUploadFiles={uploadChatFiles}
           onClearPin={() => setPinContext(null)}
           onRemoveAttachment={removeAttachment}
+          onSubmit={sendMessage}
           onThinkingVariantChange={setSelectedThinkingVariant}
           pinContext={pinContext}
+          sending={messageSending}
           selectedThinkingVariant={selectedThinkingVariant}
           thinkingVariants={thinkingVariants}
         />

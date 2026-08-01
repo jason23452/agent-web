@@ -69,16 +69,12 @@ import { ProjectDialog } from "@/shared/components/layout/app-sidebar/ProjectDia
 import { ApiError, getApiErrorMessage } from "@/shared/api";
 import { toastManager } from "@/shared/components/ui/toast";
 import {
-  availableSkills,
   emptyAgentForm,
   emptyCommandForm,
   emptyMcpForm,
   emptyPluginForm,
   emptySkillForm,
   emptyToolForm,
-  initialMcpServers,
-  initialModelProviders,
-  initialToolDefinitions,
 } from "@/shared/components/layout/app-sidebar/config";
 import type {
   AgentConfigMode,
@@ -116,9 +112,6 @@ import {
 
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 
-const initialModelProviderById = Object.fromEntries(
-  initialModelProviders.map((provider) => [provider.id, provider]),
-);
 const PROVIDER_AUTH_POLL_INTERVAL_MS = 2_000;
 const PROVIDER_AUTH_POLL_ATTEMPTS = 150;
 
@@ -136,7 +129,6 @@ const SYSTEM_TOOL_METADATA: Record<
   Pick<ToolDefinition, "category" | "description" | "source">
 > = Object.fromEntries(
   [
-    ...initialToolDefinitions.filter((tool) => tool.source === "built-in"),
     {
       id: "list",
       name: "list",
@@ -540,36 +532,16 @@ function pickDefaultProviderModel(
 function resolveAuthMethods(
   provider: OpenCodeProvider,
   authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
-  fallbackMethods: string[] = [],
 ) {
-  const fromBackend = resolveAuthMethodDetails(provider, authMethodsResponse, fallbackMethods).map((item) => item.label);
-  if (fromBackend.length) {
-    return fromBackend;
-  }
-
-  return fallbackMethods.length > 0
-    ? fallbackMethods
-    : ["API 密鑰", "瀏覽器授權", "自動授權"];
+  return resolveAuthMethodDetails(provider, authMethodsResponse).map((item) => item.label);
 }
 
 function resolveAuthMethodDetails(
   provider: OpenCodeProvider,
   authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
-  fallbackMethods: string[] = [],
 ): OpenCodeAuthMethod[] {
   const fromBackend = authMethodsResponse?.[provider.id];
-  if (fromBackend?.length) {
-    return fromBackend;
-  }
-
-  const labels = fallbackMethods.length > 0
-    ? fallbackMethods
-    : ["API 密鑰", "瀏覽器授權", "自動授權"];
-
-  return labels.map((label) => ({
-    label,
-    type: label.toLowerCase().includes("api") || label.includes("密鑰") ? "api" : "oauth",
-  }));
+  return fromBackend ?? [];
 }
 
 function resolveProviderDescription(provider: OpenCodeProvider) {
@@ -603,38 +575,34 @@ function toModelProvider(
   authMethodsResponse: OpenCodeAuthMethodsResponse | undefined,
   disabledModelIds: Set<string>,
 ) {
-  const fallbackProvider = initialModelProviderById[provider.id];
   const [modelId, model] = pickDefaultProviderModel(
     provider,
     providersResponse.default,
   );
-  const fallbackMethods = fallbackProvider?.authMethods ?? [];
-
   return {
-    ...fallbackProvider,
     id: provider.id,
     name: provider.name,
-    description: fallbackProvider?.description || resolveProviderDescription(provider),
+    description: resolveProviderDescription(provider),
     connected: providersResponse.connected.includes(provider.id),
     enabled: providersResponse.connected.includes(provider.id),
-    npm: model?.api?.npm || fallbackProvider?.npm || "",
-    baseUrl: model?.api?.url || fallbackProvider?.baseUrl || "",
-    apiKey: fallbackProvider?.apiKey || "",
-    headersJson: fallbackProvider?.headersJson || "",
-    defaultModel: modelId ? `${provider.id}/${modelId}` : fallbackProvider?.defaultModel || "",
-    modelDisplayName: model?.name || fallbackProvider?.modelDisplayName || "",
+    npm: model?.api?.npm || "",
+    baseUrl: model?.api?.url || "",
+    apiKey: "",
+    headersJson: "",
+    defaultModel: modelId ? `${provider.id}/${modelId}` : "",
+    modelDisplayName: model?.name || "",
     contextLimit:
       typeof model?.limit?.context === "number"
         ? String(model.limit.context)
-        : fallbackProvider?.contextLimit || "",
+        : "",
     outputLimit:
       typeof model?.limit?.output === "number"
         ? String(model.limit.output)
-        : fallbackProvider?.outputLimit || "",
-    whitelist: fallbackProvider?.whitelist || "",
-    blacklist: fallbackProvider?.blacklist || "",
-    authMethods: resolveAuthMethods(provider, authMethodsResponse, fallbackMethods),
-    authMethodDetails: resolveAuthMethodDetails(provider, authMethodsResponse, fallbackMethods),
+        : "",
+    whitelist: "",
+    blacklist: "",
+    authMethods: resolveAuthMethods(provider, authMethodsResponse),
+    authMethodDetails: resolveAuthMethodDetails(provider, authMethodsResponse),
     availableModels: Object.values(provider.models)
       .map((model) => {
         const key = `${provider.id}/${model.id}`;
@@ -649,8 +617,7 @@ function toModelProvider(
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name)),
-    badge: fallbackProvider?.badge,
-    icon: fallbackProvider?.icon || provider.name.charAt(0).toUpperCase(),
+    icon: provider.name.charAt(0).toUpperCase(),
   } satisfies ModelProvider;
 }
 
@@ -717,7 +684,7 @@ export function AppSidebar({
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
   const [mcpDialogView, setMcpDialogView] = useState<McpDialogView>("list");
   const [mcpSearch, setMcpSearch] = useState("");
-  const [mcpServers, setMcpServers] = useState<McpServer[]>(initialMcpServers);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
   const [mcpForm, setMcpForm] = useState(emptyMcpForm);
   const [pluginSkillDialogOpen, setPluginSkillDialogOpen] = useState(false);
@@ -797,9 +764,9 @@ export function AppSidebar({
   const [toolTestResult, setToolTestResult] =
     useState<InstallResult | null>(null);
   const [toolCallTestLoading, setToolCallTestLoading] = useState(false);
-  const [toolToAdd, setToolToAdd] = useState(initialToolDefinitions[0]!.name);
+  const [toolToAdd, setToolToAdd] = useState("");
   const [subagentToAdd, setSubagentToAdd] = useState("");
-  const [skillToAdd, setSkillToAdd] = useState(availableSkills[0]!);
+  const [skillToAdd, setSkillToAdd] = useState("");
   const [guidanceTool, setGuidanceTool] = useState<string | null>(null);
   const [guidanceSkill, setGuidanceSkill] = useState<string | null>(null);
   const [guidanceSubagent, setGuidanceSubagent] = useState<string | null>(null);
@@ -822,9 +789,7 @@ export function AppSidebar({
   const [disabledModelIds, setDisabledModelIds] = useState<Set<string>>(() => new Set());
   const [persistedDisabledModelIds, setPersistedDisabledModelIds] = useState<Set<string>>(() => new Set());
   const [modelSettingsApplying, setModelSettingsApplying] = useState(false);
-  const [modelProviders, setModelProviders] = useState<ModelProvider[]>(
-    initialModelProviders,
-  );
+  const [modelProviders, setModelProviders] = useState<ModelProvider[]>([]);
   const [selectedModelProviderId, setSelectedModelProviderId] = useState<
     string | null
   >(null);
@@ -885,6 +850,7 @@ export function AppSidebar({
   const availableSkillNames = skillSettings
     .filter((skill) => skill.enabled)
     .map((skill) => skill.name);
+  const availableAgentModels = [...new Set(modelProviders.flatMap((provider) => (provider.availableModels ?? []).map((model) => model.key)))];
   const selectedAgent =
     agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedTool =
@@ -1051,7 +1017,7 @@ export function AppSidebar({
         }
       } catch (error) {
         if (signal?.aborted) return;
-        setModelProviders(initialModelProviders);
+        setModelProviders([]);
         toastManager.add({
           id: `model-providers-load-error-${Date.now()}`,
           description: getApiErrorMessage(error),
@@ -2007,9 +1973,27 @@ export function AppSidebar({
     });
   }
 
-  function openMcpList() {
+  async function openMcpList() {
     setMcpDialogView("list");
     setMcpDialogOpen(true);
+
+    if (!activeProjectName) {
+      setMcpServers([]);
+      return;
+    }
+
+    try {
+      const response = await getOpenCodeConfig("project", activeProjectName);
+      setMcpServers(toMcpServers(response.config.mcp));
+    } catch (error) {
+      setMcpServers([]);
+      toastManager.add({
+        id: `mcp-load-error-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "載入 MCP 設定失敗",
+        type: "error",
+      });
+    }
   }
 
   function openPluginSkillSettings() {
@@ -2573,7 +2557,9 @@ export function AppSidebar({
        const enabled = response.entries.filter((entry) => entry.inherited && entry.enabled !== false).map((entry) => entry.name);
        setEnabledGlobalSkills(enabled);
        setSavedEnabledGlobalSkills(enabled);
-       setSkillSettings(response.entries.map((entry) => ({ id: `${entry.scope}-${entry.name}`, name: entry.name, description: entry.description, scope: entry.scope, inherited: entry.inherited, enabled: entry.enabled !== false, path: entry.path })));
+        const nextSkills = response.entries.map((entry) => ({ id: `${entry.scope}-${entry.name}`, name: entry.name, description: entry.description, scope: entry.scope, inherited: entry.inherited, enabled: entry.enabled !== false, path: entry.path }));
+        setSkillSettings(nextSkills);
+        setSkillToAdd((current) => current && nextSkills.some((skill) => skill.name === current) ? current : nextSkills[0]?.name ?? "");
     } catch (error) { setSkillInstallResult({ status: "error", message: `載入 Skill 失敗：${getApiErrorMessage(error)}` }); }
   }, [activeProjectName]);
 
@@ -2661,48 +2647,116 @@ export function AppSidebar({
     setMcpDialogView("edit");
   }
 
-  function submitMcpServer() {
+  async function submitMcpServer() {
     if (!mcpForm.url.trim()) return;
 
+    let nextServers: McpServer[];
     if (mcpDialogView === "edit" && editingMcpId) {
-      setMcpServers((current) =>
-        current.map((server) =>
-          server.id === editingMcpId ? { ...server, ...mcpForm } : server,
-        ),
+      nextServers = mcpServers.map((server) =>
+        server.id === editingMcpId ? { ...server, ...mcpForm } : server,
       );
     } else {
-      setMcpServers((current) => [
-        ...current,
+      nextServers = [
+        ...mcpServers,
         {
           id: `mcp-${Date.now()}`,
           ...mcpForm,
-          version: "v1.16.2",
-          isDefault: current.length === 0,
+          version: "",
+          isDefault: mcpServers.length === 0,
         },
-      ]);
+      ];
     }
 
-    setMcpDialogView("list");
+    try {
+      await persistMcpServers(nextServers);
+      setMcpServers(nextServers);
+      setMcpDialogView("list");
+    } catch (error) {
+      toastManager.add({
+        id: `mcp-save-error-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "儲存 MCP 設定失敗",
+        type: "error",
+      });
+    }
   }
 
-  function setDefaultMcpServer(serverId: string) {
-    setMcpServers((current) =>
-      current.map((server) => ({
-        ...server,
-        isDefault: server.id === serverId,
-      })),
-    );
+  async function setDefaultMcpServer(serverId: string) {
+    const nextServers = mcpServers.map((server) => ({
+      ...server,
+      isDefault: server.id === serverId,
+    }));
+
+    try {
+      await persistMcpServers(nextServers);
+      setMcpServers(nextServers);
+    } catch (error) {
+      toastManager.add({
+        id: `mcp-default-error-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "更新 MCP 預設值失敗",
+        type: "error",
+      });
+    }
   }
 
-  function deleteMcpServer(serverId: string) {
-    setMcpServers((current) => {
-      const next = current.filter((server) => server.id !== serverId);
-      if (next.some((server) => server.isDefault) || next.length === 0)
-        return next;
-      return next.map((server, index) => ({
-        ...server,
+  async function deleteMcpServer(serverId: string) {
+    const filtered = mcpServers.filter((server) => server.id !== serverId);
+    const nextServers = filtered.some((server) => server.isDefault) || filtered.length === 0
+      ? filtered
+      : filtered.map((server, index) => ({ ...server, isDefault: index === 0 }));
+
+    try {
+      await persistMcpServers(nextServers);
+      setMcpServers(nextServers);
+    } catch (error) {
+      toastManager.add({
+        id: `mcp-delete-error-${Date.now()}`,
+        description: getApiErrorMessage(error),
+        title: "刪除 MCP 設定失敗",
+        type: "error",
+      });
+    }
+  }
+
+  async function persistMcpServers(servers: McpServer[]) {
+    if (!activeProjectName) throw new Error("請先開啟 Project。 ");
+
+    const mcp = Object.fromEntries(servers.map((server) => [server.name.trim() || server.id, {
+      enabled: true,
+      headers: server.username || server.password
+        ? { Authorization: `Basic ${btoa(`${server.username}:${server.password}`)}` }
+        : undefined,
+      type: "remote",
+      url: server.url.trim(),
+    }]));
+
+    await applyOpenCodeConfig("project", {
+      mcp,
+      reason: "mcp-settings-updated",
+      restart: true,
+      wait: true,
+    }, activeProjectName);
+  }
+
+  function toMcpServers(value: unknown): McpServer[] {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+
+    return Object.entries(value).flatMap(([name, entry], index) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const record = entry as Record<string, unknown>;
+      if (typeof record.url !== "string" || !record.url.trim()) return [];
+      const headers = record.headers && typeof record.headers === "object" ? record.headers as Record<string, unknown> : {};
+
+      return [{
+        id: `mcp-${name}`,
         isDefault: index === 0,
-      }));
+        name,
+        password: "",
+        url: record.url,
+        username: typeof headers.Authorization === "string" ? "configured" : "",
+        version: "",
+      }];
     });
   }
 
@@ -3078,7 +3132,7 @@ export function AppSidebar({
         agentConfigMode === "yaml" ? (yamlMode ?? "subagent") : agentForm.mode,
       model:
         agentConfigMode === "yaml"
-          ? yamlModel || "openai/gpt-5.5"
+          ? yamlModel || ""
           : agentForm.model,
       temperature:
         agentConfigMode === "yaml"
@@ -4049,6 +4103,7 @@ export function AppSidebar({
         agentsError={agentsError}
          agentsLoading={agentsLoading}
          agentsToolsHasChanges={agentsToolsHasChanges}
+         availableModels={availableAgentModels}
          availableSkillNames={availableSkillNames}
          batchUpdateNotice={batchUpdateNotice}
          commandEditMode={commandEditMode}
