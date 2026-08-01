@@ -357,6 +357,7 @@ export function PluginSkillModal({
             form={skillForm}
             installResult={skillInstallResult}
             loading={skillImportLoading}
+            currentProjectName={currentProjectName}
             onCancel={() => onViewChange("list")}
             onFormChange={onSkillFormChange}
             onInstallResultChange={onSkillInstallResultChange}

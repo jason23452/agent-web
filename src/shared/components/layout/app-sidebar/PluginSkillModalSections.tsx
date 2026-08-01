@@ -388,6 +388,7 @@ type AddSkillFormProps = {
   onInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onSubmit: () => void
   loading?: boolean
+  currentProjectName?: string
 }
 
 export function AddSkillForm({
@@ -398,6 +399,7 @@ export function AddSkillForm({
   onInstallResultChange,
   onSubmit,
   loading = false,
+  currentProjectName,
 }: AddSkillFormProps) {
   return (
     <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
@@ -453,6 +455,12 @@ export function AddSkillForm({
           </select>
         </label>
       </div>
+      {form.installTarget === "global" && currentProjectName && (
+        <label className="flex items-center gap-2 text-muted-foreground text-xs">
+          <Checkbox checked={form.useInProject} disabled={loading} onCheckedChange={(checked) => onFormChange((current) => ({ ...current, useInProject: checked === true }))} />
+          <span>此 Project 使用新增的 Global Skill</span>
+        </label>
+      )}
       {form.method === "remote" ? (
         <label className="grid gap-1 text-muted-foreground text-xs">
           skills.sh URL 或 npx skills add 指令（每行一筆）

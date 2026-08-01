@@ -2201,6 +2201,14 @@ export function AppSidebar({
         status: result.imported.length > 0 ? "success" : "error",
         message: `匯入 ${result.imported.length} 個，略過 ${result.skipped.length} 個，失敗 ${result.failed.length} 個。${failureDetails ? ` ${failureDetails}` : ""}`,
       });
+      if (scope === "global" && skillForm.useInProject && activeProjectName && result.imported.length > 0) {
+        const importedNames = result.imported.map((item) => item.name);
+        const existingEnabled = skillSettings.filter((skill) => skill.inherited && skill.enabled).map((skill) => skill.name);
+        const nextEnabled = [...new Set([...enabledGlobalSkills, ...existingEnabled, ...importedNames])].sort();
+        await updateSkillProjectSettings({ project: activeProjectName, enabledGlobalSkills: nextEnabled, restart: false, reason: "global-skills-enabled-for-project" });
+        setEnabledGlobalSkills(nextEnabled);
+        setSavedEnabledGlobalSkills(nextEnabled);
+      }
       await loadSkills();
       if (result.imported.length === 0) return;
       setSkillForm(emptySkillForm);

@@ -280,6 +280,7 @@ export const CustomToolsPlugin: Plugin = async () => ({
 
 export const emptySkillForm: SkillForm = {
   method: "remote",
+  useInProject: true,
   name: "",
   description: "",
   installTarget: "project",

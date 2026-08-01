@@ -105,6 +105,7 @@ export type SkillDefinition = {
 
 export type SkillForm = {
   method: "remote" | "upload";
+  useInProject: boolean;
   name: string;
   description: string;
   installTarget: SkillInstallTarget;
