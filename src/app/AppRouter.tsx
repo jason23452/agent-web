@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { HomeRoute } from "@/features/home/router"
-import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, readProjectFileContent } from "@/features/workspace/api/files"
+import { createOrUpdateProjectFile } from "@/features/workspace/api/files"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { createProjectSession, getProjectSession, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
@@ -12,104 +12,35 @@ import { consumeOpenCodeEvents, type OpenCodeEvent } from "@/shared/api/opencode
 import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
 import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders"
 import { getOpenCodeCurrentUsage, getOpenCodeSessionContextUsage } from "@/shared/api/opencodeUsage"
-import type { Agent, Attachment, FileNode, ModelOption, ModelRateLimitUsage, PinContext, Project, Session, ThinkingVariantOption, TokenUsage, WorkspaceMessage } from "@/shared/types/workspace"
+import type { Agent, Attachment, ModelRateLimitUsage, PinContext, Project, Session, TokenUsage, WorkspaceMessage } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
-import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
 import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/app/AppTopbar"
 import { ChatComposer } from "@/shared/components/layout/context/ChatComposer"
 import {
-  buildWorkspaceFileTree,
-  combineRelativePath,
-  decodeTextContent,
   getProjectRouteName,
   getRestartInProgressOperation,
-  getRoutePath,
-  normalizeDirectoryInput,
-  readBrowserRoute,
   readFileAsBase64,
-  toRelativePath,
-  type AppRoute,
   waitForOpenCodeRestartOperation,
   waitForOpenCodeRuntimeReady,
 } from "@/shared/utils/appRouterUtils"
+import { useAppNavigation } from "@/shared/hooks/useAppNavigation"
+import { useProjectContextFiles } from "@/shared/hooks/useProjectContextFiles"
+import {
+  buildOpenCodeModelOptions,
+  buildThinkingVariantOptions,
+  buildTokenUsage,
+  getModelSettingsKey,
+  getPreferredModelKey,
+} from "@/shared/utils/openCodeModelUtils"
 
 const EMPTY_AGENT: Agent = {
   id: "no-primary-agent",
   name: "無 primary agent",
   provider: "OpenCode",
   status: "idle",
-}
-
-const NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE = "尚未啟用專案，請先到側邊欄開啟專案。"
-const DEFAULT_THINKING_VARIANTS: ThinkingVariantOption[] = [
-  { key: "default", label: "Default" },
-  { key: "none", label: "None" },
-  { key: "low", label: "Low" },
-  { key: "medium", label: "Medium" },
-  { key: "high", label: "High" },
-  { key: "xhigh", label: "Xhigh" },
-]
-
-function buildTokenUsage(session: OpenCodeSession | undefined, providers: OpenCodeProviderListResponse | null): TokenUsage[] {
-  if (!session?.model) {
-    return [{ label: "Context", used: 0, limit: 0 }]
-  }
-
-  const provider = providers?.all.find((item) => item.id === session.model?.providerID)
-  const model = provider?.models[session.model.id]
-  const tokens = session.tokens
-  const input = tokens?.input ?? 0
-  const output = tokens?.output ?? 0
-  const reasoning = tokens?.reasoning ?? 0
-  const cacheRead = tokens?.cache.read ?? 0
-  const cacheWrite = tokens?.cache.write ?? 0
-  const used = input + output + reasoning + cacheRead + cacheWrite
-  const limit = model?.limit?.context ?? 0
-  const modelLabel = `${provider?.name ?? session.model.providerID} / ${model?.name ?? session.model.id}`
-
-  return [
-    {
-      cacheRead,
-      cacheWrite,
-      input,
-      label: "Context",
-      limit,
-      modelLabel,
-      output,
-      providerLabel: provider?.name ?? session.model.providerID,
-      reasoning,
-      used,
-    },
-  ]
-}
-
-function getModelKey(providerID: string, modelID: string, variant?: string) {
-  return variant ? `${providerID}:${modelID}:${variant}` : `${providerID}:${modelID}`
-}
-
-function getModelSettingsKey(providerID: string, modelID: string) {
-  return `${providerID}/${modelID}`
-}
-
-function getModelVariants(variants: unknown) {
-  if (Array.isArray(variants)) {
-    return variants
-      .map((variant) => {
-        if (typeof variant === "string") return variant
-        if (variant && typeof variant === "object" && "id" in variant && typeof variant.id === "string") return variant.id
-        return null
-      })
-      .filter((variant): variant is string => Boolean(variant))
-  }
-
-  if (variants && typeof variants === "object") {
-    return Object.keys(variants)
-  }
-
-  return []
 }
 
 function formatAttachmentSize(size: number) {
@@ -122,56 +53,8 @@ function getEventPayload(event: OpenCodeEvent) {
   return event.payload ?? event
 }
 
-function buildOpenCodeModelOptions(providers: OpenCodeProviderListResponse | null): ModelOption[] {
-  if (!providers) return []
-
-  const connectedProviderIDs = new Set(providers.connected)
-
-  return providers.all
-    .filter((provider) => connectedProviderIDs.has(provider.id))
-    .flatMap((provider) => Object.values(provider.models).map((model) => ({
-      contextLimit: model.limit?.context,
-      id: model.id,
-      key: getModelKey(provider.id, model.id, model.variant),
-      name: model.name,
-      providerID: provider.id,
-      providerName: provider.name,
-      reasoning: model.capabilities?.reasoning,
-      status: model.status,
-      variant: model.request?.variant ?? model.variant,
-      variants: getModelVariants(model.variants),
-    })))
-}
-
-function formatThinkingVariantLabel(variant: string) {
-  if (variant === "xhigh") return "Xhigh"
-  return variant.charAt(0).toUpperCase() + variant.slice(1)
-}
-
-function buildThinkingVariantOptions(model: ModelOption | null): ThinkingVariantOption[] {
-  if (!model?.reasoning) return []
-
-  const apiVariants = model.variants?.filter(Boolean) ?? []
-  if (apiVariants.length === 0) return DEFAULT_THINKING_VARIANTS
-
-  return [
-    { key: "default", label: "Default" },
-    ...apiVariants.map((variant) => ({ key: variant, label: formatThinkingVariantLabel(variant) })),
-  ]
-}
-
-function getOpenCodeDefaultModelKey(providers: OpenCodeProviderListResponse | null) {
-  if (!providers) return null
-
-  for (const [providerID, modelID] of Object.entries(providers.default)) {
-    if (providers.connected.includes(providerID)) return getModelKey(providerID, modelID)
-  }
-
-  return null
-}
-
 export function AppRouter() {
-  const [route, setRoute] = useState<AppRoute>(() => readBrowserRoute())
+  const { changeProject, navigateToRoute, navigateToWorkspaceProject, route } = useAppNavigation()
   const [activeAgentId, setActiveAgentId] = useState("")
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [availableAgents, setAvailableAgents] = useState<Agent[]>([])
@@ -180,7 +63,6 @@ export function AppRouter() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
-  const [previewFile, setPreviewFile] = useState<FileNode | null>(null)
   const [layoutLoading, setLayoutLoading] = useState(false)
   const [layoutLoadingLabel, setLayoutLoadingLabel] = useState("Loading...")
   const [projects, setProjects] = useState<Project[]>([])
@@ -197,54 +79,11 @@ export function AppRouter() {
   const [projectSessions, setProjectSessions] = useState<Session[]>([])
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
-  const [contextFileTree, setContextFileTree] = useState<FileTreeNode[]>([])
-  const [contextFileTreeLoading, setContextFileTreeLoading] = useState(false)
-  const [contextFileTreeError, setContextFileTreeError] = useState<string | null>(null)
-  const [contextFileTreeVersion, setContextFileTreeVersion] = useState(0)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [workspaceMessages, setWorkspaceMessages] = useState<WorkspaceMessage[]>([])
   const [messagesError, setMessagesError] = useState<string | null>(null)
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageSending, setMessageSending] = useState(false)
-
-  const triggerContextFileTreeReload = useCallback(() => {
-    setContextFileTreeVersion((current) => current + 1)
-  }, [])
-
-  useEffect(() => {
-    function syncRouteFromBrowser() {
-      const nextRoute = readBrowserRoute()
-      const nextPath = getRoutePath(nextRoute)
-
-      setRoute(nextRoute)
-
-      if (window.location.pathname !== nextPath) {
-        window.history.replaceState(null, "", nextPath)
-      }
-    }
-
-    syncRouteFromBrowser()
-    window.addEventListener("popstate", syncRouteFromBrowser)
-
-    return () => window.removeEventListener("popstate", syncRouteFromBrowser)
-  }, [])
-
-  const navigateToRoute = useCallback((nextRoute: AppRoute, options?: { replace?: boolean }) => {
-    const nextPath = getRoutePath(nextRoute)
-
-    setRoute(nextRoute)
-    if (window.location.pathname !== nextPath) {
-      if (options?.replace) {
-        window.history.replaceState(null, "", nextPath)
-      } else {
-        window.history.pushState(null, "", nextPath)
-      }
-    }
-  }, [])
-
-  const navigateToWorkspaceProject = useCallback((projectName: string, options?: { replace?: boolean }) => {
-    navigateToRoute({ name: "workspaceProject", projectName }, options)
-  }, [navigateToRoute])
 
   const checkedProjectName = route.name === "workspaceProject" ? route.projectName : null
 
@@ -382,6 +221,20 @@ export function AppRouter() {
     ? projects.find((project) => project.id === checkedProjectName || project.name === checkedProjectName)?.path ?? null
     : null
   const activeAgent = availableAgents.find((agent) => agent.id === activeAgentId) ?? availableAgents[0] ?? EMPTY_AGENT
+  const {
+    contextFileTree,
+    contextFileTreeError,
+    contextFileTreeLoading,
+    createContextProjectFile,
+    createContextProjectFolder,
+    deleteContextNode,
+    openProjectFile,
+    previewFile,
+    reloadContextFileTree,
+    setContextFileTreeError,
+    setPreviewFile,
+    uploadContextFiles,
+  } = useProjectContextFiles({ activeProjectPath })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -404,19 +257,7 @@ export function AppRouter() {
   const thinkingVariants = buildThinkingVariantOptions(selectedModel)
   const thinkingVariantKeys = thinkingVariants.map((variant) => variant.key).join("\n")
   const selectedThinkingVariantIsAvailable = thinkingVariants.some((variant) => variant.key === selectedThinkingVariant)
-  const activeSessionVariantModelKey = activeOpenCodeSession?.model
-    ? getModelKey(activeOpenCodeSession.model.providerID, activeOpenCodeSession.model.id, activeOpenCodeSession.model.variant)
-    : null
-  const activeSessionModelKey = activeOpenCodeSession?.model
-    ? getModelKey(activeOpenCodeSession.model.providerID, activeOpenCodeSession.model.id)
-    : null
-  const preferredModelKey = activeSessionVariantModelKey && modelOptions.some((model) => model.key === activeSessionVariantModelKey)
-    ? activeSessionVariantModelKey
-    : activeSessionModelKey && modelOptions.some((model) => model.key === activeSessionModelKey)
-      ? activeSessionModelKey
-      : activeAgent.providerID && activeAgent.modelID
-      ? getModelKey(activeAgent.providerID, activeAgent.modelID)
-      : getOpenCodeDefaultModelKey(openCodeProviderCatalog) ?? modelOptions[0]?.key ?? null
+  const preferredModelKey = getPreferredModelKey(activeOpenCodeSession, activeAgent, modelOptions, openCodeProviderCatalog)
   const modelOptionKeys = modelOptions.map((model) => model.key).join("\n")
   const selectedModelIsAvailable = Boolean(selectedModelKey && modelOptions.some((model) => model.key === selectedModelKey))
 
@@ -535,14 +376,14 @@ export function AppRouter() {
       }
 
       if (payload.type === "file.edited") {
-        triggerContextFileTreeReload()
+        reloadContextFileTree()
       }
     }, controller.signal).catch((error) => {
       if (!controller.signal.aborted) console.warn(getApiErrorMessage(error))
     })
 
     return () => controller.abort()
-  }, [activeProjectPath, activeSessionId, loadWorkspaceMessages, triggerContextFileTreeReload])
+  }, [activeProjectPath, activeSessionId, loadWorkspaceMessages, reloadContextFileTree])
 
   useEffect(() => {
     const fallbackProviderID = openCodeProviderCatalog?.connected.find((providerID) => providerID !== "opencode")
@@ -584,161 +425,6 @@ export function AppRouter() {
     return () => controller.abort()
   }, [activeAgent.providerID, activeOpenCodeSessionDetail?.model?.providerID, openCodeProviderCatalog?.connected, selectedModel?.providerID])
 
-  const openProjectFile = useCallback(async (file: FileTreeNode) => {
-    if (!activeProjectPath) return
-
-    const queryPath = toRelativePath(activeProjectPath, file.absolute || file.path || file.id)
-    setPreviewFile({
-      ...file,
-      contentLoading: true,
-      contentError: null,
-      contentType: undefined,
-    })
-
-    try {
-      const response = await readProjectFileContent(activeProjectPath, queryPath)
-
-      setPreviewFile({
-        ...file,
-        content: response.type === "text" ? decodeTextContent(response.content, response.encoding) : undefined,
-        contentType: response.type,
-        contentLoading: false,
-        contentError: null,
-      })
-    } catch (error) {
-      setPreviewFile({
-        ...file,
-        contentLoading: false,
-        contentError: error instanceof Error ? error.message : getApiErrorMessage(error),
-        contentType: "text",
-      })
-    }
-  }, [activeProjectPath])
-
-  const createContextProjectFile = useCallback(async (directory: string, itemName?: string) => {
-    if (!activeProjectPath) return
-
-    const fileName = itemName ?? window.prompt("輸入新檔名", "")?.trim()
-    if (!fileName) return
-
-    const targetDirectory = combineRelativePath(directory, fileName)
-
-    try {
-      await createOrUpdateProjectFile({
-        directory: activeProjectPath,
-        path: targetDirectory,
-        content: "",
-      })
-
-      setContextFileTreeError(null)
-      triggerContextFileTreeReload()
-    } catch (error) {
-      setContextFileTreeError(getApiErrorMessage(error))
-    }
-  }, [activeProjectPath, triggerContextFileTreeReload])
-
-  const createContextProjectFolder = useCallback(async (directory: string, itemName?: string) => {
-    if (!activeProjectPath) return
-
-    const folderName = itemName ?? window.prompt("輸入新資料夾名稱", "")?.trim()
-    if (!folderName) return
-
-    const targetDirectory = combineRelativePath(directory, folderName)
-
-    try {
-      await createProjectDirectory({
-        directory: activeProjectPath,
-        path: targetDirectory,
-      })
-
-      setContextFileTreeError(null)
-      triggerContextFileTreeReload()
-    } catch (error) {
-      setContextFileTreeError(getApiErrorMessage(error))
-    }
-  }, [activeProjectPath, triggerContextFileTreeReload])
-
-  const reloadContextFileTree = useCallback(async (directory: string, signal: AbortSignal) => {
-    setContextFileTreeLoading(true)
-    setContextFileTreeError(null)
-
-    try {
-      const tree = await buildWorkspaceFileTree(directory, signal)
-      if (signal.aborted) return
-
-      setContextFileTree(tree)
-    } catch (error) {
-      if (signal.aborted) return
-
-      setContextFileTree([])
-      setContextFileTreeError(error instanceof Error ? error.message : "讀取專案檔案樹失敗。")
-    } finally {
-      if (!signal.aborted) {
-        setContextFileTreeLoading(false)
-      }
-    }
-  }, [])
-
-  const deleteContextNode = useCallback(async (node: FileTreeNode) => {
-    if (!activeProjectPath) return
-
-    const nodePath = normalizeDirectoryInput(node.path || toRelativePath(activeProjectPath, node.absolute || node.id))
-    if (!nodePath || nodePath === ".") {
-      setContextFileTreeError("無法刪除此節點。")
-      return
-    }
-
-    const isFolder = node.type === "folder"
-
-    try {
-      await deleteProjectFile({
-        directory: activeProjectPath,
-        path: nodePath,
-        recursive: isFolder,
-      })
-
-      setContextFileTreeError(null)
-      triggerContextFileTreeReload()
-    } catch (error) {
-      setContextFileTreeError(getApiErrorMessage(error))
-    }
-  }, [activeProjectPath, triggerContextFileTreeReload])
-
-  const uploadContextFiles = useCallback(async (files: readonly File[], directory: string) => {
-    if (!activeProjectPath) return
-
-    const list = Array.from(files)
-    if (list.length === 0) return
-
-    setContextFileTreeLoading(true)
-
-    try {
-      const targetDirectory = normalizeDirectoryInput(directory)
-
-      await Promise.all(
-        list.map(async (item) => {
-          const encoded = await readFileAsBase64(item)
-          const filePath = combineRelativePath(targetDirectory, item.name)
-
-          return createOrUpdateProjectFile({
-            directory: activeProjectPath,
-            path: filePath,
-            content: encoded,
-            encoding: "base64",
-            overwrite: true,
-          })
-        }),
-      )
-
-      setContextFileTreeError(null)
-      triggerContextFileTreeReload()
-    } catch (error) {
-      setContextFileTreeError(getApiErrorMessage(error))
-    } finally {
-      setContextFileTreeLoading(false)
-    }
-  }, [activeProjectPath, triggerContextFileTreeReload])
-
   const createProject = useCallback(async (name: string) => {
     const response = await createManagedProject({
       displayName: name,
@@ -771,20 +457,6 @@ export function AppRouter() {
 
     navigateToRoute({ name: "workspace" }, { replace: true })
   }, [navigateToRoute, projects, route])
-
-  useEffect(() => {
-    if (!activeProjectPath) {
-      return
-    }
-
-    const directory = activeProjectPath
-
-    const controller = new AbortController()
-
-    Promise.resolve().then(() => reloadContextFileTree(directory, controller.signal))
-
-    return () => controller.abort()
-  }, [activeProjectPath, contextFileTreeVersion, reloadContextFileTree])
 
   const createSession = useCallback(async () => {
     if (!checkedProjectName || !activeProjectPath) {
@@ -867,8 +539,8 @@ export function AppRouter() {
       ...uploaded,
     ])
     setContextFileTreeError(null)
-    triggerContextFileTreeReload()
-  }, [activeProjectPath, triggerContextFileTreeReload])
+    reloadContextFileTree()
+  }, [activeProjectPath, reloadContextFileTree, setContextFileTreeError])
 
   function removeAttachment(id: string) {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
@@ -949,10 +621,6 @@ export function AppRouter() {
     }
   }, [activeAgent.id, activeProjectPath, activeSessionId, selectedModel, selectedThinkingVariant])
 
-  function changeProject(projectPath: string) {
-    navigateToWorkspaceProject(getProjectRouteName(projectPath))
-  }
-
   function pinPreviewContext(context: PinContext) {
     setPinContext(context)
     setPreviewFile(null)
@@ -967,11 +635,6 @@ export function AppRouter() {
       <HomeRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
     )
 
-  const renderedContextFileTree = activeProjectPath ? contextFileTree : []
-  const renderedContextFileTreeLoading = activeProjectPath ? contextFileTreeLoading : false
-  const renderedContextFileTreeError = activeProjectPath
-    ? contextFileTreeError
-    : NO_ACTIVE_PROJECT_FILE_TREE_MESSAGE
   const topbarTokenUsage = activeOpenCodeContextUsage ?? buildTokenUsage(activeOpenCodeSession, openCodeProviderCatalog)
   const modelCatalogLoading = Boolean(activeProjectPath && sessionsLoading && !openCodeProviderCatalog)
 
@@ -980,9 +643,9 @@ export function AppRouter() {
       ariaLabel="AICaht agent workspace"
       aside={
           <AppContextPanel
-            fileTree={renderedContextFileTree}
-            loading={renderedContextFileTreeLoading}
-            message={renderedContextFileTreeError}
+            fileTree={contextFileTree}
+            loading={contextFileTreeLoading}
+            message={contextFileTreeError}
             projectActive={Boolean(activeProjectPath)}
             open={contextPanelOpen}
             onClose={() => setContextPanelOpen(false)}
