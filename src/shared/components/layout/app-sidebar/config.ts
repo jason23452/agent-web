@@ -556,6 +556,7 @@ export const initialToolDefinitions: ToolDefinition[] = [
 
 export const emptyAgentForm: AgentForm = {
   name: "",
+  installTarget: "project",
   description: "",
   mode: "subagent",
   model: "openai/gpt-5.5",

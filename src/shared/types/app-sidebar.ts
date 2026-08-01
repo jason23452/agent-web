@@ -121,6 +121,11 @@ export type AgentDefinition = {
   name: string;
   description: string;
   scope: "system" | "custom";
+  installTarget?: "project" | "global";
+  inherited?: boolean;
+  overridesGlobal?: boolean;
+  registryPath?: string;
+  registryType?: "file" | "directory";
   mode: "primary" | "subagent" | "all";
   model: string;
   tools: string[];
@@ -146,6 +151,7 @@ export type AgentDefinition = {
 
 export type AgentForm = {
   name: string;
+  installTarget: "project" | "global";
   description: string;
   mode: AgentDefinition["mode"];
   model: string;
@@ -178,6 +184,7 @@ export type ToolDefinition = {
   source: "built-in" | "custom";
   installTarget?: "project" | "global";
   inherited?: boolean;
+  overridesGlobal?: boolean;
   registryPath?: string;
   registryType?: "file" | "directory";
   runtime?: "js-ts";
@@ -211,4 +218,18 @@ export type AgentConfigMode = "interface" | "yaml";
 export type InstallResult = {
   status: "success" | "error";
   message: string;
+};
+
+export type RegistryConfigScope = "project" | "global";
+
+export type PendingRegistryUpsert = {
+  scope: RegistryConfigScope;
+  name: string;
+  content: string;
+  filename?: string;
+};
+
+export type PendingRegistryDelete = {
+  scope: RegistryConfigScope;
+  name: string;
 };

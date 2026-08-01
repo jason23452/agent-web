@@ -47,6 +47,7 @@ type AgentsToolsModalProps = {
   onAgentToolTabChange: Dispatch<SetStateAction<AgentToolTab>>;
   onAgentYamlChange: (value: string) => void;
   onConfirmBatchUpdate: () => void;
+  onCancelBatchUpdate: () => void;
   onDeleteAgent: (agentId: string) => void;
   onDeleteTool: (tool: ToolDefinition) => void;
   onGetCallableSubagentOptions: (
@@ -116,6 +117,7 @@ export function AgentsToolsModal({
   onAgentToolTabChange,
   onAgentYamlChange,
   onConfirmBatchUpdate,
+  onCancelBatchUpdate,
   onDeleteAgent,
   onDeleteTool,
   onGetCallableSubagentOptions,
@@ -183,13 +185,13 @@ export function AgentsToolsModal({
               ? "OpenCode 工具說明"
             : "介面設定 / YAML 設定"
         }
-         footer={!projectRequired && (
+         footer={(
           <>
             <p className="text-muted-foreground text-xs">
               請在儲存後重新整理 OpenCode 伺服器以套用變更。
             </p>
             <div className="flex items-center gap-2">
-              <Button onClick={() => onOpenChange(false)} size="lg" variant="outline">
+               <Button onClick={onCancelBatchUpdate} size="lg" variant="outline">
               取消
               </Button>
             <Button
@@ -208,7 +210,7 @@ export function AgentsToolsModal({
         </>
         )}
         headerActions={
-          view === "list" && !projectRequired && (
+           view === "list" && !projectRequired && (
             <Button
               onClick={agentToolTab === "tools" ? onOpenAddToolMode : onOpenAddAgentMode}
               size="sm"
@@ -227,15 +229,19 @@ export function AgentsToolsModal({
            ? "智能體 / 工具"
            : view === "detail"
               ? "智能體設定"
-              : view === "tool-config"
-                ? toolEditMode === "add"
-                  ? "新增工具"
-                  : "編輯工具"
+               : view === "tool-config"
+                 ? selectedTool?.inherited
+                   ? "建立 Project Tool Override"
+                   : toolEditMode === "add"
+                   ? "新增工具"
+                   : "編輯工具"
                 : view === "tool-detail"
                   ? "工具說明"
-                  : agentEditMode === "add"
-                    ? "新增智能體"
-                    : "編輯智能體"
+                   : selectedAgent?.inherited
+                     ? "建立 Project Agent Override"
+                     : agentEditMode === "add"
+                     ? "新增智能體"
+                     : "編輯智能體"
       }
     >
       {view === "list" && (
@@ -243,8 +249,8 @@ export function AgentsToolsModal({
           agents={agents}
           agentsError={agentsError}
           agentsLoading={agentsLoading}
-          agentToolTab={agentToolTab}
-          projectRequired={projectRequired}
+           agentToolTab={agentToolTab}
+            projectRequired={projectRequired}
           onAgentToolTabChange={onAgentToolTabChange}
           onDeleteAgent={onDeleteAgent}
           onDeleteTool={onDeleteTool}

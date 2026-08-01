@@ -30,10 +30,13 @@ import {
   type OpenCodeProviderListResponse,
 } from "@/shared/api/opencodeProviders";
 import {
-  listEffectiveProjectTools,
+  deleteAgentRegistryEntry,
+  deleteToolRegistryEntry,
+  readAgentRegistryEntry,
   readToolRegistryEntry,
   testToolScript,
   upsertPluginRegistryEntry,
+  upsertAgentRegistryEntry,
   deletePluginRegistryEntry,
   listOpenCodeRegistryEntries,
   readSkillRegistryEntry,
@@ -91,6 +94,9 @@ import type {
   PluginSkillTab,
   ProjectDialogView,
   SkillDefinition,
+  PendingRegistryDelete,
+  PendingRegistryUpsert,
+  RegistryConfigScope,
   ToolDefinition,
   ToolEditMode,
 } from "@/shared/types/app-sidebar";
@@ -242,6 +248,30 @@ function toAgentDefinition(agent: OpenCodeAgent): AgentDefinition {
     permissionRulesJson: Array.isArray(agent.permission)
       ? stringifyJson(agent.permission)
       : "",
+    installTarget: "project",
+  };
+}
+
+function toRegistryAgentDefinition(
+  entry: OpenCodeRegistryEntry,
+  runtimeAgent?: AgentDefinition,
+): AgentDefinition {
+  return {
+    ...(runtimeAgent ?? {
+      ...emptyAgentForm,
+      id: entry.name,
+      name: entry.name,
+      description: "OpenCode custom agent.",
+      scope: "custom",
+    }),
+    id: runtimeAgent?.id ?? entry.name,
+    name: entry.name,
+    scope: runtimeAgent?.scope === "system" ? "system" : "custom",
+    installTarget: entry.scope,
+    inherited: entry.inherited,
+    overridesGlobal: entry.overridesGlobal,
+    registryPath: entry.path,
+    registryType: entry.type,
   };
 }
 
@@ -266,6 +296,7 @@ function toToolDefinition(
     source: "custom",
     installTarget: registryEntry?.scope ?? "project",
     inherited: registryEntry?.inherited,
+    overridesGlobal: registryEntry?.overridesGlobal,
     registryPath: registryEntry?.path,
     registryType: registryEntry?.type,
     runtime: "js-ts",
@@ -654,6 +685,7 @@ export function AppSidebar({
   const [agentConfigMode, setAgentConfigMode] =
     useState<AgentConfigMode>("interface");
   const [agentToolTab, setAgentToolTab] = useState<AgentToolTab>("agents");
+  const [agentsToolsScope, setAgentsToolsScope] = useState<RegistryConfigScope>("project");
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(false);
@@ -661,6 +693,10 @@ export function AppSidebar({
   const [toolsError, setToolsError] = useState<string | null>(null);
   const [toolsLoading, setToolsLoading] = useState(false);
   const [agentsToolsHasChanges, setAgentsToolsHasChanges] = useState(false);
+  const [pendingAgentUpserts, setPendingAgentUpserts] = useState<Record<string, PendingRegistryUpsert>>({});
+  const [pendingAgentDeletes, setPendingAgentDeletes] = useState<Record<string, PendingRegistryDelete>>({});
+  const [pendingToolUpserts, setPendingToolUpserts] = useState<Record<string, PendingRegistryUpsert>>({});
+  const [pendingToolDeletes, setPendingToolDeletes] = useState<Record<string, PendingRegistryDelete>>({});
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
   const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
@@ -1220,7 +1256,7 @@ export function AppSidebar({
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => {
-      if (!activeProjectPath) {
+      if (agentsToolsScope === "project" && !activeProjectPath) {
         setAgents([]);
         setSelectedAgentId(null);
         setAgentsError("請先開啟專案後再查看 OpenCode agents。");
@@ -1238,23 +1274,89 @@ export function AppSidebar({
       setToolsLoading(true);
       setToolsError(null);
 
-      void listProjectAgents(activeProjectPath, { signal: controller.signal })
-        .then((response) => {
+      if (agentsToolsScope === "global") {
+        void Promise.all([
+          listOpenCodeRegistryEntries("global", "agents", undefined, false, { signal: controller.signal }),
+          listOpenCodeRegistryEntries("global", "tools", undefined, false, { signal: controller.signal }),
+        ])
+          .then(([agentResponse, toolResponse]) => {
+            if (controller.signal.aborted) return;
+
+            const nextAgents = agentResponse.entries
+              .map((entry) => toRegistryAgentDefinition(entry))
+              .sort(sortAgentDefinitions);
+            const nextTools = toolResponse.entries
+              .map((entry) => toToolDefinition(entry.name, entry))
+              .sort(sortToolDefinitions);
+            setAgents(nextAgents);
+            setToolDefinitions(nextTools);
+            setSelectedAgentId((current) =>
+              current && nextAgents.some((agent) => agent.id === current) ? current : null,
+            );
+            setSelectedToolId((current) =>
+              current && nextTools.some((tool) => tool.id === current) ? current : null,
+            );
+            setToolToAdd((current) =>
+              current && nextTools.some((tool) => tool.name === current)
+                ? current
+                : nextTools[0]?.name ?? "",
+            );
+          })
+          .catch((error) => {
+            if (controller.signal.aborted) return;
+            setAgents([]);
+            setToolDefinitions([]);
+            setSelectedAgentId(null);
+            setSelectedToolId(null);
+            setToolToAdd("");
+            setAgentsError(getApiErrorMessage(error));
+            setToolsError(getApiErrorMessage(error));
+          })
+          .finally(() => {
+            if (controller.signal.aborted) return;
+            setAgentsLoading(false);
+            setToolsLoading(false);
+          });
+        return;
+      }
+
+      void Promise.all([
+        listProjectAgents(activeProjectPath, { signal: controller.signal }),
+        listOpenCodeRegistryEntries("project", "agents", activeProjectName, true, { signal: controller.signal }),
+      ])
+        .then(([runtimeAgents, registryResponse]) => {
           if (controller.signal.aborted) return;
 
-          const nextAgents = response
-            .map(toAgentDefinition)
+          const runtimeByName = new Map(
+            runtimeAgents.map((agent) => [agent.name, toAgentDefinition(agent)]),
+          );
+          const registryEntries = registryResponse.entries;
+          const names = new Set([
+            ...runtimeAgents.map((agent) => agent.name),
+            ...registryEntries.map((entry) => entry.name),
+          ]);
+          const registryByName = new Map(
+            registryEntries.map((entry) => [entry.name, entry]),
+          );
+          const nextAgents = [...names]
+            .map((name) => {
+              const entry = registryByName.get(name);
+              const runtimeAgent = runtimeByName.get(name);
+              return entry
+                ? toRegistryAgentDefinition(entry, runtimeAgent)
+                : runtimeAgent
+                  ? { ...runtimeAgent, installTarget: "project" as const }
+                  : undefined;
+            })
+            .filter((agent): agent is AgentDefinition => Boolean(agent))
             .sort(sortAgentDefinitions);
           setAgents(nextAgents);
           setSelectedAgentId((current) =>
-            current && nextAgents.some((agent) => agent.id === current)
-              ? current
-              : null,
+            current && nextAgents.some((agent) => agent.id === current) ? current : null,
           );
         })
         .catch((error) => {
           if (controller.signal.aborted) return;
-
           setAgents([]);
           setSelectedAgentId(null);
           setAgentsError(getApiErrorMessage(error));
@@ -1265,14 +1367,12 @@ export function AppSidebar({
 
       void Promise.all([
         listProjectToolIds(activeProjectPath, { signal: controller.signal }),
-        activeProjectName
-          ? listEffectiveProjectTools(activeProjectName, { signal: controller.signal }).catch(() => null)
-          : Promise.resolve(null),
+        listOpenCodeRegistryEntries("project", "tools", activeProjectName, true, { signal: controller.signal }),
       ])
         .then(([toolIds, registryResponse]) => {
           if (controller.signal.aborted) return;
 
-          const registryEntries = registryResponse?.entries ?? [];
+          const registryEntries = registryResponse.entries;
           const registryEntriesByName = new Map(
             registryEntries.map((entry) => [entry.name, entry]),
           );
@@ -1285,6 +1385,9 @@ export function AppSidebar({
             .map((toolId) => toToolDefinition(toolId, registryEntriesByName.get(toolId)))
             .sort(sortToolDefinitions);
           setToolDefinitions(nextTools);
+          setSelectedToolId((current) =>
+            current && nextTools.some((tool) => tool.id === current) ? current : null,
+          );
           setToolToAdd((current) =>
             current && nextTools.some((tool) => tool.name === current)
               ? current
@@ -1307,7 +1410,7 @@ export function AppSidebar({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [activeProjectName, activeProjectPath, agentsDialogOpen, agentsToolsHasChanges]);
+  }, [activeProjectName, activeProjectPath, agentsDialogOpen, agentsToolsHasChanges, agentsToolsScope]);
 
   function showConfirmationToast({
     description,
@@ -1490,7 +1593,63 @@ export function AppSidebar({
     setBatchUpdateNotice(`${label} 更新中，正在重新啟動 OpenCode server...`);
 
     try {
-      if (scope === "plugins-skills" && pluginConfigMode === "document") {
+      if (scope === "agents-tools") {
+        const pendingAgentDeleteItems = Object.values(pendingAgentDeletes);
+        const pendingToolDeleteItems = Object.values(pendingToolDeletes);
+        const pendingAgentUpsertItems = Object.values(pendingAgentUpserts);
+        const pendingToolUpsertItems = Object.values(pendingToolUpserts);
+
+        if (
+          [...pendingAgentDeleteItems, ...pendingToolDeleteItems, ...pendingAgentUpsertItems, ...pendingToolUpsertItems]
+            .some((item) => item.scope === "project") &&
+          !activeProjectName
+        ) {
+          throw new Error("Project scope 需要先開啟有效的 Project。");
+        }
+
+        for (const item of pendingAgentDeleteItems) {
+          await deleteAgentRegistryEntry(
+            item.scope,
+            item.name,
+            item.scope === "project" ? activeProjectName : undefined,
+          );
+        }
+        for (const item of pendingToolDeleteItems) {
+          await deleteToolRegistryEntry(
+            item.scope,
+            item.name,
+            item.scope === "project" ? activeProjectName : undefined,
+          );
+        }
+        for (const item of pendingAgentUpsertItems) {
+          await upsertAgentRegistryEntry(
+            item.scope,
+            item.name,
+            {
+              content: item.content,
+              filename: item.filename,
+              restart: false,
+              wait: false,
+              reason: "agent-updated",
+            },
+            item.scope === "project" ? activeProjectName : undefined,
+          );
+        }
+        for (const item of pendingToolUpsertItems) {
+          await upsertToolRegistryEntry(
+            item.scope,
+            item.name,
+            {
+              content: item.content,
+              filename: item.filename,
+              restart: false,
+              wait: false,
+              reason: "tool-updated",
+            },
+            item.scope === "project" ? activeProjectName : undefined,
+          );
+        }
+      } else if (pluginConfigMode === "document") {
         await applyOpenCodeConfig(pluginConfigScope, {
           content: pluginDocument,
           restart: false,
@@ -1597,6 +1756,10 @@ export function AppSidebar({
         }
       }
       await onRestartOpenCode(`Apply ${label} modal updates`);
+      setPendingAgentUpserts({});
+      setPendingAgentDeletes({});
+      setPendingToolUpserts({});
+      setPendingToolDeletes({});
       setPendingPluginFiles({});
        setPendingPluginDeletes({});
        setPendingPluginScopeMoves({});
@@ -2361,6 +2524,7 @@ export function AppSidebar({
   function openAgentsList() {
     setAgentDialogView("list");
     setAgentToolTab("agents");
+    if (!agentsToolsHasChanges) setAgentsToolsScope("project");
     setSelectedToolId(null);
     setGuidanceTool(null);
     setGuidanceSkill(null);
@@ -2368,13 +2532,30 @@ export function AppSidebar({
     setAgentsDialogOpen(true);
   }
 
+  function cancelAgentsToolsChanges() {
+    if (!agentsToolsHasChanges) {
+      setAgentsDialogOpen(false);
+      return;
+    }
+
+    setPendingAgentUpserts({});
+    setPendingAgentDeletes({});
+    setPendingToolUpserts({});
+    setPendingToolDeletes({});
+    setAgentsToolsHasChanges(false);
+    setBatchUpdateNotice("");
+    setAgentDialogView("list");
+    setSelectedAgentId(null);
+    setSelectedToolId(null);
+  }
+
   function openAddAgentMode() {
     setAgentEditMode("add");
     setEditingAgentId(null);
     setSelectedAgentId(null);
     setAgentConfigMode("interface");
-    setAgentForm(emptyAgentForm);
-    setAgentYaml(agentToYaml(emptyAgentForm));
+    setAgentForm({ ...emptyAgentForm, installTarget: agentsToolsScope });
+    setAgentYaml(agentToYaml({ ...emptyAgentForm, installTarget: agentsToolsScope }));
     setGuidanceTool(null);
     setGuidanceSkill(null);
     setGuidanceSubagent(null);
@@ -2385,7 +2566,11 @@ export function AppSidebar({
     setToolEditMode("add");
     setEditingToolId(null);
     setSelectedToolId(null);
-    setToolForm(emptyToolForm);
+    setToolForm({
+      ...emptyToolForm,
+      installTarget: agentsToolsScope,
+      entry: getToolEntryPath("my-tool", agentsToolsScope),
+    });
     setToolTestResult(null);
     setAgentDialogView("tool-config");
   }
@@ -2399,13 +2584,13 @@ export function AppSidebar({
       name: tool.name,
       description: tool.description,
       category: tool.category,
-      installTarget: tool.installTarget ?? "project",
+      installTarget: tool.inherited ? "project" : tool.installTarget ?? "project",
       runtime: tool.runtime ?? "js-ts",
       entry:
-        tool.entry ??
+        (tool.inherited ? undefined : tool.entry) ??
         getToolEntryPath(
           tool.name,
-          tool.installTarget ?? "project",
+          tool.inherited ? "project" : tool.installTarget ?? "project",
         ),
       code: tool.code ?? "",
       testInput: tool.testInput ?? emptyToolForm.testInput,
@@ -2458,6 +2643,25 @@ export function AppSidebar({
     }
   }
 
+  async function loadAgentRegistryContent(agent: AgentDefinition) {
+    if (!agent.installTarget) return;
+    if (agent.installTarget === "project" && !activeProjectName) return;
+
+    try {
+      const response = await readAgentRegistryEntry(
+        agent.installTarget,
+        agent.name,
+        agent.installTarget === "project" ? activeProjectName : undefined,
+      );
+      const content = response.content ?? Object.values(response.files ?? {})[0] ?? "";
+      if (!content) return;
+      setAgentYaml(content);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return;
+      setAgentsError(`讀取 agent 內容失敗：${getApiErrorMessage(error)}`);
+    }
+  }
+
   function openToolDetail(tool: ToolDefinition) {
     setSelectedToolId(tool.id);
     setAgentToolTab("tools");
@@ -2476,9 +2680,10 @@ export function AppSidebar({
     setAgentEditMode("edit");
     setEditingAgentId(agent.id);
     setSelectedAgentId(agent.id);
-    setAgentConfigMode("interface");
+    setAgentConfigMode(agentsToolsScope === "global" ? "yaml" : "interface");
     setAgentForm({
       name: agent.name,
+      installTarget: agent.inherited ? "project" : agent.installTarget ?? agentsToolsScope,
       description: agent.description,
       mode: agent.mode,
       model: agent.model,
@@ -2507,6 +2712,7 @@ export function AppSidebar({
     setGuidanceSkill(null);
     setGuidanceSubagent(null);
     setAgentDialogView("config");
+    if (agent.installTarget) void loadAgentRegistryContent(agent);
   }
 
   function switchAgentConfigMode(mode: AgentConfigMode) {
@@ -2538,6 +2744,23 @@ export function AppSidebar({
       .match(/^prompt:\s*"?\{file:(.+?)\}"?$/m)?.[1]
       ?.trim();
     const yamlPrompt = agentYaml.split("---").slice(2).join("---").trim();
+    const currentAgent = editingAgentId
+      ? agents.find((agent) => agent.id === editingAgentId)
+      : undefined;
+    const existingAgentWithName = agents.find((agent) => agent.name === (
+      agentConfigMode === "yaml" ? yamlName : agentForm.name.trim()
+    ));
+    const targetScope: RegistryConfigScope =
+      agentEditMode === "add"
+        ? agentForm.installTarget
+        : currentAgent?.inherited
+          ? "project"
+          : agentForm.installTarget;
+    if (targetScope === "project" && !activeProjectName) {
+      setAgentsError("Project scope 需要先開啟有效的 Project。");
+      return;
+    }
+
     const nextAgent: AgentDefinition = {
       id: editingAgentId ?? `agent-${Date.now()}`,
       name:
@@ -2549,6 +2772,12 @@ export function AppSidebar({
           ? yamlDescription || "透過 YAML 新增的 opencode agent。"
           : agentForm.description.trim() || "透過介面新增的 opencode agent。",
       scope: "custom",
+      installTarget: targetScope,
+      inherited: agentsToolsScope === "project" && targetScope === "global",
+      overridesGlobal:
+        targetScope === "project"
+          ? currentAgent?.inherited || currentAgent?.overridesGlobal || existingAgentWithName?.inherited
+          : undefined,
       mode:
         agentConfigMode === "yaml" ? (yamlMode ?? "subagent") : agentForm.mode,
       model:
@@ -2619,14 +2848,66 @@ export function AppSidebar({
         agentConfigMode === "yaml" ? yamlPrompt || "" : agentForm.systemPrompt,
     };
 
+    const content = agentConfigMode === "yaml" ? agentYaml : agentToYaml(nextAgent);
+    const filename = `${nextAgent.name}.md`;
+    const sourceScope = currentAgent?.installTarget ?? agentsToolsScope;
+    const sourceName = currentAgent?.name ?? nextAgent.name;
+    const sourceKey = `${sourceScope}:${sourceName}`;
+    const upsertKey = `${targetScope}:${nextAgent.name}`;
+    const sourceIsDraft = Boolean(
+      currentAgent &&
+      currentAgent.id.startsWith("agent-") &&
+      pendingAgentUpserts[sourceKey],
+    );
+    const shouldDeleteSource = Boolean(
+      currentAgent &&
+      (sourceScope !== targetScope || sourceName !== nextAgent.name) &&
+      !sourceIsDraft &&
+      !(currentAgent.inherited && sourceScope === "global"),
+    );
+
+    if (shouldDeleteSource) {
+      setPendingAgentDeletes((current) => ({
+        ...current,
+        [sourceKey]: { scope: sourceScope, name: sourceName },
+      }));
+    }
+    if (sourceIsDraft && sourceKey !== upsertKey) {
+      setPendingAgentUpserts((current) => {
+        const next = { ...current };
+        delete next[sourceKey];
+        return next;
+      });
+    }
+    setPendingAgentUpserts((current) => ({
+      ...current,
+      [upsertKey]: {
+        scope: targetScope,
+        name: nextAgent.name,
+        content,
+        filename,
+      },
+    }));
+    setPendingAgentDeletes((current) => {
+      const next = { ...current };
+      delete next[upsertKey];
+      return next;
+    });
+
     setAgents((current) => {
       if (agentEditMode === "edit" && editingAgentId) {
-        return current.map((agent) =>
-          agent.id === editingAgentId ? nextAgent : agent,
-        );
+        const canShowInCurrentScope =
+          targetScope === agentsToolsScope ||
+          (agentsToolsScope === "project" && targetScope === "global");
+        return canShowInCurrentScope
+          ? current.map((agent) => agent.id === editingAgentId ? nextAgent : agent)
+          : current.filter((agent) => agent.id !== editingAgentId);
       }
 
-      return [...current, nextAgent];
+      const canShowInCurrentScope =
+        targetScope === agentsToolsScope ||
+        (agentsToolsScope === "project" && targetScope === "global");
+      return canShowInCurrentScope ? [...current, nextAgent] : current;
     });
     setAgentsToolsHasChanges(true);
     setBatchUpdateNotice("");
@@ -2634,23 +2915,63 @@ export function AppSidebar({
   }
 
   function deleteAgent(agentId: string) {
-    setAgents((current) =>
-      current
-        .filter((agent) => agent.id !== agentId)
-        .map((agent) => {
-          const nextSubagentGuidance = { ...agent.subagentGuidance };
-          delete nextSubagentGuidance[agentId];
-          return {
-            ...agent,
-            subagents: agent.subagents.filter(
-              (subagentId) => subagentId !== agentId,
-            ),
-            subagentGuidance: nextSubagentGuidance,
-          };
-        }),
-    );
-    setAgentsToolsHasChanges(true);
-    setBatchUpdateNotice("");
+    const agent = agents.find((item) => item.id === agentId);
+    if (!agent || agent.scope === "system") return;
+    if (agent.inherited) {
+      setAgentsError("此 agent 來自 Global inherited，請切換到 Global scope 後刪除。");
+      return;
+    }
+
+    const removeAgent = () => {
+      const scope = agent.installTarget ?? agentsToolsScope;
+      const key = `${scope}:${agent.name}`;
+      setPendingAgentUpserts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      if (!agent.id.startsWith("agent-") || !pendingAgentUpserts[key]) {
+        setPendingAgentDeletes((current) => ({
+          ...current,
+          [key]: { scope, name: agent.name },
+        }));
+      } else {
+        setPendingAgentDeletes((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }
+      setAgents((current) =>
+        current
+          .filter((item) => item.id !== agentId)
+          .map((item) => {
+            const nextSubagentGuidance = { ...item.subagentGuidance };
+            delete nextSubagentGuidance[agentId];
+            delete nextSubagentGuidance[agent.name];
+            return {
+              ...item,
+              subagents: item.subagents.filter(
+                (subagentId) => subagentId !== agentId && subagentId !== agent.name,
+              ),
+              subagentGuidance: nextSubagentGuidance,
+            };
+          }),
+      );
+      setAgentsToolsHasChanges(true);
+      setBatchUpdateNotice("");
+    };
+
+    if ((agent.installTarget ?? agentsToolsScope) === "global") {
+      showConfirmationToast({
+        id: `agent-delete-confirm-${agent.name}`,
+        title: `刪除 Global agent ${agent.name}？`,
+        description: "刪除後會影響所有 Project，按下 modal 底部的「更新」後才會真正刪除。",
+        onConfirm: removeAgent,
+      });
+      return;
+    }
+    removeAgent();
   }
 
   async function submitToolConfig() {
@@ -2670,54 +2991,102 @@ export function AppSidebar({
       getToolEntryPath(name, installTarget);
     const filename = getRegistryFilenameFromEntry(name, entry);
 
+    const currentTool = editingToolId
+      ? toolDefinitions.find((tool) => tool.id === editingToolId)
+      : undefined;
+    const existingToolWithName = toolDefinitions.find((tool) => tool.name === name);
+    const targetScope: RegistryConfigScope =
+      toolEditMode === "add"
+        ? installTarget
+        : currentTool?.inherited
+          ? "project"
+          : installTarget;
+    if (targetScope === "project" && !activeProjectName) {
+      setToolTestResult({
+        status: "error",
+        message: "請先開啟有效 project，才能建立 project-local tool。",
+      });
+      return;
+    }
     const nextTool: ToolDefinition = {
-      id: editingToolId ?? name,
+      id: editingToolId ?? `tool-${Date.now()}`,
       name,
       description:
         toolForm.description.trim() ||
         `Custom ${installTarget === "global" ? "global" : "project"} tool.`,
       category: toolForm.category.trim() || "Custom",
       source: "custom",
-      installTarget,
+      installTarget: targetScope,
+      inherited: agentsToolsScope === "project" && targetScope === "global",
+      overridesGlobal:
+        targetScope === "project"
+          ? currentTool?.inherited || currentTool?.overridesGlobal || existingToolWithName?.inherited
+          : undefined,
       runtime: toolForm.runtime,
       entry,
       code: toolForm.code,
       testInput: toolForm.testInput,
     };
 
-    try {
-      await upsertToolRegistryEntry(
-        installTarget,
-        name,
-        {
-          content: toolForm.code,
-          ...(filename ? { filename } : {}),
-          reason: `${toolEditMode === "add" ? "Create" : "Update"} ${installTarget} tool ${name}`,
-          restart: false,
-          wait: false,
-        },
-        activeProjectName,
-      );
-    } catch (error) {
-      setToolTestResult({
-        status: "error",
-        message: `保存 Tool 失敗：${getApiErrorMessage(error)}`,
-      });
-      return;
+    const sourceScope = currentTool?.installTarget ?? agentsToolsScope;
+    const sourceName = currentTool?.name ?? name;
+    const sourceKey = `${sourceScope}:${sourceName}`;
+    const upsertKey = `${targetScope}:${name}`;
+    const sourceIsDraft = Boolean(
+      currentTool &&
+      currentTool.id.startsWith("tool-") &&
+      pendingToolUpserts[sourceKey],
+    );
+    const shouldDeleteSource = Boolean(
+      currentTool &&
+      (sourceScope !== targetScope || sourceName !== name) &&
+      !sourceIsDraft &&
+      !(currentTool.inherited && sourceScope === "global"),
+    );
+    if (shouldDeleteSource) {
+      setPendingToolDeletes((current) => ({
+        ...current,
+        [sourceKey]: { scope: sourceScope, name: sourceName },
+      }));
     }
+    if (sourceIsDraft && sourceKey !== upsertKey) {
+      setPendingToolUpserts((current) => {
+        const next = { ...current };
+        delete next[sourceKey];
+        return next;
+      });
+    }
+    setPendingToolUpserts((current) => ({
+      ...current,
+      [upsertKey]: {
+        scope: targetScope,
+        name,
+        content: toolForm.code,
+        filename: filename ?? `${name}.ts`,
+      },
+    }));
+    setPendingToolDeletes((current) => {
+      const next = { ...current };
+      delete next[upsertKey];
+      return next;
+    });
 
     setToolDefinitions((current) => {
       if (toolEditMode === "edit" && editingToolId) {
-        return current.map((tool) =>
-          tool.id === editingToolId && tool.source === "custom"
-            ? nextTool
-            : tool,
-        );
+        const canShowInCurrentScope =
+          targetScope === agentsToolsScope ||
+          (agentsToolsScope === "project" && targetScope === "global");
+        return canShowInCurrentScope
+          ? current.map((tool) => tool.id === editingToolId && tool.source === "custom" ? nextTool : tool)
+          : current.filter((tool) => tool.id !== editingToolId);
       }
 
-      return current.some((tool) => tool.name === name)
-        ? current
-        : [...current, nextTool];
+      const canShowInCurrentScope =
+        targetScope === agentsToolsScope ||
+        (agentsToolsScope === "project" && targetScope === "global");
+      return canShowInCurrentScope
+        ? [...current.filter((tool) => tool.name !== name), nextTool]
+        : current;
     });
     setSelectedToolId(nextTool.id);
     setAgentsToolsHasChanges(true);
@@ -2729,26 +3098,61 @@ export function AppSidebar({
 
   function deleteTool(tool: ToolDefinition) {
     if (tool.source !== "custom") return;
-    setToolDefinitions((current) =>
-      current.filter((item) => item.id !== tool.id),
-    );
-    setAgents((current) =>
-      current.map((agent) => {
-        const permissionKey = getToolPermissionKey(tool.name);
-        const nextPermission = { ...agent.permission };
-        const nextToolGuidance = { ...agent.toolGuidance };
-        delete nextPermission[permissionKey];
-        delete nextToolGuidance[tool.name];
-        return {
-          ...agent,
-          tools: agent.tools.filter((item) => item !== tool.name),
-          permission: nextPermission,
-          toolGuidance: nextToolGuidance,
-        };
-      }),
-    );
-    setAgentsToolsHasChanges(true);
-    setBatchUpdateNotice("");
+    if (tool.inherited) {
+      setToolsError("此 tool 來自 Global inherited，請切換到 Global scope 後刪除。");
+      return;
+    }
+
+    const removeTool = () => {
+      const scope = tool.installTarget ?? agentsToolsScope;
+      const key = `${scope}:${tool.name}`;
+      setPendingToolUpserts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      if (!tool.id.startsWith("tool-") || !pendingToolUpserts[key]) {
+        setPendingToolDeletes((current) => ({
+          ...current,
+          [key]: { scope, name: tool.name },
+        }));
+      } else {
+        setPendingToolDeletes((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }
+      setToolDefinitions((current) => current.filter((item) => item.id !== tool.id));
+      setAgents((current) =>
+        current.map((agent) => {
+          const permissionKey = getToolPermissionKey(tool.name);
+          const nextPermission = { ...agent.permission };
+          const nextToolGuidance = { ...agent.toolGuidance };
+          delete nextPermission[permissionKey];
+          delete nextToolGuidance[tool.name];
+          return {
+            ...agent,
+            tools: agent.tools.filter((item) => item !== tool.name),
+            permission: nextPermission,
+            toolGuidance: nextToolGuidance,
+          };
+        }),
+      );
+      setAgentsToolsHasChanges(true);
+      setBatchUpdateNotice("");
+    };
+
+    if ((tool.installTarget ?? agentsToolsScope) === "global") {
+      showConfirmationToast({
+        id: `tool-delete-confirm-${tool.name}`,
+        title: `刪除 Global tool ${tool.name}？`,
+        description: "刪除後會影響所有 Project，按下 modal 底部的「更新」後才會真正刪除。",
+        onConfirm: removeTool,
+      });
+      return;
+    }
+    removeTool();
   }
 
   async function runToolCallTest() {
@@ -3163,8 +3567,8 @@ export function AppSidebar({
         agentYaml={agentYaml}
         agents={agents}
         agentsError={agentsError}
-        agentsLoading={agentsLoading}
-        agentsToolsHasChanges={agentsToolsHasChanges}
+         agentsLoading={agentsLoading}
+         agentsToolsHasChanges={agentsToolsHasChanges}
         availableSkillNames={availableSkillNames}
         batchUpdateNotice={batchUpdateNotice}
         editingAgentId={editingAgentId}
@@ -3178,7 +3582,8 @@ export function AppSidebar({
         onAgentFormChange={setAgentForm}
         onAgentToolTabChange={setAgentToolTab}
         onAgentYamlChange={setAgentYaml}
-        onConfirmBatchUpdate={() => confirmBatchUpdate("agents-tools")}
+         onConfirmBatchUpdate={() => confirmBatchUpdate("agents-tools")}
+         onCancelBatchUpdate={cancelAgentsToolsChanges}
         onDeleteAgent={deleteAgent}
         onDeleteTool={deleteTool}
         onGetCallableSubagentOptions={getCallableSubagentOptions}

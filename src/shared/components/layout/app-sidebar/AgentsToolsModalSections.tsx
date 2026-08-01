@@ -56,9 +56,13 @@ function getToolSourceLabel(source: ToolDefinition["source"]) {
 }
 
 function getToolTargetLabel(target?: ToolDefinition["installTarget"]) {
-  if (target === "global") return "全域";
-  if (target === "project") return "專案";
-  return "自訂";
+  if (target === "global") return "Global";
+  if (target === "project") return "Project";
+  return "Custom";
+}
+
+function getRegistryScopeLabel(scope?: ToolDefinition["installTarget"]) {
+  return scope === "global" ? "Global" : "Project";
 }
 
 function getToolFormEntryPath(
@@ -183,10 +187,13 @@ export function AgentsToolsList({
                           <span className="truncate font-semibold text-sm">
                             {agent.name}
                           </span>
-                          <Badge size="sm" variant="info">
-                            內建
-                          </Badge>
-                          <Badge size="sm" variant={getAgentModeVariant(agent.mode)}>
+                           <Badge size="sm" variant="info">
+                             內建
+                           </Badge>
+                           <Badge size="sm" variant="outline">
+                             {getRegistryScopeLabel(agent.installTarget)}
+                           </Badge>
+                           <Badge size="sm" variant={getAgentModeVariant(agent.mode)}>
                             {getAgentModeLabel(agent.mode)}
                           </Badge>
                           {agent.hidden && (
@@ -237,9 +244,22 @@ export function AgentsToolsList({
                           <span className="truncate font-semibold text-sm">
                             {agent.name}
                           </span>
-                          <Badge size="sm" variant="success">
-                             自訂
-                          </Badge>
+                           <Badge size="sm" variant="success">
+                              自訂
+                           </Badge>
+                           <Badge size="sm" variant="outline">
+                             {getRegistryScopeLabel(agent.installTarget)}
+                           </Badge>
+                           {agent.inherited && (
+                             <Badge size="sm" variant="info">
+                               Inherited
+                             </Badge>
+                           )}
+                           {agent.overridesGlobal && (
+                             <Badge size="sm" variant="warning">
+                               Overrides Global
+                             </Badge>
+                           )}
                           <Badge size="sm" variant={getAgentModeVariant(agent.mode)}>
                             {getAgentModeLabel(agent.mode)}
                           </Badge>
@@ -401,16 +421,19 @@ export function ToolListItem({
           >
             {getToolSourceLabel(tool.source)}
           </Badge>
-          {tool.source === "custom" && (
-            <Badge size="sm" variant="outline">
-              {getToolTargetLabel(tool.installTarget)}
-            </Badge>
-          )}
-          {tool.inherited && (
+          <Badge size="sm" variant="outline">
+            {getToolTargetLabel(tool.installTarget ?? "project")}
+          </Badge>
+           {tool.inherited && (
             <Badge size="sm" variant="info">
-              inherited
+               Inherited
             </Badge>
-          )}
+           )}
+           {tool.overridesGlobal && (
+             <Badge size="sm" variant="warning">
+               Overrides Global
+             </Badge>
+           )}
           {tool.runtime && (
             <Badge size="sm" variant="info">
               JS/TS
@@ -486,7 +509,7 @@ export function ToolDetailPanel({
           <ToolMetadataItem label="來源" value={getToolSourceLabel(tool.source)} />
           {tool.source === "custom" && (
             <ToolMetadataItem
-              label="安裝目標"
+             label="Install target"
               value={getToolTargetLabel(tool.installTarget)}
             />
           )}
@@ -623,7 +646,7 @@ export function ToolConfigPanel({
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-2 text-muted-foreground text-sm">
-            安裝目標
+            Install target
             <select
               className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               onChange={(event) => {
@@ -639,8 +662,8 @@ export function ToolConfigPanel({
               }}
               value={toolForm.installTarget}
             >
-            <option value="project">專案</option>
-            <option value="global">全域</option>
+            <option value="project">Project</option>
+            <option value="global">Global</option>
             </select>
           </label>
           <label className="grid gap-2 text-muted-foreground text-sm">
@@ -1322,8 +1345,24 @@ export function AgentConfigPanel({
                 OpenCode
               </Badge>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm">
+             <div className="grid gap-3 sm:grid-cols-2">
+               <label className="grid gap-2 text-muted-foreground text-sm">
+                 Install target
+                 <select
+                   className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                   onChange={(event) =>
+                     onAgentFormChange((current) => ({
+                       ...current,
+                       installTarget: event.target.value as AgentForm["installTarget"],
+                     }))
+                   }
+                   value={agentForm.installTarget}
+                 >
+                   <option value="project">Project</option>
+                   <option value="global">Global</option>
+                 </select>
+               </label>
+               <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm">
                 <input
                   checked={agentForm.disable}
                   onChange={(event) =>

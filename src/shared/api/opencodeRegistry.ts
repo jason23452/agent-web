@@ -111,6 +111,54 @@ export function readToolRegistryEntry(
   );
 }
 
+export function readAgentRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest<OpenCodeRegistryReadResponse>(
+    `/bff/opencode-registry/${scope}/agents/${encodeURIComponent(name)}`,
+    {
+      ...config,
+      query: { ...config?.query, project: scope === "project" ? project : undefined },
+    },
+  );
+}
+
+export function upsertAgentRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  body: OpenCodeRegistryUpsertBody,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/agents/${encodeURIComponent(name)}`, {
+    ...config,
+    body,
+    method: "PUT",
+    query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function deleteAgentRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/agents/${encodeURIComponent(name)}`, {
+    ...config,
+    method: "DELETE",
+    query: {
+      ...config?.query,
+      project: scope === "project" ? project : undefined,
+      restart: false,
+      wait: false,
+    },
+  });
+}
+
 export function readSkillRegistryEntry(scope: OpenCodeRegistryScope, name: string, project?: string, config?: ApiRequestConfig) {
   return apiRequest<OpenCodeRegistryReadResponse>(`/bff/opencode-registry/${scope}/skills/${encodeURIComponent(name)}`, {
     ...config,
@@ -139,6 +187,24 @@ export function upsertToolRegistryEntry(
     body,
     method: "PUT",
     query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function deleteToolRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/tools/${encodeURIComponent(name)}`, {
+    ...config,
+    method: "DELETE",
+    query: {
+      ...config?.query,
+      project: scope === "project" ? project : undefined,
+      restart: false,
+      wait: false,
+    },
   });
 }
 
