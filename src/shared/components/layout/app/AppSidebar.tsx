@@ -1507,7 +1507,7 @@ export function AppSidebar({
           );
         }
         for (const [name, move] of Object.entries(pendingPluginScopeMoves)) {
-          if (move.from !== move.to) {
+          if (move.from !== move.to && !(move.from === "global" && move.to === "project")) {
             await deletePluginRegistryEntry(
               move.from,
               name,
@@ -1516,11 +1516,16 @@ export function AppSidebar({
           }
         }
         const deletedRemoteNames = new Set(Object.keys(pendingRemotePluginDeletes));
+        const movedFromGlobalToProject = new Set(
+          Object.entries(pendingPluginScopeMoves)
+            .filter(([, move]) => move.from === "global" && move.to === "project")
+            .map(([name]) => name),
+        );
         const globalPlugins = plugins
-          .filter((plugin) => plugin.installTarget === "global")
+          .filter((plugin) => plugin.installTarget === "global" && !movedFromGlobalToProject.has(plugin.name))
           .filter((plugin) => !deletedRemoteNames.has(plugin.name))
         const projectPlugins = plugins
-          .filter((plugin) => plugin.installTarget !== "global" || plugin.useInProject)
+          .filter((plugin) => plugin.installTarget !== "global" || plugin.useInProject || movedFromGlobalToProject.has(plugin.name))
           .filter((plugin) => !deletedRemoteNames.has(plugin.name))
         const globalPluginNames = globalPlugins.map((plugin) => toPluginConfigEntry(plugin, "global"));
         const projectPluginNames = projectPlugins.map((plugin) => toPluginConfigEntry(plugin, "project"));
