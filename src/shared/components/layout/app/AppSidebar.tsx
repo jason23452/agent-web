@@ -1588,7 +1588,7 @@ export function AppSidebar({
       }
       setBatchUpdateNotice(`${label} 已更新，OpenCode server 已重新啟動。`);
       toastManager.add({
-        id: `batch-update-success-${scope}-${Date.now()}`,
+         id: `batch-update-success-${scope}`,
         title: "OpenCode 已重新啟動",
         description: `${label} 更新已生效。`,
         type: "success",
@@ -1597,7 +1597,7 @@ export function AppSidebar({
       const message = getApiErrorMessage(error);
       setBatchUpdateNotice(`${label} 更新失敗：${message}`);
       toastManager.add({
-        id: `batch-update-error-${scope}-${Date.now()}`,
+         id: `batch-update-error-${scope}`,
         title: "OpenCode 重新啟動失敗",
         description: message,
         type: "error",
