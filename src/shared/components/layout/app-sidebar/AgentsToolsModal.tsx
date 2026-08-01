@@ -4,6 +4,8 @@ import { Button } from "@/shared/components/ui/button";
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import type {
   AgentConfigMode,
+  CommandDefinition,
+  CommandForm,
   AgentDialogView,
   AgentEditMode,
   AgentForm,
@@ -18,6 +20,8 @@ import {
   AgentsToolsList,
   AgentConfigPanel,
   AgentDetailPanel,
+  CommandConfigPanel,
+  CommandDetailPanel,
   ToolConfigPanel,
   ToolDetailPanel,
 } from "./AgentsToolsModalSections";
@@ -35,6 +39,11 @@ type AgentsToolsModalProps = {
   agentsToolsHasChanges: boolean;
   availableSkillNames: string[];
   batchUpdateNotice: string;
+  commandEditMode: "add" | "edit";
+  commandForm: CommandForm;
+  commands: CommandDefinition[];
+  commandsError?: string | null;
+  commandsLoading?: boolean;
   editingAgentId: string | null;
   guidanceSkill: string | null;
   guidanceSubagent: string | null;
@@ -48,6 +57,8 @@ type AgentsToolsModalProps = {
   onAgentYamlChange: (value: string) => void;
   onConfirmBatchUpdate: () => void;
   onCancelBatchUpdate: () => void;
+  onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
+  onDeleteCommand: (command: CommandDefinition) => void;
   onDeleteAgent: (agentId: string) => void;
   onDeleteTool: (tool: ToolDefinition) => void;
   onGetCallableSubagentOptions: (
@@ -58,17 +69,21 @@ type AgentsToolsModalProps = {
   onGuidanceSubagentChange: Dispatch<SetStateAction<string | null>>;
   onGuidanceToolChange: Dispatch<SetStateAction<string | null>>;
   onOpenAddAgentMode: () => void;
+  onOpenAddCommandMode: () => void;
   onOpenAddToolMode: () => void;
   onOpenChange: (open: boolean) => void;
   onOpenAgentDetail: (agent: AgentDefinition) => void;
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
+  onOpenEditCommandMode: (command: CommandDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
+  onOpenCommandDetail: (command: CommandDefinition) => void;
   onOpenToolDetail: (tool: ToolDefinition) => void;
   onRemoveFormSubagent: (subagentId: string) => void;
   onRunToolCallTest: () => Promise<void> | void;
   onSkillToAddChange: (value: string) => void;
   onSubagentToAddChange: (value: string) => void;
   onSubmitAgentConfig: () => void;
+  onSubmitCommandConfig: () => void;
   onSubmitToolConfig: () => void;
   onToolFormChange: Dispatch<SetStateAction<ToolForm>>;
   onToolTestResultChange: Dispatch<SetStateAction<InstallResult | null>>;
@@ -78,6 +93,7 @@ type AgentsToolsModalProps = {
   onUpdateToolGuidance: (tool: string, value: string) => void;
   open: boolean;
   selectedAgent: AgentDefinition | null;
+  selectedCommand: CommandDefinition | null;
   selectedTool: ToolDefinition | null;
   skillToAdd: string;
   subagentToAdd: string;
@@ -105,6 +121,11 @@ export function AgentsToolsModal({
   agentsToolsHasChanges,
   availableSkillNames,
   batchUpdateNotice,
+  commandEditMode,
+  commandForm,
+  commands,
+  commandsError,
+  commandsLoading = false,
   editingAgentId,
   guidanceSkill,
   guidanceSubagent,
@@ -118,6 +139,8 @@ export function AgentsToolsModal({
   onAgentYamlChange,
   onConfirmBatchUpdate,
   onCancelBatchUpdate,
+  onCommandFormChange,
+  onDeleteCommand,
   onDeleteAgent,
   onDeleteTool,
   onGetCallableSubagentOptions,
@@ -125,9 +148,12 @@ export function AgentsToolsModal({
   onGuidanceSubagentChange,
   onGuidanceToolChange,
   onOpenAddAgentMode,
+  onOpenAddCommandMode,
   onOpenAddToolMode,
   onOpenChange,
   onOpenAgentDetail,
+  onOpenCommandDetail,
+  onOpenEditCommandMode,
   onOpenEditAgentMode,
   onOpenEditToolMode,
   onOpenToolDetail,
@@ -136,6 +162,7 @@ export function AgentsToolsModal({
   onSkillToAddChange,
   onSubagentToAddChange,
   onSubmitAgentConfig,
+  onSubmitCommandConfig,
   onSubmitToolConfig,
   onToolFormChange,
   onToolTestResultChange,
@@ -145,6 +172,7 @@ export function AgentsToolsModal({
   onUpdateToolGuidance,
   open,
   selectedAgent,
+  selectedCommand,
   selectedTool,
   skillToAdd,
   subagentToAdd,
@@ -161,7 +189,7 @@ export function AgentsToolsModal({
 }: AgentsToolsModalProps) {
   return (
     <ModalShell
-      ariaLabel="智能體與工具"
+      ariaLabel="智能體、工具與 Commands"
       backButton={
         view !== "list"
           ? {
@@ -171,14 +199,16 @@ export function AgentsToolsModal({
             : undefined
       }
       bodyClassName="p-0"
-      closeAriaLabel="關閉智能體與工具"
+      closeAriaLabel="關閉智能體、工具與 Commands"
       description={
         view === "list"
             ? agentsLoading && agentToolTab === "agents"
              ? "載入 OpenCode 智能體..."
               : toolsLoading && agentToolTab === "tools"
                 ? "載入 OpenCode 工具..."
-              : `共 ${agentToolTab === "agents" ? agents.length : toolDefinitions.length} 筆`
+                : commandsLoading && agentToolTab === "commands"
+                  ? "載入 OpenCode Commands..."
+              : `共 ${agentToolTab === "agents" ? agents.length : agentToolTab === "tools" ? toolDefinitions.length : commands.length} 筆`
           : view === "tool-config"
             ? "JS / TS 自訂工具"
             : view === "tool-detail"
@@ -211,13 +241,23 @@ export function AgentsToolsModal({
         )}
         headerActions={
            view === "list" && !projectRequired && (
-            <Button
-              onClick={agentToolTab === "tools" ? onOpenAddToolMode : onOpenAddAgentMode}
+             <Button
+               onClick={
+                 agentToolTab === "tools"
+                   ? onOpenAddToolMode
+                   : agentToolTab === "commands"
+                     ? onOpenAddCommandMode
+                     : onOpenAddAgentMode
+               }
               size="sm"
               variant="outline"
             >
               <PlusIcon aria-hidden="true" />
-              {agentToolTab === "tools" ? "新增工具" : "新增智能體"}
+               {agentToolTab === "tools"
+                 ? "新增工具"
+                 : agentToolTab === "commands"
+                   ? "新增 Command"
+                   : "新增智能體"}
             </Button>
           )
       }
@@ -226,7 +266,7 @@ export function AgentsToolsModal({
       panelClassName="h-[min(86dvh,640px)]"
         title={
         view === "list"
-           ? "智能體 / 工具"
+            ? "智能體 / 工具 / Commands"
            : view === "detail"
               ? "智能體設定"
                : view === "tool-config"
@@ -235,26 +275,40 @@ export function AgentsToolsModal({
                    : toolEditMode === "add"
                    ? "新增工具"
                    : "編輯工具"
-                : view === "tool-detail"
-                  ? "工具說明"
-                   : selectedAgent?.inherited
-                     ? "建立 Project Agent Override"
-                     : agentEditMode === "add"
-                     ? "新增智能體"
-                     : "編輯智能體"
+                 : view === "tool-detail"
+                   ? "工具說明"
+                   : view === "command-config"
+                     ? selectedCommand?.inherited
+                       ? "建立 Project Command Override"
+                       : commandEditMode === "add"
+                         ? "新增 Command"
+                         : "編輯 Command"
+                     : view === "command-detail"
+                       ? "Command 說明"
+                       : selectedAgent?.inherited
+                         ? "建立 Project Agent Override"
+                         : agentEditMode === "add"
+                           ? "新增智能體"
+                           : "編輯智能體"
       }
     >
       {view === "list" && (
         <AgentsToolsList
           agents={agents}
           agentsError={agentsError}
-          agentsLoading={agentsLoading}
-           agentToolTab={agentToolTab}
-            projectRequired={projectRequired}
-          onAgentToolTabChange={onAgentToolTabChange}
+           agentsLoading={agentsLoading}
+            agentToolTab={agentToolTab}
+          commands={commands}
+          commandsError={commandsError}
+          commandsLoading={commandsLoading}
+             projectRequired={projectRequired}
+           onAgentToolTabChange={onAgentToolTabChange}
+          onDeleteCommand={onDeleteCommand}
           onDeleteAgent={onDeleteAgent}
           onDeleteTool={onDeleteTool}
-          onOpenAgentDetail={onOpenAgentDetail}
+           onOpenAgentDetail={onOpenAgentDetail}
+          onOpenCommandDetail={onOpenCommandDetail}
+          onOpenEditCommandMode={onOpenEditCommandMode}
           onOpenEditAgentMode={onOpenEditAgentMode}
           onOpenEditToolMode={onOpenEditToolMode}
           onOpenToolDetail={onOpenToolDetail}
@@ -281,6 +335,22 @@ export function AgentsToolsModal({
         <ToolDetailPanel
           onOpenEditToolMode={onOpenEditToolMode}
           tool={selectedTool}
+        />
+      )}
+
+      {view === "command-detail" && selectedCommand && (
+        <CommandDetailPanel
+          command={selectedCommand}
+          onOpenEditCommandMode={onOpenEditCommandMode}
+        />
+      )}
+
+      {view === "command-config" && (
+        <CommandConfigPanel
+          commandEditMode={commandEditMode}
+          commandForm={commandForm}
+          onCommandFormChange={onCommandFormChange}
+          onSubmitCommandConfig={onSubmitCommandConfig}
         />
       )}
 

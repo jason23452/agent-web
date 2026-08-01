@@ -13,6 +13,8 @@ import {
 import { Textarea } from "@/shared/components/ui/textarea";
 import type {
   AgentConfigMode,
+  CommandDefinition,
+  CommandForm,
   AgentDefinition,
   AgentForm,
   AgentToolTab,
@@ -85,10 +87,16 @@ export function AgentsToolsList({
   agentsError,
   agentsLoading = false,
   agentToolTab,
+  commands,
+  commandsError,
+  commandsLoading = false,
   onAgentToolTabChange,
+  onDeleteCommand,
   onDeleteAgent,
   onDeleteTool,
   onOpenAgentDetail,
+  onOpenCommandDetail,
+  onOpenEditCommandMode,
   onOpenEditAgentMode,
   onOpenEditToolMode,
   onOpenToolDetail,
@@ -101,10 +109,16 @@ export function AgentsToolsList({
   agentsError?: string | null;
   agentsLoading?: boolean;
   agentToolTab: AgentToolTab;
+  commands: CommandDefinition[];
+  commandsError?: string | null;
+  commandsLoading?: boolean;
   onAgentToolTabChange: Dispatch<SetStateAction<AgentToolTab>>;
+  onDeleteCommand: (command: CommandDefinition) => void;
   onDeleteAgent: (agentId: string) => void;
   onDeleteTool: (tool: ToolDefinition) => void;
   onOpenAgentDetail: (agent: AgentDefinition) => void;
+  onOpenCommandDetail: (command: CommandDefinition) => void;
+  onOpenEditCommandMode: (command: CommandDefinition) => void;
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
   onOpenToolDetail: (tool: ToolDefinition) => void;
@@ -120,7 +134,7 @@ export function AgentsToolsList({
 
   return (
     <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
-      <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
+      <div className="grid grid-cols-3 rounded-lg bg-muted p-1">
         <button
           className={`h-8 rounded-md font-medium text-sm transition ${agentToolTab === "agents" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
           onClick={() => onAgentToolTabChange("agents")}
@@ -135,11 +149,18 @@ export function AgentsToolsList({
         >
           工具
         </button>
+        <button
+          className={`h-8 rounded-md font-medium text-sm transition ${agentToolTab === "commands" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => onAgentToolTabChange("commands")}
+          type="button"
+        >
+          Commands
+        </button>
       </div>
 
       {projectRequired && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm" role="alert">
-          請先開啟專案後再查看 OpenCode agents。
+           請先開啟專案，或切換到 Global scope 後再查看 OpenCode 設定。
         </div>
       )}
 
@@ -392,6 +413,273 @@ export function AgentsToolsList({
           )}
         </>
       )}
+
+      {!projectRequired && agentToolTab === "commands" && (
+        <>
+          {commandsLoading && (
+            <div
+              className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm"
+              role="status"
+            >
+              載入 OpenCode Commands...
+            </div>
+          )}
+
+          {!commandsLoading && commandsError && (
+            <div
+              className="rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm"
+              role="alert"
+            >
+              {commandsError}
+            </div>
+          )}
+
+          {!commandsLoading && !commandsError && commands.length === 0 && (
+            <div className="rounded-lg border border-dashed bg-muted/45 px-4 py-6 text-center text-muted-foreground text-sm">
+              尚無 OpenCode Commands。
+            </div>
+          )}
+
+          {!commandsLoading && !commandsError && commands.length > 0 && (
+            <section aria-labelledby="commands-title">
+              <h3
+                className="mb-2 px-1 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
+                id="commands-title"
+              >
+                OpenCode Commands
+              </h3>
+              <ul className="grid gap-1">
+                {commands.map((command) => (
+                  <li key={command.id}>
+                    <CommandListItem
+                      command={command}
+                      onDeleteCommand={onDeleteCommand}
+                      onOpenCommandDetail={onOpenCommandDetail}
+                      onOpenEditCommandMode={onOpenEditCommandMode}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function CommandListItem({
+  command,
+  onDeleteCommand,
+  onOpenCommandDetail,
+  onOpenEditCommandMode,
+}: {
+  command: CommandDefinition;
+  onDeleteCommand: (command: CommandDefinition) => void;
+  onOpenCommandDetail: (command: CommandDefinition) => void;
+  onOpenEditCommandMode: (command: CommandDefinition) => void;
+}) {
+  return (
+    <div className="group flex items-start gap-3 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="truncate font-semibold text-sm">/{command.name}</span>
+          <Badge size="sm" variant={command.source === "custom" ? "success" : "secondary"}>
+            {command.source === "custom" ? "自訂" : "Runtime"}
+          </Badge>
+          {command.source === "custom" && (
+            <>
+              <Badge size="sm" variant="outline">
+                {command.installTarget === "global" ? "Global" : "Project"}
+              </Badge>
+              {command.inherited && <Badge size="sm" variant="info">Inherited</Badge>}
+              {command.overridesGlobal && <Badge size="sm" variant="warning">Overrides Global</Badge>}
+            </>
+          )}
+          {command.subtask && <Badge size="sm" variant="secondary">Subtask</Badge>}
+        </div>
+        <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
+          {command.description || "未提供說明"}
+        </p>
+      </div>
+      <Menu>
+        <MenuTrigger className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+        </MenuTrigger>
+        <MenuPopup align="end" className="min-w-36">
+          <MenuItem onClick={() => onOpenCommandDetail(command)}>檢視</MenuItem>
+          {command.source === "custom" && (
+            <>
+              <MenuItem onClick={() => onOpenEditCommandMode(command)}>編輯</MenuItem>
+              <MenuSeparator />
+              <MenuItem onClick={() => onDeleteCommand(command)} variant="destructive">
+                刪除
+              </MenuItem>
+            </>
+          )}
+        </MenuPopup>
+      </Menu>
+    </div>
+  );
+}
+
+export function CommandDetailPanel({
+  command,
+  onOpenEditCommandMode,
+}: {
+  command: CommandDefinition;
+  onOpenEditCommandMode: (command: CommandDefinition) => void;
+}) {
+  return (
+    <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
+      <div className="rounded-lg bg-muted/55 p-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="truncate font-semibold text-base">/{command.name}</h3>
+          <Badge size="sm" variant={command.source === "custom" ? "success" : "secondary"}>
+            {command.source === "custom" ? "自訂" : "Runtime"}
+          </Badge>
+          {command.source === "custom" && (
+            <>
+              <Badge size="sm" variant="outline">
+                {command.installTarget === "global" ? "Global" : "Project"}
+              </Badge>
+              {command.inherited && <Badge size="sm" variant="info">Inherited</Badge>}
+              {command.overridesGlobal && <Badge size="sm" variant="warning">Overrides Global</Badge>}
+            </>
+          )}
+        </div>
+        <p className="mt-2 text-muted-foreground text-sm leading-6">
+          {command.description || "未提供說明"}
+        </p>
+      </div>
+      <section className="grid gap-2" aria-labelledby="command-metadata-title">
+        <h4 className="font-semibold text-sm" id="command-metadata-title">Command 設定</h4>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          <ToolMetadataItem label="Command 名稱" value={`/${command.name}`} />
+          <ToolMetadataItem label="執行 agent" value={command.agent || "目前 agent"} />
+          <ToolMetadataItem label="模型" value={command.model || "目前模型"} />
+          <ToolMetadataItem label="Subtask" value={command.subtask ? "true" : "false"} />
+          <ToolMetadataItem label="來源" value={command.source === "custom" ? "Registry Markdown" : "OpenCode Runtime"} />
+          {command.registryPath && <ToolMetadataItem label="Registry 路徑" value={command.registryPath} />}
+        </div>
+      </section>
+      <section className="grid gap-2" aria-labelledby="command-template-title">
+        <h4 className="font-semibold text-sm" id="command-template-title">Prompt template</h4>
+        <pre className="max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border bg-muted/45 p-3 font-mono text-xs leading-5 text-muted-foreground">
+          {command.template}
+        </pre>
+      </section>
+      <div className="flex justify-end">
+        {command.source === "custom" ? (
+          <Button onClick={() => onOpenEditCommandMode(command)} size="sm">編輯 Command</Button>
+        ) : (
+          <p className="text-muted-foreground text-xs">
+            此 Command 由 OpenCode runtime 載入，請透過其來源設定修改。
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CommandConfigPanel({
+  commandForm,
+  commandEditMode,
+  onCommandFormChange,
+  onSubmitCommandConfig,
+}: {
+  commandForm: CommandForm;
+  commandEditMode: "add" | "edit";
+  onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
+  onSubmitCommandConfig: () => void;
+}) {
+  return (
+    <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
+      <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            Command 名稱
+            <Input
+              aria-label="Command 名稱"
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, name: event.target.value }))}
+              placeholder="review"
+              value={commandForm.name}
+            />
+          </label>
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            Install target
+            <select
+              className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, installTarget: event.target.value as CommandForm["installTarget"] }))}
+              value={commandForm.installTarget}
+            >
+              <option value="project">Project</option>
+              <option value="global">Global</option>
+            </select>
+          </label>
+        </div>
+        <label className="grid gap-2 text-muted-foreground text-sm">
+          說明
+          <Input
+            aria-label="Command 說明"
+            onChange={(event) => onCommandFormChange((current) => ({ ...current, description: event.target.value }))}
+            placeholder="Review recent changes"
+            value={commandForm.description}
+          />
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            Agent（可選）
+            <Input
+              aria-label="Command agent"
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, agent: event.target.value }))}
+              placeholder="build"
+              value={commandForm.agent}
+            />
+          </label>
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            Model（可選）
+            <Input
+              aria-label="Command model"
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, model: event.target.value }))}
+              placeholder="anthropic/claude-sonnet-4-5"
+              value={commandForm.model}
+            />
+          </label>
+        </div>
+        <label className="flex items-center gap-2 text-muted-foreground text-sm">
+          <input
+            checked={commandForm.subtask}
+            onChange={(event) => onCommandFormChange((current) => ({ ...current, subtask: event.target.checked }))}
+            type="checkbox"
+          />
+          以 subtask 執行
+        </label>
+        <label className="grid gap-2 text-muted-foreground text-sm">
+          Prompt template
+          <Textarea
+            aria-label="Command prompt template"
+            className="min-h-56 font-mono"
+            onChange={(event) => onCommandFormChange((current) => ({ ...current, template: event.target.value }))}
+            placeholder="Review the current changes and suggest improvements.\n\n$ARGUMENTS"
+            rows={10}
+            spellCheck={false}
+            value={commandForm.template}
+          />
+        </label>
+        <p className="text-muted-foreground text-xs">
+          儲存後會產生 OpenCode command markdown：<code>{`{name}.md`}</code>。
+          可使用 <code>$ARGUMENTS</code>、<code>$1</code> 等參數。
+        </p>
+      </div>
+      <div className="flex justify-end">
+        <Button
+          disabled={!commandForm.name.trim() || !commandForm.template.trim()}
+          onClick={onSubmitCommandConfig}
+        >
+          {commandEditMode === "add" ? "新增 Command" : "更新 Command"}
+        </Button>
+      </div>
     </div>
   );
 }

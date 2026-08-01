@@ -204,15 +204,43 @@ export type ToolForm = {
   testInput: string;
 };
 
+export type CommandDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  source: "runtime" | "custom";
+  agent?: string;
+  model?: string;
+  subtask?: boolean;
+  template: string;
+  installTarget?: "project" | "global";
+  inherited?: boolean;
+  overridesGlobal?: boolean;
+  registryPath?: string;
+  registryType?: "file" | "directory";
+};
+
+export type CommandForm = {
+  name: string;
+  installTarget: "project" | "global";
+  description: string;
+  agent: string;
+  model: string;
+  subtask: boolean;
+  template: string;
+};
+
 export type AgentDialogView =
   | "list"
   | "detail"
   | "config"
   | "tool-detail"
-  | "tool-config";
+  | "tool-config"
+  | "command-detail"
+  | "command-config";
 export type AgentEditMode = "add" | "edit";
 export type ToolEditMode = "add" | "edit";
-export type AgentToolTab = "agents" | "tools";
+export type AgentToolTab = "agents" | "tools" | "commands";
 export type AgentConfigMode = "interface" | "yaml";
 
 export type InstallResult = {

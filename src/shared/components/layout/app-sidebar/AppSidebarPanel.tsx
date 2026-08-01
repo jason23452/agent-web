@@ -31,7 +31,7 @@ const navItems = [
   { icon: HistoryIcon, key: "projects", label: "專案" },
   { icon: ServerIcon, key: "mcp", label: "MCP Server" },
   { icon: PlugZapIcon, key: "plugins", label: "外掛/技能" },
-  { icon: HatGlasses, key: "agents", label: "智能體/工具" },
+  { icon: HatGlasses, key: "agents", label: "智能體/工具/Commands" },
 ];
 
 type AppSidebarPanelProps = {

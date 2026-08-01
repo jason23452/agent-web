@@ -2,6 +2,7 @@ import type { ModelProvider } from "@/shared/components/layout/settings/UserSett
 import type {
   AgentDefinition,
   AgentForm,
+  CommandForm,
   McpForm,
   McpServer,
   PluginDefinition,
@@ -621,4 +622,14 @@ export default tool({
 });
 `,
   testInput: '{"input":"hello"}',
+};
+
+export const emptyCommandForm: CommandForm = {
+  name: "",
+  installTarget: "project",
+  description: "",
+  agent: "",
+  model: "",
+  subtask: false,
+  template: "",
 };

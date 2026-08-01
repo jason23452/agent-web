@@ -31,12 +31,15 @@ import {
 } from "@/shared/api/opencodeProviders";
 import {
   deleteAgentRegistryEntry,
+  deleteCommandRegistryEntry,
   deleteToolRegistryEntry,
   readAgentRegistryEntry,
+  readCommandRegistryEntry,
   readToolRegistryEntry,
   testToolScript,
   upsertPluginRegistryEntry,
   upsertAgentRegistryEntry,
+  upsertCommandRegistryEntry,
   deletePluginRegistryEntry,
   listOpenCodeRegistryEntries,
   readSkillRegistryEntry,
@@ -45,6 +48,7 @@ import {
   type OpenCodeRegistryEntry,
 } from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
+import { listOpenCodeCommands, type OpenCodeRuntimeCommand } from "@/shared/api/opencodeCommands";
  import { deleteOpenCodeSkills, importSkillArchives, importSkillUrls, listOpenCodeSkills, updateSkillProjectSettings } from "@/shared/api/opencodeSkills";
 import {
   applyOpenCodeConfig,
@@ -67,6 +71,7 @@ import { toastManager } from "@/shared/components/ui/toast";
 import {
   availableSkills,
   emptyAgentForm,
+  emptyCommandForm,
   emptyMcpForm,
   emptyPluginForm,
   emptySkillForm,
@@ -77,6 +82,8 @@ import {
 } from "@/shared/components/layout/app-sidebar/config";
 import type {
   AgentConfigMode,
+  CommandDefinition,
+  CommandForm,
   AgentDefinition,
   AgentDialogView,
   AgentEditMode,
@@ -302,6 +309,74 @@ function toToolDefinition(
     runtime: "js-ts",
     entry: getToolEntryPath(toolId, registryEntry?.scope ?? "project", registryEntry),
   };
+}
+
+function toCommandDefinition(
+  entry: OpenCodeRegistryEntry,
+  runtimeCommand?: OpenCodeRuntimeCommand,
+): CommandDefinition {
+  return {
+    id: entry.name,
+    name: entry.name,
+    description: runtimeCommand?.description ?? "OpenCode custom command.",
+    source: "custom",
+    agent: runtimeCommand?.agent,
+    model: runtimeCommand?.model,
+    subtask: runtimeCommand?.subtask,
+    template: runtimeCommand?.template ?? "",
+    installTarget: entry.scope,
+    inherited: entry.inherited,
+    overridesGlobal: entry.overridesGlobal,
+    registryPath: entry.path,
+    registryType: entry.type,
+  };
+}
+
+function toRuntimeCommandDefinition(command: OpenCodeRuntimeCommand): CommandDefinition {
+  return {
+    id: command.name,
+    name: command.name,
+    description: command.description ?? "OpenCode runtime command.",
+    source: "runtime",
+    agent: command.agent,
+    model: command.model,
+    subtask: command.subtask,
+    template: command.template,
+  };
+}
+
+function parseCommandDocument(content: string, fallback: CommandDefinition): CommandForm {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+  const metadata = new Map<string, string>();
+
+  for (const line of match?.[1]?.split("\n") ?? []) {
+    const separator = line.indexOf(":");
+    if (separator === -1) continue;
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim().replace(/^['"]|['"]$/g, "");
+    metadata.set(key, value);
+  }
+
+  return {
+    name: fallback.name,
+    installTarget: fallback.installTarget ?? "project",
+    description: metadata.get("description") ?? fallback.description,
+    agent: metadata.get("agent") ?? "",
+    model: metadata.get("model") ?? "",
+    subtask: metadata.get("subtask") === "true",
+    template: match?.[2] ?? content,
+  };
+}
+
+function commandToMarkdown(command: CommandDefinition): string {
+  const metadata = [
+    command.description.trim() ? `description: ${command.description.trim()}` : "",
+    command.agent?.trim() ? `agent: ${command.agent.trim()}` : "",
+    command.model?.trim() ? `model: ${command.model.trim()}` : "",
+    command.subtask ? "subtask: true" : "",
+  ].filter(Boolean);
+
+  return `---\n${metadata.join("\n")}\n---\n${command.template.trim()}\n`;
 }
 
 function getToolEntryPath(
@@ -579,6 +654,10 @@ function toModelProvider(
   } satisfies ModelProvider;
 }
 
+function sortCommandDefinitions(a: CommandDefinition, b: CommandDefinition) {
+  return a.name.localeCompare(b.name);
+}
+
 function areSetsEqual<T>(left: Set<T>, right: Set<T>) {
   if (left.size !== right.size) return false;
   for (const item of left) {
@@ -697,14 +776,23 @@ export function AppSidebar({
   const [pendingAgentDeletes, setPendingAgentDeletes] = useState<Record<string, PendingRegistryDelete>>({});
   const [pendingToolUpserts, setPendingToolUpserts] = useState<Record<string, PendingRegistryUpsert>>({});
   const [pendingToolDeletes, setPendingToolDeletes] = useState<Record<string, PendingRegistryDelete>>({});
+  const [commands, setCommands] = useState<CommandDefinition[]>([]);
+  const [commandsError, setCommandsError] = useState<string | null>(null);
+  const [commandsLoading, setCommandsLoading] = useState(false);
+  const [pendingCommandUpserts, setPendingCommandUpserts] = useState<Record<string, PendingRegistryUpsert>>({});
+  const [pendingCommandDeletes, setPendingCommandDeletes] = useState<Record<string, PendingRegistryDelete>>({});
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
   const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
+  const [commandEditMode, setCommandEditMode] = useState<"add" | "edit">("add");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
+  const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
   const [agentForm, setAgentForm] = useState(emptyAgentForm);
   const [agentYaml, setAgentYaml] = useState(agentToYaml(emptyAgentForm));
   const [toolForm, setToolForm] = useState(emptyToolForm);
+  const [commandForm, setCommandForm] = useState<CommandForm>(emptyCommandForm);
+  const [editingCommandId, setEditingCommandId] = useState<string | null>(null);
   const [toolTestResult, setToolTestResult] =
     useState<InstallResult | null>(null);
   const [toolCallTestLoading, setToolCallTestLoading] = useState(false);
@@ -800,6 +888,8 @@ export function AppSidebar({
     agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedTool =
     toolDefinitions.find((tool) => tool.id === selectedToolId) ?? null;
+  const selectedCommand =
+    commands.find((command) => command.id === selectedCommandId) ?? null;
   const activeProjectName =
     projects.find((project) => project.path === activeProjectPath)?.name ??
     getProjectNameFromPath(activeProjectPath);
@@ -1264,6 +1354,10 @@ export function AppSidebar({
         setToolDefinitions([]);
         setToolsError("請先開啟專案後再查看 OpenCode tools。");
         setToolsLoading(false);
+        setCommands([]);
+        setSelectedCommandId(null);
+        setCommandsError("請先開啟專案後再查看 OpenCode Commands。");
+        setCommandsLoading(false);
         return;
       }
 
@@ -1273,13 +1367,16 @@ export function AppSidebar({
       setAgentsError(null);
       setToolsLoading(true);
       setToolsError(null);
+      setCommandsLoading(true);
+      setCommandsError(null);
 
       if (agentsToolsScope === "global") {
         void Promise.all([
           listOpenCodeRegistryEntries("global", "agents", undefined, false, { signal: controller.signal }),
           listOpenCodeRegistryEntries("global", "tools", undefined, false, { signal: controller.signal }),
+          listOpenCodeRegistryEntries("global", "commands", undefined, false, { signal: controller.signal }),
         ])
-          .then(([agentResponse, toolResponse]) => {
+          .then(([agentResponse, toolResponse, commandResponse]) => {
             if (controller.signal.aborted) return;
 
             const nextAgents = agentResponse.entries
@@ -1288,13 +1385,20 @@ export function AppSidebar({
             const nextTools = toolResponse.entries
               .map((entry) => toToolDefinition(entry.name, entry))
               .sort(sortToolDefinitions);
+            const nextCommands = commandResponse.entries
+              .map((entry) => toCommandDefinition(entry))
+              .sort(sortCommandDefinitions);
             setAgents(nextAgents);
             setToolDefinitions(nextTools);
+            setCommands(nextCommands);
             setSelectedAgentId((current) =>
               current && nextAgents.some((agent) => agent.id === current) ? current : null,
             );
             setSelectedToolId((current) =>
               current && nextTools.some((tool) => tool.id === current) ? current : null,
+            );
+            setSelectedCommandId((current) =>
+              current && nextCommands.some((command) => command.id === current) ? current : null,
             );
             setToolToAdd((current) =>
               current && nextTools.some((tool) => tool.name === current)
@@ -1306,16 +1410,20 @@ export function AppSidebar({
             if (controller.signal.aborted) return;
             setAgents([]);
             setToolDefinitions([]);
+            setCommands([]);
             setSelectedAgentId(null);
             setSelectedToolId(null);
+            setSelectedCommandId(null);
             setToolToAdd("");
             setAgentsError(getApiErrorMessage(error));
             setToolsError(getApiErrorMessage(error));
+            setCommandsError(getApiErrorMessage(error));
           })
           .finally(() => {
             if (controller.signal.aborted) return;
             setAgentsLoading(false);
             setToolsLoading(false);
+            setCommandsLoading(false);
           });
         return;
       }
@@ -1403,6 +1511,56 @@ export function AppSidebar({
         })
         .finally(() => {
           if (!controller.signal.aborted) setToolsLoading(false);
+        });
+
+      void Promise.all([
+        listOpenCodeCommands(activeProjectPath, { signal: controller.signal }),
+        listOpenCodeRegistryEntries(
+          "project",
+          "commands",
+          activeProjectName,
+          true,
+          { signal: controller.signal },
+        ),
+      ])
+        .then(([runtimeCommands, registryResponse]) => {
+          if (controller.signal.aborted) return;
+
+          const runtimeByName = new Map(
+            runtimeCommands.map((command) => [command.name, command]),
+          );
+          const registryByName = new Map(
+            registryResponse.entries.map((entry) => [entry.name, entry]),
+          );
+          const names = new Set([
+            ...runtimeCommands.map((command) => command.name),
+            ...registryResponse.entries.map((entry) => entry.name),
+          ]);
+          const nextCommands = [...names]
+            .map((name) => {
+              const runtimeCommand = runtimeByName.get(name);
+              const registryEntry = registryByName.get(name);
+              return registryEntry
+                ? toCommandDefinition(registryEntry, runtimeCommand)
+                : runtimeCommand
+                  ? toRuntimeCommandDefinition(runtimeCommand)
+                  : undefined;
+            })
+            .filter((command): command is CommandDefinition => Boolean(command))
+            .sort(sortCommandDefinitions);
+          setCommands(nextCommands);
+          setSelectedCommandId((current) =>
+            current && nextCommands.some((command) => command.id === current) ? current : null,
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          setCommands([]);
+          setSelectedCommandId(null);
+          setCommandsError(getApiErrorMessage(error));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setCommandsLoading(false);
         });
     }, 0);
 
@@ -1576,7 +1734,7 @@ export function AppSidebar({
   }
 
   function confirmBatchUpdate(scope: "agents-tools" | "plugins-skills") {
-    const label = scope === "agents-tools" ? "智能體與工具" : "外掛與技能";
+    const label = scope === "agents-tools" ? "智能體、工具與 Commands" : "外掛與技能";
     showConfirmationToast({
       id: `batch-update-${scope}`,
       title: `是否更新${label}？`,
@@ -1596,11 +1754,13 @@ export function AppSidebar({
       if (scope === "agents-tools") {
         const pendingAgentDeleteItems = Object.values(pendingAgentDeletes);
         const pendingToolDeleteItems = Object.values(pendingToolDeletes);
+        const pendingCommandDeleteItems = Object.values(pendingCommandDeletes);
         const pendingAgentUpsertItems = Object.values(pendingAgentUpserts);
         const pendingToolUpsertItems = Object.values(pendingToolUpserts);
+        const pendingCommandUpsertItems = Object.values(pendingCommandUpserts);
 
         if (
-          [...pendingAgentDeleteItems, ...pendingToolDeleteItems, ...pendingAgentUpsertItems, ...pendingToolUpsertItems]
+          [...pendingAgentDeleteItems, ...pendingToolDeleteItems, ...pendingCommandDeleteItems, ...pendingAgentUpsertItems, ...pendingToolUpsertItems, ...pendingCommandUpsertItems]
             .some((item) => item.scope === "project") &&
           !activeProjectName
         ) {
@@ -1616,6 +1776,13 @@ export function AppSidebar({
         }
         for (const item of pendingToolDeleteItems) {
           await deleteToolRegistryEntry(
+            item.scope,
+            item.name,
+            item.scope === "project" ? activeProjectName : undefined,
+          );
+        }
+        for (const item of pendingCommandDeleteItems) {
+          await deleteCommandRegistryEntry(
             item.scope,
             item.name,
             item.scope === "project" ? activeProjectName : undefined,
@@ -1645,6 +1812,20 @@ export function AppSidebar({
               restart: false,
               wait: false,
               reason: "tool-updated",
+            },
+            item.scope === "project" ? activeProjectName : undefined,
+          );
+        }
+        for (const item of pendingCommandUpsertItems) {
+          await upsertCommandRegistryEntry(
+            item.scope,
+            item.name,
+            {
+              content: item.content,
+              filename: item.filename,
+              restart: false,
+              wait: false,
+              reason: "command-updated",
             },
             item.scope === "project" ? activeProjectName : undefined,
           );
@@ -1760,6 +1941,8 @@ export function AppSidebar({
       setPendingAgentDeletes({});
       setPendingToolUpserts({});
       setPendingToolDeletes({});
+      setPendingCommandUpserts({});
+      setPendingCommandDeletes({});
       setPendingPluginFiles({});
        setPendingPluginDeletes({});
        setPendingPluginScopeMoves({});
@@ -2542,6 +2725,8 @@ export function AppSidebar({
     setPendingAgentDeletes({});
     setPendingToolUpserts({});
     setPendingToolDeletes({});
+    setPendingCommandUpserts({});
+    setPendingCommandDeletes({});
     setAgentsToolsHasChanges(false);
     setBatchUpdateNotice("");
     setAgentDialogView("list");
@@ -2573,6 +2758,73 @@ export function AppSidebar({
     });
     setToolTestResult(null);
     setAgentDialogView("tool-config");
+  }
+
+  function openAddCommandMode() {
+    setCommandEditMode("add");
+    setEditingCommandId(null);
+    setSelectedCommandId(null);
+    setCommandForm({ ...emptyCommandForm, installTarget: agentsToolsScope });
+    setAgentDialogView("command-config");
+  }
+
+  function openCommandDetail(command: CommandDefinition) {
+    setSelectedCommandId(command.id);
+    setAgentToolTab("commands");
+    setAgentDialogView("command-detail");
+    if (command.source === "custom") void loadCommandRegistryContent(command);
+  }
+
+  function openEditCommandMode(command: CommandDefinition) {
+    if (command.source !== "custom") return;
+    setCommandEditMode("edit");
+    setEditingCommandId(command.id);
+    setSelectedCommandId(command.id);
+    setCommandForm({
+      ...emptyCommandForm,
+      name: command.name,
+      installTarget: command.inherited ? "project" : command.installTarget ?? agentsToolsScope,
+      description: command.description,
+    });
+    setAgentDialogView("command-config");
+    void loadCommandRegistryContent(command);
+  }
+
+  async function loadCommandRegistryContent(command: CommandDefinition) {
+    const sourceScope = command.inherited ? "global" : command.installTarget ?? agentsToolsScope;
+    if (sourceScope === "project" && !activeProjectName) return;
+
+    try {
+      const response = await readCommandRegistryEntry(
+        sourceScope,
+        command.name,
+        sourceScope === "project" ? activeProjectName : undefined,
+      );
+      const content = response.content ?? Object.values(response.files ?? {})[0] ?? "";
+      if (!content) return;
+
+      const parsed = parseCommandDocument(content, command);
+      setCommands((current) => current.map((item) =>
+        item.id === command.id
+          ? {
+              ...item,
+              description: parsed.description,
+              agent: parsed.agent || undefined,
+              model: parsed.model || undefined,
+              subtask: parsed.subtask,
+              template: parsed.template,
+            }
+          : item,
+      ));
+      setCommandForm((current) =>
+        current.name === command.name
+          ? { ...parsed, installTarget: current.installTarget }
+          : current,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return;
+      setCommandsError(`讀取 command 內容失敗：${getApiErrorMessage(error)}`);
+    }
   }
 
   function openEditToolMode(tool: ToolDefinition) {
@@ -3155,6 +3407,155 @@ export function AppSidebar({
     removeTool();
   }
 
+  function submitCommandConfig() {
+    const name = commandForm.name.trim().replace(/\s+/g, "-");
+    if (!name || !commandForm.template.trim()) return;
+
+    const currentCommand = editingCommandId
+      ? commands.find((command) => command.id === editingCommandId)
+      : undefined;
+    const existingCommandWithName = commands.find((command) => command.name === name);
+    const targetScope: RegistryConfigScope =
+      commandEditMode === "add"
+        ? commandForm.installTarget
+        : currentCommand?.inherited
+          ? "project"
+          : commandForm.installTarget;
+
+    if (targetScope === "project" && !activeProjectName) {
+      setCommandsError("Project scope 需要先開啟有效的 Project。");
+      return;
+    }
+
+    const nextCommand: CommandDefinition = {
+      id: editingCommandId ?? `command-${Date.now()}`,
+      name,
+      description: commandForm.description.trim() || "OpenCode custom command.",
+      source: "custom",
+      agent: commandForm.agent.trim() || undefined,
+      model: commandForm.model.trim() || undefined,
+      subtask: commandForm.subtask,
+      template: commandForm.template,
+      installTarget: targetScope,
+      inherited: agentsToolsScope === "project" && targetScope === "global",
+      overridesGlobal:
+        targetScope === "project"
+          ? currentCommand?.inherited || currentCommand?.overridesGlobal || existingCommandWithName?.inherited
+          : undefined,
+    };
+    const content = commandToMarkdown(nextCommand);
+    const sourceScope = currentCommand?.installTarget ?? agentsToolsScope;
+    const sourceName = currentCommand?.name ?? name;
+    const sourceKey = `${sourceScope}:${sourceName}`;
+    const upsertKey = `${targetScope}:${name}`;
+    const sourceIsDraft = Boolean(
+      currentCommand &&
+      currentCommand.id.startsWith("command-") &&
+      pendingCommandUpserts[sourceKey],
+    );
+    const shouldDeleteSource = Boolean(
+      currentCommand &&
+      (sourceScope !== targetScope || sourceName !== name) &&
+      !sourceIsDraft &&
+      !(currentCommand.inherited && sourceScope === "global"),
+    );
+
+    if (shouldDeleteSource) {
+      setPendingCommandDeletes((current) => ({
+        ...current,
+        [sourceKey]: { scope: sourceScope, name: sourceName },
+      }));
+    }
+    if (sourceIsDraft && sourceKey !== upsertKey) {
+      setPendingCommandUpserts((current) => {
+        const next = { ...current };
+        delete next[sourceKey];
+        return next;
+      });
+    }
+    setPendingCommandUpserts((current) => ({
+      ...current,
+      [upsertKey]: {
+        scope: targetScope,
+        name,
+        content,
+        filename: `${name}.md`,
+      },
+    }));
+    setPendingCommandDeletes((current) => {
+      const next = { ...current };
+      delete next[upsertKey];
+      return next;
+    });
+
+    setCommands((current) => {
+      if (commandEditMode === "edit" && editingCommandId) {
+        const canShowInCurrentScope =
+          targetScope === agentsToolsScope ||
+          (agentsToolsScope === "project" && targetScope === "global");
+        return canShowInCurrentScope
+          ? current.map((command) => command.id === editingCommandId ? nextCommand : command)
+          : current.filter((command) => command.id !== editingCommandId);
+      }
+
+      const canShowInCurrentScope =
+        targetScope === agentsToolsScope ||
+        (agentsToolsScope === "project" && targetScope === "global");
+      return canShowInCurrentScope
+        ? [...current.filter((command) => command.name !== name), nextCommand]
+        : current;
+    });
+    setAgentsToolsHasChanges(true);
+    setBatchUpdateNotice("");
+    setSelectedCommandId(nextCommand.id);
+    setAgentToolTab("commands");
+    setAgentDialogView("list");
+  }
+
+  function deleteCommand(command: CommandDefinition) {
+    if (command.source !== "custom") return;
+    if (command.inherited) {
+      setCommandsError("此 command 來自 Global inherited，請切換到 Global scope 後刪除。");
+      return;
+    }
+
+    const removeCommand = () => {
+      const scope = command.installTarget ?? agentsToolsScope;
+      const key = `${scope}:${command.name}`;
+      setPendingCommandUpserts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      if (!command.id.startsWith("command-") || !pendingCommandUpserts[key]) {
+        setPendingCommandDeletes((current) => ({
+          ...current,
+          [key]: { scope, name: command.name },
+        }));
+      } else {
+        setPendingCommandDeletes((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }
+      setCommands((current) => current.filter((item) => item.id !== command.id));
+      setAgentsToolsHasChanges(true);
+      setBatchUpdateNotice("");
+    };
+
+    if ((command.installTarget ?? agentsToolsScope) === "global") {
+      showConfirmationToast({
+        id: `command-delete-confirm-${command.name}`,
+        title: `刪除 Global command ${command.name}？`,
+        description: "刪除後會影響所有 Project，按下 modal 底部的「更新」後才會真正刪除。",
+        onConfirm: removeCommand,
+      });
+      return;
+    }
+    removeCommand();
+  }
+
   async function runToolCallTest() {
     if (toolCallTestLoading) return;
 
@@ -3357,8 +3758,8 @@ export function AppSidebar({
         activeSessionId={activeSessionId}
         filteredSessions={filteredSessions}
         historySearch={historySearch}
-        historySearchOpen={historySearchOpen}
-        onAgentsOpen={openAgentsList}
+         historySearchOpen={historySearchOpen}
+         onAgentsOpen={openAgentsList}
         onClose={onClose}
         onCreateSession={() => void onCreateSession()}
         onHistorySearchChange={setHistorySearch}
@@ -3561,17 +3962,22 @@ export function AppSidebar({
 
       <AgentsToolsModal
         agentConfigMode={agentConfigMode}
-        agentEditMode={agentEditMode}
-        agentForm={agentForm}
-        agentToolTab={agentToolTab}
+         agentEditMode={agentEditMode}
+         agentForm={agentForm}
+         agentToolTab={agentToolTab}
         agentYaml={agentYaml}
         agents={agents}
         agentsError={agentsError}
          agentsLoading={agentsLoading}
          agentsToolsHasChanges={agentsToolsHasChanges}
-        availableSkillNames={availableSkillNames}
-        batchUpdateNotice={batchUpdateNotice}
-        editingAgentId={editingAgentId}
+         availableSkillNames={availableSkillNames}
+         batchUpdateNotice={batchUpdateNotice}
+         commandEditMode={commandEditMode}
+         commandForm={commandForm}
+         commands={commands}
+         commandsError={commandsError}
+         commandsLoading={commandsLoading}
+         editingAgentId={editingAgentId}
         guidanceSkill={guidanceSkill}
         guidanceSubagent={guidanceSubagent}
         guidanceTool={guidanceTool}
@@ -3579,30 +3985,36 @@ export function AppSidebar({
         onAddFormSubagent={addFormSubagent}
         onAgentConfigModeChange={switchAgentConfigMode}
         onAgentDialogViewChange={setAgentDialogView}
-        onAgentFormChange={setAgentForm}
-        onAgentToolTabChange={setAgentToolTab}
+         onAgentFormChange={setAgentForm}
+         onAgentToolTabChange={setAgentToolTab}
         onAgentYamlChange={setAgentYaml}
          onConfirmBatchUpdate={() => confirmBatchUpdate("agents-tools")}
          onCancelBatchUpdate={cancelAgentsToolsChanges}
-        onDeleteAgent={deleteAgent}
+         onCommandFormChange={setCommandForm}
+         onDeleteCommand={deleteCommand}
+         onDeleteAgent={deleteAgent}
         onDeleteTool={deleteTool}
         onGetCallableSubagentOptions={getCallableSubagentOptions}
         onGuidanceSkillChange={setGuidanceSkill}
         onGuidanceSubagentChange={setGuidanceSubagent}
         onGuidanceToolChange={setGuidanceTool}
-        onOpenAddAgentMode={openAddAgentMode}
-        onOpenAddToolMode={openAddToolMode}
-        onOpenAgentDetail={openAgentDetail}
+         onOpenAddAgentMode={openAddAgentMode}
+         onOpenAddCommandMode={openAddCommandMode}
+         onOpenAddToolMode={openAddToolMode}
+         onOpenAgentDetail={openAgentDetail}
+         onOpenCommandDetail={openCommandDetail}
         onOpenChange={setAgentsDialogOpen}
-        onOpenEditAgentMode={openEditAgentMode}
+         onOpenEditAgentMode={openEditAgentMode}
+         onOpenEditCommandMode={openEditCommandMode}
         onOpenEditToolMode={openEditToolMode}
         onOpenToolDetail={openToolDetail}
         onRemoveFormSubagent={removeFormSubagent}
         onRunToolCallTest={runToolCallTest}
         onSkillToAddChange={setSkillToAdd}
         onSubagentToAddChange={setSubagentToAdd}
-        onSubmitAgentConfig={submitAgentConfig}
-        onSubmitToolConfig={submitToolConfig}
+         onSubmitAgentConfig={submitAgentConfig}
+         onSubmitCommandConfig={submitCommandConfig}
+         onSubmitToolConfig={submitToolConfig}
         onToolFormChange={setToolForm}
         onToolTestResultChange={setToolTestResult}
         onToolToAddChange={setToolToAdd}
@@ -3610,8 +4022,9 @@ export function AppSidebar({
         onUpdateSubagentGuidance={updateSubagentGuidance}
         onUpdateToolGuidance={updateToolGuidance}
         open={agentsDialogOpen}
-        selectedAgent={selectedAgent}
-        selectedTool={selectedTool}
+         selectedAgent={selectedAgent}
+         selectedCommand={selectedCommand}
+         selectedTool={selectedTool}
         skillToAdd={skillToAdd}
         subagentToAdd={subagentToAdd}
         toolDefinitions={toolDefinitions}
@@ -3623,7 +4036,7 @@ export function AppSidebar({
         toolTestResult={toolTestResult}
         toolToAdd={toolToAdd}
           view={agentDialogView}
-          projectRequired={!activeProjectName}
+          projectRequired={agentsToolsScope === "project" && !activeProjectName}
       />
     </>
   );

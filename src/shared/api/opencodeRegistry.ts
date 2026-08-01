@@ -1,7 +1,7 @@
 import { apiRequest, type ApiRequestConfig } from "./client";
 
 export type OpenCodeRegistryScope = "project" | "global";
-export type OpenCodeRegistryKind = "agents" | "skills" | "tools" | "plugins";
+export type OpenCodeRegistryKind = "agents" | "skills" | "tools" | "plugins" | "commands";
 
 export type OpenCodeRegistryEntry = {
   inherited?: boolean;
@@ -126,6 +126,21 @@ export function readAgentRegistryEntry(
   );
 }
 
+export function readCommandRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest<OpenCodeRegistryReadResponse>(
+    `/bff/opencode-registry/${scope}/commands/${encodeURIComponent(name)}`,
+    {
+      ...config,
+      query: { ...config?.query, project: scope === "project" ? project : undefined },
+    },
+  );
+}
+
 export function upsertAgentRegistryEntry(
   scope: OpenCodeRegistryScope,
   name: string,
@@ -141,6 +156,21 @@ export function upsertAgentRegistryEntry(
   });
 }
 
+export function upsertCommandRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  body: OpenCodeRegistryUpsertBody,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/commands/${encodeURIComponent(name)}`, {
+    ...config,
+    body,
+    method: "PUT",
+    query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
 export function deleteAgentRegistryEntry(
   scope: OpenCodeRegistryScope,
   name: string,
@@ -148,6 +178,24 @@ export function deleteAgentRegistryEntry(
   config?: ApiRequestConfig,
 ) {
   return apiRequest(`/bff/opencode-registry/${scope}/agents/${encodeURIComponent(name)}`, {
+    ...config,
+    method: "DELETE",
+    query: {
+      ...config?.query,
+      project: scope === "project" ? project : undefined,
+      restart: false,
+      wait: false,
+    },
+  });
+}
+
+export function deleteCommandRegistryEntry(
+  scope: OpenCodeRegistryScope,
+  name: string,
+  project?: string,
+  config?: ApiRequestConfig,
+) {
+  return apiRequest(`/bff/opencode-registry/${scope}/commands/${encodeURIComponent(name)}`, {
     ...config,
     method: "DELETE",
     query: {
