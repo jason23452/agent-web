@@ -7,6 +7,7 @@ import { Input } from "@/shared/components/ui/input";
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import { Switch } from "@/shared/components/ui/switch";
 import { Textarea } from "@/shared/components/ui/textarea";
+import type { OpenCodeMcpTestResult } from "@/shared/api/opencodeMcpTest";
 import type { McpConfigMode, McpDialogView, McpForm, McpKeyValueField, McpOAuthForm, McpServer } from "@/shared/types/app-sidebar";
 
 type McpServersDialogProps = {
@@ -17,6 +18,8 @@ type McpServersDialogProps = {
   filteredServers: McpServer[];
   form: McpForm;
   hasChanges: boolean;
+  mcpTestLoading: boolean;
+  mcpTestResult: OpenCodeMcpTestResult | null;
   onApplyChanges: () => void;
   onCancelChanges: () => void;
   onClose: () => void;
@@ -28,6 +31,7 @@ type McpServersDialogProps = {
   onOpenAddServer: () => void;
   onRefresh: () => void;
   onSubmit: () => void;
+  onTestConnection: () => void;
   onToggleServer: (serverId: string, enabled: boolean) => void;
   onViewChange: (view: McpDialogView) => void;
   onScopeChange: (scope: "project" | "global") => void;
@@ -44,6 +48,8 @@ export function McpServersDialog({
   filteredServers,
   form,
   hasChanges,
+  mcpTestLoading,
+  mcpTestResult,
   onApplyChanges,
   onCancelChanges,
   onClose,
@@ -55,6 +61,7 @@ export function McpServersDialog({
   onOpenAddServer,
   onRefresh,
   onSubmit,
+  onTestConnection,
   onToggleServer,
   onViewChange,
   onScopeChange,
@@ -117,7 +124,10 @@ export function McpServersDialog({
             onRefresh={onRefresh}
             onScopeChange={onScopeChange}
             onSubmit={onSubmit}
+            onTestConnection={onTestConnection}
             scope={scope}
+            testLoading={mcpTestLoading}
+            testResult={mcpTestResult}
             view={view}
           />
         )}
@@ -178,7 +188,7 @@ function McpServerList({ configLoading, onDeleteServer, onEditServer, onToggleSe
   );
 }
 
-function McpEditor({ configDocument, configLoading, configMode, currentProjectName, form, onCancel, onChange, onConfigModeChange, onDocumentChange, onRefresh, onScopeChange, onSubmit, scope, view }: {
+function McpEditor({ configDocument, configLoading, configMode, currentProjectName, form, onCancel, onChange, onConfigModeChange, onDocumentChange, onRefresh, onScopeChange, onSubmit, onTestConnection, scope, testLoading, testResult, view }: {
   configDocument: string;
   configLoading: boolean;
   configMode: McpConfigMode;
@@ -191,7 +201,10 @@ function McpEditor({ configDocument, configLoading, configMode, currentProjectNa
   onRefresh: () => void;
   onScopeChange: (scope: "project" | "global") => void;
   onSubmit: () => void;
+  onTestConnection: () => void;
   scope: "project" | "global";
+  testLoading: boolean;
+  testResult: OpenCodeMcpTestResult | null;
   view: "add" | "edit";
 }) {
   return (
@@ -220,7 +233,7 @@ function McpEditor({ configDocument, configLoading, configMode, currentProjectNa
       {configMode === "document" ? (
         <McpDocumentEditor configDocument={configDocument} configLoading={configLoading} onChange={onDocumentChange} onRefresh={onRefresh} />
       ) : (
-        <McpInterfaceForm form={form} onCancel={onCancel} onChange={onChange} onSubmit={onSubmit} view={view} />
+        <McpInterfaceForm form={form} onCancel={onCancel} onChange={onChange} onSubmit={onSubmit} onTestConnection={onTestConnection} testLoading={testLoading} testResult={testResult} view={view} />
       )}
     </div>
   );
@@ -246,11 +259,14 @@ function McpDocumentEditor({ configDocument, configLoading, onChange, onRefresh 
   );
 }
 
-function McpInterfaceForm({ form, onCancel, onChange, onSubmit, view }: {
+function McpInterfaceForm({ form, onCancel, onChange, onSubmit, onTestConnection, testLoading, testResult, view }: {
   form: McpForm;
   onCancel: () => void;
   onChange: (updates: Partial<McpForm>) => void;
   onSubmit: () => void;
+  onTestConnection: () => void;
+  testLoading: boolean;
+  testResult: OpenCodeMcpTestResult | null;
   view: "add" | "edit";
 }) {
   return (
@@ -281,7 +297,16 @@ function McpInterfaceForm({ form, onCancel, onChange, onSubmit, view }: {
           )}
         </div>
       </details>
-      <div className="flex justify-end gap-2"><Button onClick={onCancel} size="sm" variant="outline">取消</Button><Button disabled={!form.name.trim()} onClick={onSubmit} size="sm">{view === "add" ? "加入" : "儲存"}</Button></div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button onClick={onCancel} size="sm" variant="outline">取消</Button>
+        <Button disabled={!form.name.trim() || testLoading} onClick={onTestConnection} size="sm" variant="outline">{testLoading ? "測試中..." : "測試連線"}</Button>
+        <Button disabled={!form.name.trim()} onClick={onSubmit} size="sm">{view === "add" ? "加入" : "儲存"}</Button>
+      </div>
+      {testResult && (
+        <p aria-live="polite" className={`text-xs ${testResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`} role="status">
+          {testResult.message}
+        </p>
+      )}
     </div>
   );
 }

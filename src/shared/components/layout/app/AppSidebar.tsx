@@ -57,6 +57,10 @@ import {
   type OpenCodeConfigScope,
 } from "@/shared/api/opencodeProjectConfig";
 import {
+  testOpenCodeMcpConnection,
+  type OpenCodeMcpTestResult,
+} from "@/shared/api/opencodeMcpTest";
+import {
   UserSettingsModal,
   type ModelProvider,
   type UserSettingsSection,
@@ -871,6 +875,8 @@ export function AppSidebar({
   const [mcpDocumentScope, setMcpDocumentScope] = useState<OpenCodeConfigScope>("project");
   const [mcpConfigLoading, setMcpConfigLoading] = useState(false);
   const [mcpHasChanges, setMcpHasChanges] = useState(false);
+  const [mcpTestLoading, setMcpTestLoading] = useState(false);
+  const [mcpTestResult, setMcpTestResult] = useState<OpenCodeMcpTestResult | null>(null);
   const [pluginSkillDialogOpen, setPluginSkillDialogOpen] = useState(false);
   const [pluginSkillDialogView, setPluginSkillDialogView] =
     useState<PluginSkillDialogView>("list");
@@ -2848,6 +2854,7 @@ export function AppSidebar({
   function openAddMcpServer() {
     setEditingMcpId(null);
     setMcpForm(emptyMcpForm);
+    setMcpTestResult(null);
     setMcpScope(activeProjectName ? "project" : "global");
     setMcpConfigMode("interface");
     setMcpDialogView("add");
@@ -2857,6 +2864,7 @@ export function AppSidebar({
     if (server.inherited) return;
     setEditingMcpId(server.id);
     setMcpForm(mcpServerToForm(server));
+    setMcpTestResult(null);
     setMcpScope(server.scope);
     setMcpConfigMode("interface");
     setMcpDialogView("edit");
@@ -2924,6 +2932,7 @@ export function AppSidebar({
       nextServer,
     ].sort((left, right) => left.name.localeCompare(right.name) || left.scope.localeCompare(right.scope)));
     setMcpHasChanges(true);
+    setMcpTestResult(null);
     setMcpDialogView("list");
     setMcpForm(emptyMcpForm);
     setEditingMcpId(null);
@@ -2939,6 +2948,49 @@ export function AppSidebar({
   function toggleMcpServer(serverId: string, enabled: boolean) {
     setMcpServers((current) => current.map((server) => server.id === serverId ? { ...server, enabled } : server));
     setMcpHasChanges(true);
+  }
+
+  async function testMcpConnection() {
+    if (mcpTestLoading) return;
+    if (mcpScope === "project" && !activeProjectName) {
+      toastManager.add({ id: "mcp-test-project-required", description: "Project scope 需要先開啟 Project。", title: "無法測試 MCP", type: "error" });
+      return;
+    }
+
+    const server = mcpFormToServer(mcpForm, mcpScope, editingMcpId ?? undefined);
+    if (!server) {
+      toastManager.add({ id: `mcp-test-name-error-${Date.now()}`, description: "請先輸入 Server 名稱。", title: "無法測試 MCP", type: "error" });
+      return;
+    }
+
+    const serverConfig = buildMcpConfig([server])[server.name];
+    setMcpTestLoading(true);
+    setMcpTestResult(null);
+
+    try {
+      const result = await testOpenCodeMcpConnection(
+        mcpScope,
+        serverConfig,
+        mcpScope === "project" ? activeProjectName : undefined,
+      );
+      setMcpTestResult(result);
+      toastManager.add({
+        id: `mcp-test-${Date.now()}`,
+        description: result.message,
+        title: result.ok ? "MCP 連線成功" : "MCP 連線失敗",
+        type: result.ok ? "success" : "error",
+      });
+    } catch (error) {
+      const result: OpenCodeMcpTestResult = {
+        message: getApiErrorMessage(error),
+        ok: false,
+        type: server.type,
+      };
+      setMcpTestResult(result);
+      toastManager.add({ id: `mcp-test-error-${Date.now()}`, description: result.message, title: "MCP 測試失敗", type: "error" });
+    } finally {
+      setMcpTestLoading(false);
+    }
   }
 
   async function changeMcpScope(scope: OpenCodeConfigScope) {
@@ -3008,6 +3060,7 @@ export function AppSidebar({
     setMcpDialogView("list");
     setMcpForm(emptyMcpForm);
     setEditingMcpId(null);
+    setMcpTestResult(null);
     setMcpConfigMode("interface");
     void loadMcpConfig(mcpScope);
   }
@@ -4325,6 +4378,8 @@ export function AppSidebar({
         filteredServers={filteredMcpServers}
         form={mcpForm}
         hasChanges={mcpHasChanges}
+        mcpTestLoading={mcpTestLoading}
+        mcpTestResult={mcpTestResult}
         onApplyChanges={applyMcpChanges}
         onCancelChanges={cancelMcpChanges}
         onClose={() => setMcpDialogOpen(false)}
@@ -4332,12 +4387,14 @@ export function AppSidebar({
         onDeleteServer={deleteMcpServer}
         onDocumentChange={changeMcpDocument}
         onEditServer={openEditMcpServer}
-        onFormChange={(updates) =>
-          setMcpForm((current) => ({ ...current, ...updates }))
-        }
+        onFormChange={(updates) => {
+          setMcpForm((current) => ({ ...current, ...updates }));
+          setMcpTestResult(null);
+        }}
         onOpenAddServer={openAddMcpServer}
         onRefresh={() => void loadMcpConfig(mcpScope)}
         onSubmit={submitMcpServer}
+        onTestConnection={testMcpConnection}
         onToggleServer={toggleMcpServer}
         onViewChange={setMcpDialogView}
         onScopeChange={changeMcpScope}
