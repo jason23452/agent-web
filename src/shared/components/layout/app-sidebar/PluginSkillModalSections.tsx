@@ -91,6 +91,7 @@ type SkillsListProps = {
   onToggleSkill: (skillId: string) => void
   onDeleteSkill?: (skill: SkillDefinition) => void
   onEditSkill?: (skill: SkillDefinition) => void
+  onToggleGlobalSkill?: (skill: SkillDefinition, enabled: boolean) => void
   skillSettings: SkillDefinition[]
 }
 
@@ -99,6 +100,7 @@ export function SkillsList({
   onToggleSkill,
   onDeleteSkill,
   onEditSkill,
+  onToggleGlobalSkill,
   skillSettings,
 }: SkillsListProps) {
   return (
@@ -144,13 +146,16 @@ export function SkillsList({
                 {skill.path}
               </p>
             </div>
-            <Button
-              onClick={() => onToggleSkill(skill.id)}
-              size="sm"
-              variant={skill.enabled ? "outline" : "secondary"}
-            >
-              {skill.enabled ? "停用" : "啟用"}
-            </Button>
+            {skill.inherited && onToggleGlobalSkill ? (
+              <label className="flex shrink-0 items-center gap-2 text-xs">
+                <Checkbox checked={skill.enabled} onCheckedChange={(checked) => onToggleGlobalSkill(skill, checked === true)} />
+                <span>在此專案啟用</span>
+              </label>
+            ) : (
+              <Button onClick={() => onToggleSkill(skill.id)} size="sm" variant={skill.enabled ? "outline" : "secondary"}>
+                {skill.enabled ? "停用" : "啟用"}
+              </Button>
+            )}
             {onEditSkill && <Button onClick={() => onEditSkill(skill)} size="sm" variant="ghost">編輯</Button>}
             {onDeleteSkill && <Button onClick={() => onDeleteSkill(skill)} size="sm" variant="ghost">刪除</Button>}
           </li>

@@ -56,6 +56,7 @@ type PluginSkillModalProps = {
   onToggleSkill: (skillId: string) => void
   onDeleteSkill?: (skill: SkillDefinition) => void
   onEditSkill?: (skill: SkillDefinition) => void
+  onToggleGlobalSkill?: (skill: SkillDefinition, enabled: boolean) => void
   skillDocument: string
   skillEditingName: string
   skillEditingScope: "project" | "global"
@@ -112,6 +113,7 @@ export function PluginSkillModal({
   onToggleSkill,
   onDeleteSkill,
   onEditSkill,
+  onToggleGlobalSkill,
   skillDocument,
   skillEditingName,
   skillEditingScope,
@@ -321,6 +323,7 @@ export function PluginSkillModal({
                   onToggleSkill={onToggleSkill}
                    onDeleteSkill={onDeleteSkill}
                    onEditSkill={onEditSkill}
+                   onToggleGlobalSkill={onToggleGlobalSkill}
                 skillSettings={skillSettings}
               />
               )}

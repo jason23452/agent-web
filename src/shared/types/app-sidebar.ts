@@ -100,6 +100,7 @@ export type SkillDefinition = {
   compatibility?: string;
   archiveName?: string;
   installTarget?: SkillInstallTarget;
+  inherited?: boolean;
 };
 
 export type SkillForm = {

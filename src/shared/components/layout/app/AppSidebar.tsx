@@ -42,7 +42,7 @@ import {
   type OpenCodeRegistryEntry,
 } from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
- import { deleteOpenCodeSkills, importSkillArchives, importSkillUrls, listOpenCodeSkills } from "@/shared/api/opencodeSkills";
+ import { deleteOpenCodeSkills, importSkillArchives, importSkillUrls, listOpenCodeSkills, updateSkillProjectSettings } from "@/shared/api/opencodeSkills";
 import {
   applyOpenCodeConfig,
   getOpenCodeConfig,
@@ -642,7 +642,9 @@ export function AppSidebar({
    const [skillEditing, setSkillEditing] = useState<SkillDefinition | null>(null);
    const [skillEditingScope, setSkillEditingScope] = useState<"project" | "global">("project");
    const [skillDocument, setSkillDocument] = useState("");
-   const [pendingSkillEdits, setPendingSkillEdits] = useState<Record<string, { scope: "project" | "global"; content: string }>>({});
+    const [pendingSkillEdits, setPendingSkillEdits] = useState<Record<string, { scope: "project" | "global"; content: string }>>({});
+    const [enabledGlobalSkills, setEnabledGlobalSkills] = useState<string[]>([]);
+    const [savedEnabledGlobalSkills, setSavedEnabledGlobalSkills] = useState<string[]>([]);
   const [batchUpdateNotice, setBatchUpdateNotice] = useState("");
   const [pluginSkillHasChanges, setPluginSkillHasChanges] = useState(false);
   const [agentsDialogOpen, setAgentsDialogOpen] = useState(false);
@@ -1531,6 +1533,9 @@ export function AppSidebar({
         for (const [name, edit] of Object.entries(pendingSkillEdits)) {
           await upsertSkillRegistryEntry(edit.scope, name, { content: edit.content, filename: "SKILL.md", restart: false, wait: false, reason: "skill-edited" }, edit.scope === "project" ? activeProjectName : undefined);
         }
+        if (activeProjectName && JSON.stringify(enabledGlobalSkills) !== JSON.stringify(savedEnabledGlobalSkills)) {
+          await updateSkillProjectSettings({ project: activeProjectName, enabledGlobalSkills, restart: false, reason: "project-skills-updated" });
+        }
         const deletedRemoteNames = new Set(Object.keys(pendingRemotePluginDeletes));
         const movedFromGlobalToProject = new Set(
           Object.entries(pendingPluginScopeMoves)
@@ -1598,6 +1603,7 @@ export function AppSidebar({
        setPendingRemotePluginDeletes({});
        setPendingSkillDeletes({});
        setPendingSkillEdits({});
+       setSavedEnabledGlobalSkills(enabledGlobalSkills);
 
       if (scope === "agents-tools") {
         setAgentsToolsHasChanges(false);
@@ -2166,6 +2172,13 @@ export function AppSidebar({
     void importSkills();
   }
 
+  function toggleGlobalSkill(skill: SkillDefinition, enabled: boolean) {
+    setEnabledGlobalSkills((current) => enabled ? [...new Set([...current, skill.name])] : current.filter((name) => name !== skill.name));
+    setSkillSettings((current) => current.map((item) => item.id === skill.id ? { ...item, enabled } : item));
+    setPluginSkillHasChanges(true);
+    setBatchUpdateNotice("");
+  }
+
   async function importSkills() {
     if (skillImportLoading) return;
     const scope = skillForm.installTarget;
@@ -2194,7 +2207,10 @@ export function AppSidebar({
     if (!activeProjectName) return;
     try {
       const response = await listOpenCodeSkills("project", activeProjectName, true);
-      setSkillSettings(response.entries.map((entry) => ({ id: `${entry.scope}-${entry.name}`, name: entry.name, description: entry.description, scope: entry.scope, enabled: true, path: entry.path })));
+       const enabled = response.entries.filter((entry) => entry.inherited && entry.enabled !== false).map((entry) => entry.name);
+       setEnabledGlobalSkills(enabled);
+       setSavedEnabledGlobalSkills(enabled);
+       setSkillSettings(response.entries.map((entry) => ({ id: `${entry.scope}-${entry.name}`, name: entry.name, description: entry.description, scope: entry.scope, inherited: entry.inherited, enabled: entry.enabled !== false, path: entry.path })));
     } catch (error) { setSkillInstallResult({ status: "error", message: `載入 Skill 失敗：${getApiErrorMessage(error)}` }); }
   }, [activeProjectName]);
 
@@ -3093,7 +3109,8 @@ export function AppSidebar({
          onDeletePlugin={deletePlugin}
          onToggleSkill={toggleSkill}
          onDeleteSkill={deleteSkill}
-         onEditSkill={editSkill}
+          onEditSkill={editSkill}
+          onToggleGlobalSkill={toggleGlobalSkill}
         onViewChange={setPluginSkillDialogView}
         open={pluginSkillDialogOpen}
         pluginForm={pluginForm}
