@@ -43,6 +43,7 @@ import { listProjectToolIds } from "@/shared/api/opencodeTools";
 import {
   applyOpenCodeConfig,
   getOpenCodeConfig,
+  syncOpenCodePluginConfig,
   type OpenCodeConfigScope,
 } from "@/shared/api/opencodeProjectConfig";
 import {
@@ -83,6 +84,7 @@ import type {
   PluginDefinition,
   PluginConfigMode,
   PluginConfigScope,
+  PluginEditorMode,
   PluginSkillDialogView,
   PluginSkillTab,
   ProjectDialogView,
@@ -626,8 +628,10 @@ export function AppSidebar({
    const [pluginForm, setPluginForm] = useState(emptyPluginForm);
    const [editingPluginId, setEditingPluginId] = useState<string | null>(null);
    const [pluginReadOnly, setPluginReadOnly] = useState(false);
-   const [pendingPluginFiles, setPendingPluginFiles] = useState<Record<string, string>>({});
-   const [pendingPluginDeletes, setPendingPluginDeletes] = useState<string[]>([]);
+   const [pluginEditorMode, setPluginEditorMode] = useState<PluginEditorMode>("add");
+   const [pendingPluginFiles, setPendingPluginFiles] = useState<Record<string, { code: string; scope: PluginConfigScope }>>({});
+   const [pendingPluginDeletes, setPendingPluginDeletes] = useState<Record<string, PluginConfigScope>>({});
+   const [pendingRemotePluginDeletes, setPendingRemotePluginDeletes] = useState<Record<string, PluginConfigScope>>({});
   const [skillForm, setSkillForm] = useState(emptySkillForm);
   const [pluginInstallResult, setPluginInstallResult] =
     useState<InstallResult | null>(null);
@@ -1486,31 +1490,66 @@ export function AppSidebar({
           reason: "plugin-document-updated",
         }, pluginConfigScope === "project" ? activeProjectName : undefined);
       } else if (scope === "plugins-skills") {
-        for (const [name, code] of Object.entries(pendingPluginFiles)) {
+        for (const [name, file] of Object.entries(pendingPluginFiles)) {
           await upsertPluginRegistryEntry(
-            pluginConfigScope,
+            file.scope,
             name,
-            { content: code, filename: `${name}.ts`, restart: false, wait: false, reason: "plugin-file-added" },
-            pluginConfigScope === "project" ? activeProjectName : undefined,
+            { content: file.code, filename: `${name}.ts`, restart: false, wait: false, reason: "plugin-file-added" },
+            file.scope === "project" ? activeProjectName : undefined,
           );
         }
-        for (const name of pendingPluginDeletes) {
+        for (const [name, deleteScope] of Object.entries(pendingPluginDeletes)) {
           await deletePluginRegistryEntry(
-            pluginConfigScope,
+            deleteScope,
             name,
-            pluginConfigScope === "project" ? activeProjectName : undefined,
+            deleteScope === "project" ? activeProjectName : undefined,
           );
         }
-        await applyOpenCodeConfig(pluginConfigScope, {
-          config: { plugin: plugins.filter((plugin) => plugin.source === "npm").map((plugin) => plugin.name) },
-          restart: false,
-          wait: false,
-          reason: "plugin-list-updated",
-        }, pluginConfigScope === "project" ? activeProjectName : undefined);
+        const deletedRemoteNames = new Set(Object.keys(pendingRemotePluginDeletes));
+        const globalPlugins = plugins
+          .filter((plugin) => plugin.installTarget === "global")
+          .filter((plugin) => !deletedRemoteNames.has(plugin.name))
+        const projectPlugins = plugins
+          .filter((plugin) => plugin.installTarget !== "global" || plugin.useInProject)
+          .filter((plugin) => !deletedRemoteNames.has(plugin.name))
+        const globalPluginNames = globalPlugins.map((plugin) => toPluginConfigEntry(plugin, "global"));
+        const projectPluginNames = projectPlugins.map((plugin) => toPluginConfigEntry(plugin, "project"));
+        const hasGlobalPluginDraft = plugins.some((plugin) => plugin.installTarget === "global")
+          || Object.values(pendingPluginDeletes).some((deleteScope) => deleteScope === "global")
+          || Object.values(pendingPluginFiles).some((file) => file.scope === "global")
+          || Object.values(pendingRemotePluginDeletes).some((deleteScope) => deleteScope === "global");
+        const configUpdate = {
+          config: {
+            plugin: pluginConfigScope === "global" ? globalPluginNames : projectPluginNames,
+          },
+        };
+        if (hasGlobalPluginDraft && activeProjectName) {
+          await syncOpenCodePluginConfig({
+            globalPlugins: globalPluginNames,
+            project: activeProjectName,
+            projectPlugins: projectPluginNames,
+            reason: "global-plugin-updated",
+          });
+        } else if (pluginConfigScope === "global") {
+          await applyOpenCodeConfig("global", {
+            ...configUpdate,
+            restart: false,
+            wait: false,
+            reason: "plugin-list-updated",
+          });
+        } else {
+          await applyOpenCodeConfig(pluginConfigScope, {
+            ...configUpdate,
+            restart: false,
+            wait: false,
+            reason: "plugin-list-updated",
+          }, pluginConfigScope === "project" ? activeProjectName : undefined);
+        }
       }
       await onRestartOpenCode(`Apply ${label} modal updates`);
       setPendingPluginFiles({});
-      setPendingPluginDeletes([]);
+       setPendingPluginDeletes({});
+       setPendingRemotePluginDeletes({});
 
       if (scope === "agents-tools") {
         setAgentsToolsHasChanges(false);
@@ -1576,6 +1615,8 @@ export function AppSidebar({
     setPluginSkillTab("plugins");
     setPluginConfigMode("interface");
     setPluginSkillSearch("");
+    setPlugins([]);
+    setPluginConfigLoading(!pluginSkillHasChanges);
     setPluginSkillDialogOpen(true);
   }
 
@@ -1818,6 +1859,8 @@ export function AppSidebar({
   }
 
   const loadPluginConfig = useCallback(async () => {
+    if (pluginSkillHasChanges) return;
+
     if (pluginConfigScope === "project" && !activeProjectName) {
       setPlugins([]);
       setPluginDocument("");
@@ -1827,34 +1870,47 @@ export function AppSidebar({
 
     setPluginConfigLoading(true);
     try {
-      const [response, localResponse] = await Promise.all([
+      const [response, globalResponse, localResponse] = await Promise.all([
         getOpenCodeConfig(pluginConfigScope as OpenCodeConfigScope, activeProjectName),
-        listOpenCodeRegistryEntries(pluginConfigScope, "plugins", activeProjectName),
+        pluginConfigScope === "project"
+          ? getOpenCodeConfig("global")
+          : Promise.resolve(null),
+        listOpenCodeRegistryEntries(pluginConfigScope, "plugins", activeProjectName, pluginConfigScope === "project"),
       ]);
-      const configuredPlugins = Array.isArray(response.config.plugin)
+      const globalPluginNames = globalResponse && Array.isArray(globalResponse.config.plugin)
+        ? globalResponse.config.plugin.filter((item): item is string => typeof item === "string")
+        : [];
+      const projectPluginNames = Array.isArray(response.config.plugin)
         ? response.config.plugin.filter((item): item is string => typeof item === "string")
         : [];
-      const localPlugins = localResponse.entries.map((entry) => entry.name);
+      const configuredPlugins = response.effectivePlugins ?? [...new Set([...globalPluginNames, ...projectPluginNames])];
+      const localPlugins = localResponse.entries.map((entry) => ({
+        name: entry.name,
+        scope: entry.scope,
+      }));
       setPluginConfig(response.config);
       setPluginDocument(response.content);
       setPlugins([
-        ...configuredPlugins.map((name): PluginDefinition => ({
-        id: name,
-        name,
+        ...configuredPlugins.map((entry): PluginDefinition => ({
+        id: entry,
+        name: isLocalPluginConfigEntry(entry) ? pluginNameFromConfigEntry(entry) : entry,
         description: "OpenCode opencode.jsonc plugin 設定。",
-          source: "npm",
-        entry: name,
-        enabled: true,
-        config: "",
+          source: isLocalPluginConfigEntry(entry) ? "local" : "remote",
+          entry,
+          enabled: true,
+          config: "",
+          installTarget: globalPluginNames.includes(entry) ? "global" : "project",
+          useInProject: projectPluginNames.includes(entry),
         })),
-        ...localPlugins.filter((name) => !configuredPlugins.includes(name)).map((name) => ({
-          id: `local-${name}`,
+        ...localPlugins.filter(({ name }) => !configuredPlugins.some((entry) => isLocalPluginConfigEntry(entry) && pluginNameFromConfigEntry(entry) === name)).map(({ name, scope }) => ({
+          id: `local-${scope}-${name}`,
           name,
           description: "載入 .opencode/plugins/ 的本機自訂外掛。",
           source: "local" as const,
           entry: `.opencode/plugins/${name}.ts`,
           enabled: true,
           config: "",
+          installTarget: scope,
         })),
       ]);
       setPluginSkillHasChanges(false);
@@ -1863,7 +1919,7 @@ export function AppSidebar({
     } finally {
       setPluginConfigLoading(false);
     }
-  }, [activeProjectName, pluginConfigScope]);
+  }, [activeProjectName, pluginConfigScope, pluginSkillHasChanges]);
 
   useEffect(() => {
     if (!pluginSkillDialogOpen || pluginSkillTab !== "plugins") return;
@@ -1887,7 +1943,8 @@ export function AppSidebar({
     setPluginInstallResult(null);
     setSkillInstallResult(null);
     setPendingPluginFiles({});
-    setPendingPluginDeletes([]);
+     setPendingPluginDeletes({});
+    setPendingRemotePluginDeletes({});
     setPluginSkillHasChanges(false);
     setBatchUpdateNotice("");
   }
@@ -1914,7 +1971,7 @@ export function AppSidebar({
       return;
     }
 
-    const description = pluginForm.description.trim() || (
+      const description = pluginForm.description.trim() || (
       pluginForm.method === "npm"
         ? "透過 opencode.jsonc 的 plugin 陣列載入。"
         : "載入目前 scope .opencode/plugins/ 的本機自訂外掛。"
@@ -1923,10 +1980,12 @@ export function AppSidebar({
       id: pluginName,
       name: pluginName,
       description,
-      source: pluginForm.method === "npm" ? "npm" : "local",
+      source: pluginForm.method === "npm" ? "remote" : "local",
       entry: pluginForm.method === "npm" ? pluginName : `.opencode/plugins/${pluginName}.ts`,
       enabled: true,
       config: "",
+      installTarget: pluginForm.installTarget,
+      useInProject: pluginForm.useInProject,
     }));
 
     setPlugins((current) => {
@@ -1937,9 +1996,11 @@ export function AppSidebar({
       return [...nextPlugins.filter((plugin) => !existing.has(plugin.name)), ...current];
     });
     if (pluginForm.method === "local") {
-      setPendingPluginFiles((current) => ({ ...current, [pluginNames[0]!]: pluginForm.code }));
+      setPendingPluginFiles((current) => ({
+        ...current,
+        [pluginNames[0]!]: { code: pluginForm.code, scope: pluginForm.installTarget },
+      }));
     }
-    setPluginConfigScope(pluginForm.installTarget);
     setPluginInstallResult({
       status: "success",
       message: pluginForm.method === "local"
@@ -1956,6 +2017,7 @@ export function AppSidebar({
 
   function editPlugin(plugin: PluginDefinition) {
     setPluginReadOnly(false);
+    setPluginEditorMode("edit");
     setEditingPluginId(plugin.id);
     setPluginForm({
       ...emptyPluginForm,
@@ -1964,6 +2026,8 @@ export function AppSidebar({
       description: plugin.description,
       customPluginEnabled: plugin.source === "local",
       entry: plugin.entry,
+      installTarget: plugin.installTarget ?? "global",
+      useInProject: plugin.useInProject ?? true,
     });
     setPluginSkillDialogView("add-plugin");
   }
@@ -1971,6 +2035,7 @@ export function AppSidebar({
   function viewPlugin(plugin: PluginDefinition) {
     editPlugin(plugin);
     setPluginReadOnly(true);
+    setPluginEditorMode("view");
     setPluginSkillDialogView("plugin-detail");
   }
 
@@ -1978,10 +2043,33 @@ export function AppSidebar({
     const plugin = plugins.find((item) => item.id === pluginId);
     setPlugins((current) => current.filter((plugin) => plugin.id !== pluginId));
     if (plugin?.source === "local") {
-      setPendingPluginDeletes((current) => [...new Set([...current, plugin.name])]);
+      setPendingPluginDeletes((current) => ({ ...current, [plugin.name]: plugin.installTarget ?? "project" }));
+    } else if (plugin?.source === "remote") {
+      setPendingRemotePluginDeletes((current) => ({
+        ...current,
+        [plugin.name]: plugin.installTarget ?? "project",
+      }));
     }
     setPluginSkillHasChanges(true);
     setBatchUpdateNotice("");
+  }
+
+  function toPluginConfigEntry(plugin: PluginDefinition, scope: PluginConfigScope): string {
+    if (plugin.source === "local") {
+      return scope === "global"
+        ? `./plugins/${plugin.name}.ts`
+        : `./.opencode/plugins/${plugin.name}.ts`;
+    }
+
+    return plugin.name;
+  }
+
+  function isLocalPluginConfigEntry(entry: string): boolean {
+    return entry.startsWith("./plugins/") || entry.startsWith("./.opencode/plugins/");
+  }
+
+  function pluginNameFromConfigEntry(entry: string): string {
+    return entry.replace(/^\.\/?(?:\.opencode\/)?plugins\//, "").replace(/\.(ts|js|mjs|cjs)$/, "");
   }
 
   function toggleSkill(skillId: string) {
@@ -2868,7 +2956,11 @@ export function AppSidebar({
         onAddSkill={addSkillFromOfficialSource}
          onConfirmBatchUpdate={() => confirmBatchUpdate("plugins-skills")}
          onCancelBatchUpdate={cancelPluginSkillChanges}
-        onOpenChange={setPluginSkillDialogOpen}
+         onOpenChange={setPluginSkillDialogOpen}
+         onStartAdd={() => {
+           setPluginReadOnly(false);
+           setPluginEditorMode("add");
+         }}
         onPluginFormChange={setPluginForm}
          onPluginConfigScopeChange={changePluginConfigScope}
          onPluginConfigModeChange={setPluginConfigMode}
@@ -2895,6 +2987,8 @@ export function AppSidebar({
         pluginDocument={pluginDocument}
          pluginConfigLoading={pluginConfigLoading}
          pluginReadOnly={pluginReadOnly}
+         pluginEditorMode={pluginEditorMode}
+         currentProjectName={activeProjectName}
         pluginInstallResult={pluginInstallResult}
         plugins={plugins}
         search={pluginSkillSearch}

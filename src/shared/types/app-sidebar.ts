@@ -52,6 +52,7 @@ export type PluginSkillDialogView = "list" | "add-plugin" | "add-skill" | "plugi
 export type PluginSkillTab = "plugins" | "skills";
 export type PluginConfigMode = "interface" | "document";
 export type PluginConfigScope = "project" | "global";
+export type PluginEditorMode = "add" | "edit" | "view";
 export type PermissionAction = "allow" | "ask" | "deny";
 export type PermissionValue = PermissionAction | Record<string, PermissionAction>;
 
@@ -59,12 +60,13 @@ export type PluginDefinition = {
   id: string;
   name: string;
   description: string;
-  source: "npm" | "local" | "built-in" | "archive";
+  source: "remote" | "local" | "built-in" | "archive";
   entry: string;
   enabled: boolean;
   config: string;
   archiveName?: string;
   installTarget?: "project" | "global";
+  useInProject?: boolean;
 };
 
 export type PluginInstallMethod = "npm" | "local" | "archive";
@@ -80,6 +82,7 @@ export type PluginForm = {
   useOfficialExample: boolean;
   officialExample: string;
   customPluginEnabled: boolean;
+  useInProject: boolean;
 };
 
 export type SkillInstallTarget =

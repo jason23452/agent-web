@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react"
 import { PlusIcon, SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/shared/components/ui/button"
+import { Skeleton } from "@/shared/components/ui/skeleton"
 import {
   InputGroup,
   InputGroupAddon,
@@ -12,6 +13,7 @@ import type {
   PluginDefinition,
   PluginConfigMode,
   PluginConfigScope,
+  PluginEditorMode,
   PluginForm,
   PluginSkillDialogView,
   PluginSkillTab,
@@ -35,6 +37,7 @@ type PluginSkillModalProps = {
   onConfirmBatchUpdate: () => void
   onCancelBatchUpdate: () => void
   onOpenChange: (open: boolean) => void
+  onStartAdd: () => void
   onPluginFormChange: Dispatch<SetStateAction<PluginForm>>
   onPluginInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onPluginConfigScopeChange: (scope: PluginConfigScope) => void
@@ -57,6 +60,8 @@ type PluginSkillModalProps = {
   pluginDocument: string
   pluginConfigLoading: boolean
   pluginReadOnly: boolean
+  pluginEditorMode: PluginEditorMode
+  currentProjectName?: string
   pluginInstallResult: InstallResult | null
   plugins: PluginDefinition[]
   search: string
@@ -77,6 +82,7 @@ export function PluginSkillModal({
   onConfirmBatchUpdate,
   onCancelBatchUpdate,
   onOpenChange,
+  onStartAdd,
   onPluginFormChange,
   onPluginInstallResultChange,
   onPluginConfigScopeChange,
@@ -99,6 +105,8 @@ export function PluginSkillModal({
   pluginDocument,
   pluginConfigLoading,
   pluginReadOnly,
+  pluginEditorMode,
+  currentProjectName,
   pluginInstallResult,
   plugins,
   search,
@@ -145,7 +153,10 @@ export function PluginSkillModal({
       headerActions={
         view === "list" && (
           <Button
-            onClick={() => onViewChange(tab === "plugins" ? "add-plugin" : "add-skill")}
+            onClick={() => {
+              onStartAdd()
+              onViewChange(tab === "plugins" ? "add-plugin" : "add-skill")
+            }}
             size="sm"
             variant="outline"
           >
@@ -160,8 +171,10 @@ export function PluginSkillModal({
       }}
       open={open}
       title={
-        view === "add-plugin" || view === "plugin-detail"
-          ? "新增 Plugin"
+        view === "plugin-detail"
+          ? "檢視 Plugin"
+          : view === "add-plugin"
+            ? pluginEditorMode === "edit" ? "編輯 Plugin" : "新增 Plugin"
           : view === "add-skill"
             ? "新增 Skill"
             : "外掛/技能"
@@ -247,13 +260,21 @@ export function PluginSkillModal({
             </InputGroup>
 
             {tab === "plugins" && (
-                  <PluginsList
-                filteredPlugins={filteredPlugins}
-                onEditPlugin={onEditPlugin}
-                onViewPlugin={onViewPlugin}
-                onDeletePlugin={onDeletePlugin}
-                plugins={plugins}
-              />
+              pluginConfigLoading ? (
+                <div className="grid gap-2" aria-label="載入 Plugin 中" role="status">
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="h-20 w-full rounded-lg" />
+                  <Skeleton className="h-20 w-full rounded-lg" />
+                </div>
+              ) : (
+                <PluginsList
+                  filteredPlugins={filteredPlugins}
+                  onEditPlugin={onEditPlugin}
+                  onViewPlugin={onViewPlugin}
+                  onDeletePlugin={onDeletePlugin}
+                  plugins={plugins}
+                />
+              )
             )}
 
             {tab === "skills" && (
@@ -275,6 +296,8 @@ export function PluginSkillModal({
             onInstallResultChange={onPluginInstallResultChange}
             onSubmit={onAddPlugin}
             readOnly={pluginReadOnly}
+            currentProjectName={currentProjectName}
+            editorMode={pluginEditorMode}
           />
         ) : (
           <AddSkillForm

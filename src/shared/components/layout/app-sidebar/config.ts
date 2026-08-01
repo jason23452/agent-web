@@ -179,7 +179,7 @@ export const initialPlugins: PluginDefinition[] = [
     name: "opencode-helicone-session",
     description:
       "將 OpenCode session telemetry 送到 Helicone，方便追蹤模型呼叫與成本。",
-    source: "npm",
+    source: "remote",
     entry: "opencode-helicone-session",
     enabled: true,
     config: '{"sampleRate":1}',
@@ -211,6 +211,7 @@ export const MyPlugin: Plugin = async () => ({
   useOfficialExample: false,
   officialExample: "basic",
   customPluginEnabled: false,
+  useInProject: false,
 };
 
 export const officialPluginExamples = [

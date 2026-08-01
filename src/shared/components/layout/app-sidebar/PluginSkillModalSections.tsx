@@ -4,6 +4,7 @@ import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
 import { Textarea } from "@/shared/components/ui/textarea"
+import { Checkbox } from "@/shared/components/ui/checkbox"
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/shared/components/ui/menu"
 import type {
   InstallResult,
@@ -12,6 +13,7 @@ import type {
   SkillDefinition,
   SkillForm,
   SkillInstallTarget,
+  PluginEditorMode,
 } from "@/shared/types/app-sidebar"
 import { officialPluginExamples } from "./config"
 
@@ -48,7 +50,7 @@ export function PluginsList({
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate font-semibold text-sm">{plugin.name}</span>
                   <Badge size="sm" variant={plugin.source === "local" ? "info" : "outline"}>
-                    {plugin.source === "local" ? "本機自訂外掛" : "遠端外掛"}
+                    {plugin.source === "local" ? "自訂外掛" : "遠端外掛"}
                   </Badge>
                 </div>
                 <p className="mt-0.5 line-clamp-1 text-muted-foreground text-xs">
@@ -165,6 +167,8 @@ type AddPluginFormProps = {
   onInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onSubmit: () => void
   readOnly?: boolean
+  currentProjectName?: string
+  editorMode: PluginEditorMode
 }
 
 export function AddPluginForm({
@@ -175,11 +179,15 @@ export function AddPluginForm({
   onInstallResultChange,
   onSubmit,
   readOnly = false,
+  currentProjectName,
+  editorMode,
 }: AddPluginFormProps) {
   return (
     <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
       <div className="grid gap-1">
-        <h3 className="font-semibold text-sm">新增 Plugin</h3>
+        <h3 className="font-semibold text-sm">
+          {editorMode === "view" ? "檢視 Plugin" : editorMode === "edit" ? "編輯 Plugin" : "新增 Plugin"}
+        </h3>
         <p className="text-muted-foreground text-xs leading-5">
           遠端外掛從套件來源載入；自訂外掛會建立在目前的 .opencode/plugins/ 目錄。
         </p>
@@ -213,14 +221,13 @@ export function AddPluginForm({
       </div>
       )}
       {form.method === "local" && (
-        <label className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-900">
-          <input
-            checked={form.customPluginEnabled}
-            onChange={(event) => onFormChange((current) => ({ ...current, customPluginEnabled: event.target.checked }))}
-            type="checkbox"
-          />
-          是否開啟自訂 Plugin
-        </label>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={form.customPluginEnabled}
+              onCheckedChange={(checked) => onFormChange((current) => ({ ...current, customPluginEnabled: checked === true }))}
+            />
+          <span>是否開啟自訂 Plugin</span>
+        </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1 text-muted-foreground text-xs">
@@ -241,6 +248,12 @@ export function AddPluginForm({
           </select>
         </label>
       </div>
+      {form.installTarget === "global" && currentProjectName && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox checked={form.useInProject} disabled={readOnly} onCheckedChange={(checked) => onFormChange((current) => ({ ...current, useInProject: checked === true }))} />
+          <span>此專案使用此 Global Plugin</span>
+        </div>
+      )}
       {form.method === "npm" ? (
         <label className="grid gap-1 text-muted-foreground text-xs">
           NPM package（可輸入多個，以逗號、空白或換行分隔）
@@ -270,7 +283,7 @@ export function AddPluginForm({
             <Textarea aria-label="Plugin 程式碼" className="min-h-56 font-mono text-xs" disabled={readOnly || !form.customPluginEnabled} onChange={(event) => onFormChange((current) => ({ ...current, code: event.target.value }))} value={form.code} />
           </label>
           <label className="flex items-center gap-2 text-muted-foreground text-xs">
-            <input checked={form.useOfficialExample} disabled={readOnly || !form.customPluginEnabled} onChange={(event) => onFormChange((current) => ({ ...current, useOfficialExample: event.target.checked }))} type="checkbox" />
+            <Checkbox checked={form.useOfficialExample} disabled={readOnly || !form.customPluginEnabled} onCheckedChange={(checked) => onFormChange((current) => ({ ...current, useOfficialExample: checked === true }))} />
             使用 OpenCode 官方範例
           </label>
           {form.useOfficialExample && (
@@ -316,7 +329,7 @@ export function AddPluginForm({
         <Button onClick={onCancel} size="sm" variant="outline">
           取消
         </Button>
-        {!readOnly && <Button onClick={onSubmit} size="sm" type="button">更新 Plugin</Button>}
+        {!readOnly && <Button onClick={onSubmit} size="sm" type="button">{editorMode === "edit" ? "儲存編輯" : "新增"}</Button>}
       </div>
     </div>
   )

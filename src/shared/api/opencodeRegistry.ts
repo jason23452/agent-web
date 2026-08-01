@@ -80,13 +80,18 @@ export function listOpenCodeRegistryEntries(
   scope: OpenCodeRegistryScope,
   kind: OpenCodeRegistryKind,
   project?: string,
+  includeGlobal = false,
   config?: ApiRequestConfig,
 ) {
   return apiRequest<OpenCodeRegistryListResponse>(
     `/bff/opencode-registry/${scope}/${kind}`,
     {
       ...config,
-      query: { ...config?.query, project: scope === "project" ? project : undefined },
+      query: {
+        ...config?.query,
+        project: scope === "project" ? project : undefined,
+        includeGlobal: scope === "project" && includeGlobal ? true : undefined,
+      },
     },
   );
 }

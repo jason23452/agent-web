@@ -6,6 +6,7 @@ export type OpenCodeConfigResponse = {
   config: Record<string, unknown>;
   content: string;
   effective: Record<string, unknown>;
+  effectivePlugins?: string[];
   exists: boolean;
   path: string;
   project?: string;
@@ -44,5 +45,20 @@ export function applyOpenCodeConfig(
     body,
     method: "POST",
     query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function syncOpenCodePluginConfig(body: {
+  globalPlugins: string[];
+  project: string;
+  projectPlugins: string[];
+  reason?: string;
+  restart?: boolean;
+  wait?: boolean;
+}, config?: ApiRequestConfig) {
+  return apiRequest("/bff/opencode-plugins/apply", {
+    ...config,
+    body,
+    method: "POST",
   });
 }
