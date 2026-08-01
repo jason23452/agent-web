@@ -56,6 +56,7 @@ export function syncOpenCodePluginConfig(body: {
   projectPlugins: string[];
   projectFiles?: Record<string, string>;
   projectDeletes?: string[];
+  moves?: Array<{ name: string; from: OpenCodeConfigScope; to: OpenCodeConfigScope }>;
   reason?: string;
   restart?: boolean;
   wait?: boolean;

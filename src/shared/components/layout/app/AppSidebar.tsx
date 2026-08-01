@@ -631,6 +631,7 @@ export function AppSidebar({
    const [pluginEditorMode, setPluginEditorMode] = useState<PluginEditorMode>("add");
    const [pendingPluginFiles, setPendingPluginFiles] = useState<Record<string, { code: string; scope: PluginConfigScope }>>({});
    const [pendingPluginDeletes, setPendingPluginDeletes] = useState<Record<string, PluginConfigScope>>({});
+   const [pendingPluginScopeMoves, setPendingPluginScopeMoves] = useState<Record<string, { from: PluginConfigScope; to: PluginConfigScope }>>({});
    const [pendingRemotePluginDeletes, setPendingRemotePluginDeletes] = useState<Record<string, PluginConfigScope>>({});
   const [skillForm, setSkillForm] = useState(emptySkillForm);
   const [pluginInstallResult, setPluginInstallResult] =
@@ -1505,6 +1506,15 @@ export function AppSidebar({
             deleteScope === "project" ? activeProjectName : undefined,
           );
         }
+        for (const [name, move] of Object.entries(pendingPluginScopeMoves)) {
+          if (move.from !== move.to) {
+            await deletePluginRegistryEntry(
+              move.from,
+              name,
+              move.from === "project" ? activeProjectName : undefined,
+            );
+          }
+        }
         const deletedRemoteNames = new Set(Object.keys(pendingRemotePluginDeletes));
         const globalPlugins = plugins
           .filter((plugin) => plugin.installTarget === "global")
@@ -1517,7 +1527,8 @@ export function AppSidebar({
         const hasGlobalPluginDraft = plugins.some((plugin) => plugin.installTarget === "global")
           || Object.values(pendingPluginDeletes).some((deleteScope) => deleteScope === "global")
           || Object.values(pendingPluginFiles).some((file) => file.scope === "global")
-          || Object.values(pendingRemotePluginDeletes).some((deleteScope) => deleteScope === "global");
+          || Object.values(pendingRemotePluginDeletes).some((deleteScope) => deleteScope === "global")
+          || Object.values(pendingPluginScopeMoves).some((move) => move.from === "global" || move.to === "global");
         const configUpdate = {
           config: {
             plugin: pluginConfigScope === "global" ? globalPluginNames : projectPluginNames,
@@ -1531,6 +1542,7 @@ export function AppSidebar({
           }
           const globalDeletes = Object.entries(pendingPluginDeletes).filter(([, deleteScope]) => deleteScope === "global").map(([name]) => name);
           const projectDeletes = Object.entries(pendingPluginDeletes).filter(([, deleteScope]) => deleteScope === "project").map(([name]) => name);
+          const moves = Object.entries(pendingPluginScopeMoves).map(([name, move]) => ({ name, ...move }));
           await syncOpenCodePluginConfig({
             globalPlugins: globalPluginNames,
             globalFiles,
@@ -1539,6 +1551,7 @@ export function AppSidebar({
             projectPlugins: projectPluginNames,
             projectFiles,
             projectDeletes,
+            moves,
             reason: "global-plugin-updated",
           });
         } else if (pluginConfigScope === "global") {
@@ -1560,6 +1573,7 @@ export function AppSidebar({
       await onRestartOpenCode(`Apply ${label} modal updates`);
       setPendingPluginFiles({});
        setPendingPluginDeletes({});
+       setPendingPluginScopeMoves({});
        setPendingRemotePluginDeletes({});
 
       if (scope === "agents-tools") {
@@ -1955,6 +1969,7 @@ export function AppSidebar({
     setSkillInstallResult(null);
     setPendingPluginFiles({});
      setPendingPluginDeletes({});
+    setPendingPluginScopeMoves({});
     setPendingRemotePluginDeletes({});
     setPluginSkillHasChanges(false);
     setBatchUpdateNotice("");
@@ -2011,6 +2026,21 @@ export function AppSidebar({
         ...current,
         [pluginNames[0]!]: { code: pluginForm.code, scope: pluginForm.installTarget },
       }));
+    }
+    if (editingPluginId) {
+      const previous = plugins.find((plugin) => plugin.id === editingPluginId);
+      if (previous?.installTarget && previous.installTarget !== pluginForm.installTarget) {
+        setPendingPluginScopeMoves((current) => ({
+          ...current,
+          [pluginNames[0]!]: { from: previous.installTarget!, to: pluginForm.installTarget },
+        }));
+        if (pluginForm.method === "local") {
+          setPendingPluginDeletes((current) => ({
+            ...current,
+            [pluginNames[0]!]: previous.installTarget!,
+          }));
+        }
+      }
     }
     setPluginInstallResult({
       status: "success",
