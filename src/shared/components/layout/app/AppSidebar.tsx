@@ -1650,6 +1650,18 @@ export function AppSidebar({
     setPluginSkillDialogOpen(true);
   }
 
+  function resetPluginEditor() {
+    setPluginForm(emptyPluginForm);
+    setEditingPluginId(null);
+    setPluginReadOnly(false);
+    setPluginEditorMode("add");
+    setPluginInstallResult(null);
+  }
+
+  function startPluginAdd() {
+    resetPluginEditor();
+  }
+
   function updateModelProvider(
     providerId: string,
     updates: Partial<ModelProvider>,
@@ -3003,10 +3015,8 @@ export function AppSidebar({
          onConfirmBatchUpdate={() => confirmBatchUpdate("plugins-skills")}
          onCancelBatchUpdate={cancelPluginSkillChanges}
          onOpenChange={setPluginSkillDialogOpen}
-         onStartAdd={() => {
-           setPluginReadOnly(false);
-           setPluginEditorMode("add");
-         }}
+         onStartAdd={startPluginAdd}
+         onExitPluginEditor={resetPluginEditor}
         onPluginFormChange={setPluginForm}
          onPluginConfigScopeChange={changePluginConfigScope}
          onPluginConfigModeChange={setPluginConfigMode}

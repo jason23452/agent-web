@@ -38,6 +38,7 @@ type PluginSkillModalProps = {
   onCancelBatchUpdate: () => void
   onOpenChange: (open: boolean) => void
   onStartAdd: () => void
+  onExitPluginEditor: () => void
   onPluginFormChange: Dispatch<SetStateAction<PluginForm>>
   onPluginInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onPluginConfigScopeChange: (scope: PluginConfigScope) => void
@@ -83,6 +84,7 @@ export function PluginSkillModal({
   onCancelBatchUpdate,
   onOpenChange,
   onStartAdd,
+  onExitPluginEditor,
   onPluginFormChange,
   onPluginInstallResultChange,
   onPluginConfigScopeChange,
@@ -123,7 +125,10 @@ export function PluginSkillModal({
         view !== "list"
           ? {
               ariaLabel: "返回外掛與技能列表",
-              onClick: () => onViewChange("list"),
+              onClick: () => {
+                onExitPluginEditor()
+                onViewChange("list")
+              },
             }
           : undefined
       }
@@ -167,7 +172,10 @@ export function PluginSkillModal({
       }
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
-        if (!nextOpen) onViewChange("list")
+        if (!nextOpen) {
+          onExitPluginEditor()
+          onViewChange("list")
+        }
       }}
       open={open}
       title={
@@ -291,7 +299,10 @@ export function PluginSkillModal({
           <AddPluginForm
             form={pluginForm}
             installResult={pluginInstallResult}
-            onCancel={() => onViewChange("list")}
+            onCancel={() => {
+              onExitPluginEditor()
+              onViewChange("list")
+            }}
             onFormChange={onPluginFormChange}
             onInstallResultChange={onPluginInstallResultChange}
             onSubmit={onAddPlugin}
