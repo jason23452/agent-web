@@ -34,7 +34,7 @@ import {
   type AppRoute,
   waitForOpenCodeRestartOperation,
   waitForOpenCodeRuntimeReady,
-} from "@/app/appRouterUtils"
+} from "@/shared/utils/appRouterUtils"
 
 const EMPTY_AGENT: Agent = {
   id: "no-primary-agent",
