@@ -53,6 +53,7 @@ type PluginSkillModalProps = {
   onViewPlugin: (plugin: PluginDefinition) => void
   onDeletePlugin: (pluginId: string) => void
   onToggleSkill: (skillId: string) => void
+  onDeleteSkill?: (skill: SkillDefinition) => void
   onViewChange: Dispatch<SetStateAction<PluginSkillDialogView>>
   open: boolean
   pluginForm: PluginForm
@@ -99,6 +100,7 @@ export function PluginSkillModal({
   onViewPlugin,
   onDeletePlugin,
   onToggleSkill,
+  onDeleteSkill,
   onViewChange,
   open,
   pluginForm,
@@ -286,9 +288,10 @@ export function PluginSkillModal({
             )}
 
             {tab === "skills" && (
-              <SkillsList
+                <SkillsList
                 filteredSkillSettings={filteredSkillSettings}
-                onToggleSkill={onToggleSkill}
+                  onToggleSkill={onToggleSkill}
+                  onDeleteSkill={onDeleteSkill}
                 skillSettings={skillSettings}
               />
             )}

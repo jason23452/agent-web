@@ -89,12 +89,14 @@ export function PluginsList({
 type SkillsListProps = {
   filteredSkillSettings: SkillDefinition[]
   onToggleSkill: (skillId: string) => void
+  onDeleteSkill?: (skill: SkillDefinition) => void
   skillSettings: SkillDefinition[]
 }
 
 export function SkillsList({
   filteredSkillSettings,
   onToggleSkill,
+  onDeleteSkill,
   skillSettings,
 }: SkillsListProps) {
   return (
@@ -147,6 +149,7 @@ export function SkillsList({
             >
               {skill.enabled ? "停用" : "啟用"}
             </Button>
+            {onDeleteSkill && <Button onClick={() => onDeleteSkill(skill)} size="sm" variant="ghost">刪除</Button>}
           </li>
         ))}
       </ul>
@@ -400,6 +403,10 @@ export function AddSkillForm({
         </label>
       </div>
       <label className="grid gap-1 text-muted-foreground text-xs">
+        skills.sh URL 或 npx skills add 指令（每行一筆）
+        <Textarea aria-label="Skill 來源" className="min-h-24 font-mono text-xs" onChange={(event) => { onInstallResultChange(null); onFormChange((current) => ({ ...current, sources: event.target.value })) }} placeholder="https://www.skills.sh/anthropics/skills/frontend-design" value={form.sources} />
+      </label>
+      <label className="grid gap-1 text-muted-foreground text-xs">
         Description
         <Input
           aria-label="Skill description"
@@ -445,16 +452,19 @@ export function AddSkillForm({
         </label>
       </div>
       <label className="grid gap-1 text-muted-foreground text-xs">
-        Archive import optional
+        壓縮檔批次上傳（可選）
         <Input
           aria-label="Skill archive"
           accept=".zip,.tar,.tgz,.gz"
-          onChange={(event) => {
-            onInstallResultChange(null)
-            onFormChange((current) => ({
-              ...current,
-              archiveName: event.target.files?.[0]?.name ?? "",
-            }))
+           multiple
+           onChange={(event) => {
+             onInstallResultChange(null)
+             const files = Array.from(event.target.files ?? [])
+             onFormChange((current) => ({
+               ...current,
+               archiveName: files.map((file) => file.name).join(", "),
+               archiveFiles: files,
+             }))
           }}
           type="file"
         />

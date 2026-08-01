@@ -113,6 +113,8 @@ export type SkillForm = {
   license: string;
   compatibility: string;
   archiveName: string;
+  sources: string;
+  archiveFiles: File[];
 };
 
 export type AgentDefinition = {

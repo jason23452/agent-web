@@ -40,6 +40,7 @@ import {
   type OpenCodeRegistryEntry,
 } from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
+import { deleteOpenCodeSkill, importSkillArchives, importSkillUrls, listOpenCodeSkills } from "@/shared/api/opencodeSkills";
 import {
   applyOpenCodeConfig,
   getOpenCodeConfig,
@@ -94,11 +95,8 @@ import type {
 } from "@/shared/types/app-sidebar";
 import {
   agentToYaml,
-  getSkillBasePath,
-  getSkillScope,
   getToolPermissionKey,
   isCustomTool,
-  isValidSkillName,
   taskPermissionFor,
 } from "@/shared/utils/app-sidebar";
 
@@ -2141,71 +2139,47 @@ export function AppSidebar({
   }
 
   function addSkillFromOfficialSource() {
-    const archiveName = skillForm.archiveName.trim();
-    const rawName = archiveName
-      ? archiveName.replace(/\.(zip|tar|tgz|tar\.gz)$/i, "")
-      : skillForm.name.trim();
-    const skillName = rawName
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, "-")
-      .replace(/--+/g, "-")
-      .replace(/^-|-$/g, "");
+    void importSkills();
+  }
 
-    if (!isValidSkillName(skillName)) {
-      setSkillInstallResult({
-        status: "error",
-        message:
-          "Skill name 必須符合官方規則：小寫英數、單一 hyphen 分隔，1-64 字元。",
-      });
+  async function importSkills() {
+    const scope = skillForm.installTarget === "global-opencode" ? "global" : "project" as const;
+    const project = scope === "project" ? activeProjectName : undefined;
+    try {
+      const sources = skillForm.sources.split(/\r?\n/).map((source) => source.trim()).filter(Boolean);
+      const result = sources.length > 0
+        ? await importSkillUrls({ scope, project, sources, overwrite: true, restart: false })
+        : await importSkillArchives(skillForm.archiveFiles, { scope, project, overwrite: true, restart: false });
+      setSkillInstallResult({ status: result.failed.length ? "error" : "success", message: `匯入 ${result.imported.length} 個，略過 ${result.skipped.length} 個，失敗 ${result.failed.length} 個。` });
+      await loadSkills();
+      setSkillForm(emptySkillForm);
+      setPluginSkillTab("skills");
+      setPluginSkillDialogView("list");
+    } catch (error) { setSkillInstallResult({ status: "error", message: getApiErrorMessage(error) }); }
+  }
+
+  const loadSkills = useCallback(async () => {
+    if (!activeProjectName) return;
+    setPluginConfigLoading(true);
+    try {
+      const response = await listOpenCodeSkills("project", activeProjectName, true);
+      setSkillSettings(response.entries.map((entry) => ({ id: `${entry.scope}-${entry.name}`, name: entry.name, description: entry.description, scope: entry.scope, enabled: true, path: entry.path })));
+    } catch (error) { setSkillInstallResult({ status: "error", message: `載入 Skill 失敗：${getApiErrorMessage(error)}` }); }
+    finally { setPluginConfigLoading(false); }
+  }, [activeProjectName]);
+
+  useEffect(() => {
+    if (pluginSkillDialogOpen && pluginSkillTab === "skills") void loadSkills();
+  }, [loadSkills, pluginSkillDialogOpen, pluginSkillTab]);
+
+  async function deleteSkill(skill: SkillDefinition) {
+    if (skill.scope === "global" && skill.id.startsWith("global-")) {
+      setSkillInstallResult({ status: "error", message: "此 Skill 來自 Global inherited，請切換 Global scope 後刪除。" });
       return;
     }
-
-    if (!skillForm.description.trim()) {
-      setSkillInstallResult({
-        status: "error",
-        message: "Skill description 是官方必要欄位。",
-      });
-      return;
-    }
-
-    if (archiveName && !/\.(zip|tar|tgz|tar\.gz)$/i.test(archiveName)) {
-      setSkillInstallResult({
-        status: "error",
-        message: "壓縮檔只支援 .zip、.tar、.tgz、.tar.gz。",
-      });
-      return;
-    }
-
-    const basePath = getSkillBasePath(skillForm.installTarget);
-    const nextSkill: SkillDefinition = {
-      id: skillName,
-      name: skillName,
-      description: skillForm.description.trim(),
-      scope: archiveName ? "archive" : getSkillScope(skillForm.installTarget),
-      enabled: true,
-      path: `${basePath}/${skillName}/SKILL.md`,
-      license: skillForm.license.trim() || undefined,
-      compatibility: skillForm.compatibility.trim() || undefined,
-      archiveName: archiveName || undefined,
-      installTarget: skillForm.installTarget,
-    };
-
-    setSkillSettings((current) =>
-      current.some((skill) => skill.id === skillName)
-        ? current
-        : [nextSkill, ...current],
-    );
-    setSkillInstallResult({
-      status: "success",
-      message: archiveName
-        ? `已新增 archive skill：解壓後需包含 ${skillName}/SKILL.md。`
-        : `已新增 skill：${nextSkill.path}`,
-    });
-    setSkillForm(emptySkillForm);
-    setPluginSkillTab("skills");
-    setPluginSkillDialogView("list");
-    setPluginSkillHasChanges(true);
-    setBatchUpdateNotice("");
+    if (!window.confirm(`確定刪除 ${skill.name}？`)) return;
+    try { const scope = skill.scope === "global" ? "global" : "project"; await deleteOpenCodeSkill(skill.name, scope, activeProjectName); await loadSkills(); }
+    catch (error) { setSkillInstallResult({ status: "error", message: getApiErrorMessage(error) }); }
   }
 
   function openAddMcpServer() {
@@ -3034,7 +3008,8 @@ export function AppSidebar({
          onEditPlugin={editPlugin}
          onViewPlugin={viewPlugin}
          onDeletePlugin={deletePlugin}
-        onToggleSkill={toggleSkill}
+         onToggleSkill={toggleSkill}
+         onDeleteSkill={deleteSkill}
         onViewChange={setPluginSkillDialogView}
         open={pluginSkillDialogOpen}
         pluginForm={pluginForm}

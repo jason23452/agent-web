@@ -285,6 +285,8 @@ export const emptySkillForm: SkillForm = {
   license: "",
   compatibility: "opencode",
   archiveName: "",
+  sources: "",
+  archiveFiles: [],
 };
 
 export const initialSkillSettings: SkillDefinition[] = availableSkills.map(
