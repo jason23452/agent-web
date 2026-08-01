@@ -123,8 +123,6 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
   useEffect(() => {
     if (!activeProjectPath) return
     const controller = new AbortController()
-    setContextFileTreeLoading(true)
-    setContextFileTreeError(null)
     void buildWorkspaceFileTree(activeProjectPath, controller.signal)
       .then((tree) => { if (!controller.signal.aborted) setContextFileTree(tree) })
       .catch((error) => {
