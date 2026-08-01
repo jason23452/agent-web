@@ -91,6 +91,7 @@ export function AgentsToolsList({
   toolDefinitions,
   toolsError,
   toolsLoading = false,
+  projectRequired = false,
 }: {
   agents: AgentDefinition[];
   agentsError?: string | null;
@@ -106,6 +107,7 @@ export function AgentsToolsList({
   toolDefinitions: ToolDefinition[];
   toolsError?: string | null;
   toolsLoading?: boolean;
+  projectRequired?: boolean;
 }) {
   const systemAgents = agents.filter((agent) => agent.scope === "system");
   const customAgents = agents.filter((agent) => agent.scope === "custom");
@@ -131,7 +133,13 @@ export function AgentsToolsList({
         </button>
       </div>
 
-      {agentToolTab === "agents" && (
+      {projectRequired && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm" role="alert">
+          請先開啟專案後再查看 OpenCode agents。
+        </div>
+      )}
+
+      {!projectRequired && agentToolTab === "agents" && (
         <>
           {agentsLoading && (
             <div
@@ -281,7 +289,7 @@ export function AgentsToolsList({
         </>
       )}
 
-      {agentToolTab === "tools" && (
+      {!projectRequired && agentToolTab === "tools" && (
         <>
           {toolsLoading && (
             <div

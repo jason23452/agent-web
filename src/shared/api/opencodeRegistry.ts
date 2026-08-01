@@ -111,6 +111,22 @@ export function readToolRegistryEntry(
   );
 }
 
+export function readSkillRegistryEntry(scope: OpenCodeRegistryScope, name: string, project?: string, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeRegistryReadResponse>(`/bff/opencode-registry/${scope}/skills/${encodeURIComponent(name)}`, {
+    ...config,
+    query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
+export function upsertSkillRegistryEntry(scope: OpenCodeRegistryScope, name: string, body: OpenCodeRegistryUpsertBody, project?: string, config?: ApiRequestConfig) {
+  return apiRequest(`/bff/opencode-registry/${scope}/skills/${encodeURIComponent(name)}`, {
+    ...config,
+    body,
+    method: "PUT",
+    query: { ...config?.query, project: scope === "project" ? project : undefined },
+  });
+}
+
 export function upsertToolRegistryEntry(
   scope: OpenCodeRegistryScope,
   name: string,

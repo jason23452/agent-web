@@ -90,6 +90,7 @@ type SkillsListProps = {
   filteredSkillSettings: SkillDefinition[]
   onToggleSkill: (skillId: string) => void
   onDeleteSkill?: (skill: SkillDefinition) => void
+  onEditSkill?: (skill: SkillDefinition) => void
   skillSettings: SkillDefinition[]
 }
 
@@ -97,6 +98,7 @@ export function SkillsList({
   filteredSkillSettings,
   onToggleSkill,
   onDeleteSkill,
+  onEditSkill,
   skillSettings,
 }: SkillsListProps) {
   return (
@@ -149,6 +151,7 @@ export function SkillsList({
             >
               {skill.enabled ? "停用" : "啟用"}
             </Button>
+            {onEditSkill && <Button onClick={() => onEditSkill(skill)} size="sm" variant="ghost">編輯</Button>}
             {onDeleteSkill && <Button onClick={() => onDeleteSkill(skill)} size="sm" variant="ghost">刪除</Button>}
           </li>
         ))}
@@ -159,6 +162,29 @@ export function SkillsList({
         </p>
       )}
     </section>
+  )
+}
+
+export function SkillEditorForm({ content, name, scope, onCancel, onChange, onScopeChange, onSubmit }: { content: string; name: string; scope: "project" | "global"; onCancel: () => void; onChange: (value: string) => void; onScopeChange: (scope: "project" | "global") => void; onSubmit: () => void }) {
+  return (
+    <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+      <div>
+        <h3 className="font-semibold text-sm">編輯 Skill：{name}</h3>
+        <p className="mt-1 text-muted-foreground text-xs">只能編輯 OpenCode 的 Project 或 Global SKILL.md。</p>
+      </div>
+      <label className="grid gap-1 text-muted-foreground text-xs">編輯 scope
+        <select className="h-9 rounded-lg border border-input bg-background px-2 text-sm" onChange={(event) => onScopeChange(event.target.value as "project" | "global")} value={scope}>
+          <option value="project">Project</option>
+          <option value="global">Global</option>
+        </select>
+      </label>
+      <label className="grid gap-1 text-muted-foreground text-xs" htmlFor="skill-document">SKILL.md</label>
+      <Textarea className="min-h-[min(56dvh,480px)] font-mono text-xs" id="skill-document" onChange={(event) => onChange(event.target.value)} value={content} />
+      <div className="flex justify-end gap-2">
+        <Button onClick={onCancel} size="sm" variant="outline">取消</Button>
+        <Button onClick={onSubmit} size="sm">儲存編輯</Button>
+      </div>
+    </div>
   )
 }
 

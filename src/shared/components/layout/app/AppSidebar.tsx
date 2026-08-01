@@ -36,11 +36,13 @@ import {
   upsertPluginRegistryEntry,
   deletePluginRegistryEntry,
   listOpenCodeRegistryEntries,
+  readSkillRegistryEntry,
+  upsertSkillRegistryEntry,
   upsertToolRegistryEntry,
   type OpenCodeRegistryEntry,
 } from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
-import { deleteOpenCodeSkill, importSkillArchives, importSkillUrls, listOpenCodeSkills } from "@/shared/api/opencodeSkills";
+ import { deleteOpenCodeSkills, importSkillArchives, importSkillUrls, listOpenCodeSkills } from "@/shared/api/opencodeSkills";
 import {
   applyOpenCodeConfig,
   getOpenCodeConfig,
@@ -636,6 +638,11 @@ export function AppSidebar({
    const [skillInstallResult, setSkillInstallResult] =
      useState<InstallResult | null>(null);
    const [skillImportLoading, setSkillImportLoading] = useState(false);
+   const [pendingSkillDeletes, setPendingSkillDeletes] = useState<Record<string, SkillDefinition>>({});
+   const [skillEditing, setSkillEditing] = useState<SkillDefinition | null>(null);
+   const [skillEditingScope, setSkillEditingScope] = useState<"project" | "global">("project");
+   const [skillDocument, setSkillDocument] = useState("");
+   const [pendingSkillEdits, setPendingSkillEdits] = useState<Record<string, { scope: "project" | "global"; content: string }>>({});
   const [batchUpdateNotice, setBatchUpdateNotice] = useState("");
   const [pluginSkillHasChanges, setPluginSkillHasChanges] = useState(false);
   const [agentsDialogOpen, setAgentsDialogOpen] = useState(false);
@@ -1513,6 +1520,17 @@ export function AppSidebar({
             );
           }
         }
+        const pendingSkillsByScope = Object.values(pendingSkillDeletes).reduce<Record<string, string[]>>((groups, skill) => {
+          const scopeKey = skill.scope === "global" ? "global" : "project";
+          (groups[scopeKey] ??= []).push(skill.name);
+          return groups;
+        }, {});
+        for (const [skillScope, names] of Object.entries(pendingSkillsByScope)) {
+          await deleteOpenCodeSkills(names, skillScope as "project" | "global", skillScope === "project" ? activeProjectName : undefined, false);
+        }
+        for (const [name, edit] of Object.entries(pendingSkillEdits)) {
+          await upsertSkillRegistryEntry(edit.scope, name, { content: edit.content, filename: "SKILL.md", restart: false, wait: false, reason: "skill-edited" }, edit.scope === "project" ? activeProjectName : undefined);
+        }
         const deletedRemoteNames = new Set(Object.keys(pendingRemotePluginDeletes));
         const movedFromGlobalToProject = new Set(
           Object.entries(pendingPluginScopeMoves)
@@ -1578,6 +1596,8 @@ export function AppSidebar({
        setPendingPluginDeletes({});
        setPendingPluginScopeMoves({});
        setPendingRemotePluginDeletes({});
+       setPendingSkillDeletes({});
+       setPendingSkillEdits({});
 
       if (scope === "agents-tools") {
         setAgentsToolsHasChanges(false);
@@ -1979,7 +1999,9 @@ export function AppSidebar({
 
   function cancelPluginSkillChanges() {
     void loadPluginConfig();
-    setSkillSettings([]);
+    void loadSkills();
+    setPendingSkillDeletes({});
+    setPendingSkillEdits({});
     setPluginForm(emptyPluginForm);
     setSkillForm(emptySkillForm);
     setPluginInstallResult(null);
@@ -2187,21 +2209,60 @@ export function AppSidebar({
     }
     showConfirmationToast({
       id: `skill-delete-confirm-${skill.name}`,
-      title: `確定刪除 ${skill.name}？`,
-      description: "此操作會刪除目前 scope 的 Skill 資料夾。",
+      title: `將 ${skill.name} 加入刪除清單？`,
+      description: "按下 modal 底部的「更新」後才會真正刪除。",
       onConfirm: () => {
-        void (async () => {
-            try {
-              const scope = skill.scope === "global" ? "global" : "project";
-              await deleteOpenCodeSkill(skill.name, scope, activeProjectName);
-              await loadSkills();
-              toastManager.add({ id: `skill-delete-success-${skill.name}`, title: "Skill 已刪除", description: skill.name, type: "success" });
-            } catch (error) {
-              toastManager.add({ id: `skill-delete-error-${skill.name}`, title: "Skill 刪除失敗", description: getApiErrorMessage(error), type: "error" });
-            }
-        })();
+        setPendingSkillDeletes((current) => ({ ...current, [skill.name]: skill }));
+        setSkillSettings((current) => current.filter((item) => item.id !== skill.id));
+        setPluginSkillHasChanges(true);
+        setBatchUpdateNotice("");
       },
     });
+  }
+
+  async function editSkill(skill: SkillDefinition) {
+    const scope = skill.scope === "global" ? "global" : "project";
+    try {
+      const response = await readSkillRegistryEntry(scope, skill.name, scope === "project" ? activeProjectName : undefined);
+      setSkillEditing(skill);
+      setSkillEditingScope(scope);
+      setSkillDocument(response.content ?? "");
+      setPluginSkillDialogView("edit-skill");
+    } catch (error) {
+      toastManager.add({ id: `skill-read-error-${skill.name}`, title: "Skill 讀取失敗", description: getApiErrorMessage(error), type: "error" });
+    }
+  }
+
+  function saveSkillEdit() {
+    if (!skillEditing) return;
+    const scope = skillEditingScope;
+    const sourceScope = skillEditing.scope === "global" ? "global" : "project";
+    if (scope === "project" && !activeProjectName) {
+      toastManager.add({ id: `skill-edit-project-required-${skillEditing.name}`, title: "無法儲存 Skill", description: "Project scope 需要先開啟 Project。", type: "error" });
+      return;
+    }
+    if (scope !== sourceScope) {
+      setPendingSkillDeletes((current) => ({
+        ...current,
+        [`${sourceScope}:${skillEditing.name}`]: { ...skillEditing, scope: sourceScope },
+      }));
+    }
+    setPendingSkillEdits((current) => ({ ...current, [skillEditing.name]: { scope, content: skillDocument } }));
+    setSkillSettings((current) => current.map((skill) => skill.id === skillEditing.id
+      ? { ...skill, scope, path: scope === "global" ? skill.path.replace(/\.opencode\/skills/, "~/.config/opencode/skills") : skill.path.replace(/~\/.config\/opencode\/skills/, ".opencode/skills") }
+      : skill));
+    setPluginSkillHasChanges(true);
+    setPluginSkillDialogView("list");
+    setBatchUpdateNotice("");
+  }
+
+  async function changeSkillEditingScope(scope: "project" | "global") {
+    if (!skillEditing) return;
+    if (scope === "project" && !activeProjectName) {
+      toastManager.add({ id: `skill-scope-project-required-${skillEditing.name}`, title: "無法轉移 Skill", description: "請先開啟 Project。", type: "error" });
+      return;
+    }
+    setSkillEditingScope(scope);
   }
 
   function openAddMcpServer() {
@@ -3032,6 +3093,7 @@ export function AppSidebar({
          onDeletePlugin={deletePlugin}
          onToggleSkill={toggleSkill}
          onDeleteSkill={deleteSkill}
+         onEditSkill={editSkill}
         onViewChange={setPluginSkillDialogView}
         open={pluginSkillDialogOpen}
         pluginForm={pluginForm}
@@ -3042,12 +3104,19 @@ export function AppSidebar({
          pluginReadOnly={pluginReadOnly}
          pluginEditorMode={pluginEditorMode}
          currentProjectName={activeProjectName}
+         projectRequired={!activeProjectName}
         pluginInstallResult={pluginInstallResult}
         plugins={plugins}
         search={pluginSkillSearch}
         skillForm={skillForm}
          skillInstallResult={skillInstallResult}
          skillImportLoading={skillImportLoading}
+         skillDocument={skillDocument}
+         skillEditingName={skillEditing?.name ?? "Skill"}
+         skillEditingScope={skillEditingScope}
+         onSkillEditingScopeChange={changeSkillEditingScope}
+         onSkillDocumentChange={setSkillDocument}
+         onSaveSkill={saveSkillEdit}
         skillSettings={skillSettings}
         tab={pluginSkillTab}
         view={pluginSkillDialogView}
@@ -3115,7 +3184,8 @@ export function AppSidebar({
         toolForm={toolForm}
         toolTestResult={toolTestResult}
         toolToAdd={toolToAdd}
-        view={agentDialogView}
+          view={agentDialogView}
+          projectRequired={!activeProjectName}
       />
     </>
   );

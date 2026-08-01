@@ -89,6 +89,7 @@ type AgentsToolsModalProps = {
   toolTestResult: InstallResult | null;
   toolToAdd: string;
   view: AgentDialogView;
+  projectRequired?: boolean;
 };
 
 export function AgentsToolsModal({
@@ -154,6 +155,7 @@ export function AgentsToolsModal({
   toolTestResult,
   toolToAdd,
   view,
+  projectRequired = false,
 }: AgentsToolsModalProps) {
   return (
     <ModalShell
@@ -181,7 +183,7 @@ export function AgentsToolsModal({
               ? "OpenCode 工具說明"
             : "介面設定 / YAML 設定"
         }
-        footer={
+         footer={!projectRequired && (
           <>
             <p className="text-muted-foreground text-xs">
               請在儲存後重新整理 OpenCode 伺服器以套用變更。
@@ -204,9 +206,9 @@ export function AgentsToolsModal({
             </p>
           )}
         </>
-        }
+        )}
         headerActions={
-          view === "list" && (
+          view === "list" && !projectRequired && (
             <Button
               onClick={agentToolTab === "tools" ? onOpenAddToolMode : onOpenAddAgentMode}
               size="sm"
@@ -219,6 +221,7 @@ export function AgentsToolsModal({
       }
       onOpenChange={onOpenChange}
       open={open}
+      panelClassName="h-[min(86dvh,640px)]"
         title={
         view === "list"
            ? "智能體 / 工具"
@@ -241,6 +244,7 @@ export function AgentsToolsModal({
           agentsError={agentsError}
           agentsLoading={agentsLoading}
           agentToolTab={agentToolTab}
+          projectRequired={projectRequired}
           onAgentToolTabChange={onAgentToolTabChange}
           onDeleteAgent={onDeleteAgent}
           onDeleteTool={onDeleteTool}

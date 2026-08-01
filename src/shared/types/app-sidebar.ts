@@ -48,7 +48,7 @@ export type McpForm = Pick<
 
 export type McpDialogView = "list" | "add" | "edit";
 export type ProjectDialogView = "list" | "create";
-export type PluginSkillDialogView = "list" | "add-plugin" | "add-skill" | "plugin-detail";
+export type PluginSkillDialogView = "list" | "add-plugin" | "add-skill" | "plugin-detail" | "edit-skill";
 export type PluginSkillTab = "plugins" | "skills";
 export type PluginConfigMode = "interface" | "document";
 export type PluginConfigScope = "project" | "global";

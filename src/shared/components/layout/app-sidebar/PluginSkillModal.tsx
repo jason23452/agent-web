@@ -25,6 +25,7 @@ import {
   AddSkillForm,
   PluginsList,
   SkillsList,
+  SkillEditorForm,
 } from "./PluginSkillModalSections"
 
 type PluginSkillModalProps = {
@@ -54,6 +55,13 @@ type PluginSkillModalProps = {
   onDeletePlugin: (pluginId: string) => void
   onToggleSkill: (skillId: string) => void
   onDeleteSkill?: (skill: SkillDefinition) => void
+  onEditSkill?: (skill: SkillDefinition) => void
+  skillDocument: string
+  skillEditingName: string
+  skillEditingScope: "project" | "global"
+  onSkillEditingScopeChange: (scope: "project" | "global") => void
+  onSkillDocumentChange: (content: string) => void
+  onSaveSkill: () => void
   onViewChange: Dispatch<SetStateAction<PluginSkillDialogView>>
   open: boolean
   pluginForm: PluginForm
@@ -64,6 +72,7 @@ type PluginSkillModalProps = {
   pluginReadOnly: boolean
   pluginEditorMode: PluginEditorMode
   currentProjectName?: string
+  projectRequired?: boolean
   pluginInstallResult: InstallResult | null
   plugins: PluginDefinition[]
   search: string
@@ -102,6 +111,13 @@ export function PluginSkillModal({
   onDeletePlugin,
   onToggleSkill,
   onDeleteSkill,
+  onEditSkill,
+  skillDocument,
+  skillEditingName,
+  skillEditingScope,
+  onSkillEditingScopeChange,
+  onSkillDocumentChange,
+  onSaveSkill,
   onViewChange,
   open,
   pluginForm,
@@ -112,6 +128,7 @@ export function PluginSkillModal({
   pluginReadOnly,
   pluginEditorMode,
   currentProjectName,
+  projectRequired = false,
   pluginInstallResult,
   plugins,
   search,
@@ -125,8 +142,8 @@ export function PluginSkillModal({
   return (
     <ModalShell
       ariaLabel="外掛與技能設定"
-      backButton={
-        view !== "list"
+       backButton={
+         view !== "list"
           ? {
               ariaLabel: "返回外掛與技能列表",
               onClick: () => {
@@ -139,8 +156,8 @@ export function PluginSkillModal({
       bodyClassName="p-0"
       closeAriaLabel="關閉外掛與技能設定"
        description={<>Plugin {plugins.length} · Skill {skillSettings.length}</>}
-      footer={
-        <>
+       footer={!projectRequired && (
+         <>
           <p className="text-muted-foreground text-xs">
             按下更新會重新啟動 OpenCode server。
           </p>
@@ -157,10 +174,10 @@ export function PluginSkillModal({
               {batchUpdateNotice}
             </p>
           )}
-        </>
-      }
-      headerActions={
-        view === "list" && (
+         </>
+       )}
+       headerActions={
+         view === "list" && !projectRequired && (
           <Button
             onClick={() => {
               onStartAdd()
@@ -184,7 +201,9 @@ export function PluginSkillModal({
        open={open}
        panelClassName="h-[min(86dvh,640px)]"
       title={
-        view === "plugin-detail"
+         view === "edit-skill"
+           ? "編輯 Skill"
+           : view === "plugin-detail"
           ? "檢視 Plugin"
           : view === "add-plugin"
             ? pluginEditorMode === "edit" ? "編輯 Plugin" : "新增 Plugin"
@@ -194,8 +213,8 @@ export function PluginSkillModal({
       }
     >
        <div className="grid min-h-[420px] min-w-0 flex-1 content-start gap-5 overflow-y-auto px-6 pb-6">
-        {view === "list" ? (
-          <>
+         {view === "list" ? (
+           <>
               <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
               <button
                 className={`h-8 rounded-md font-medium text-sm transition ${tab === "plugins" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
@@ -218,9 +237,15 @@ export function PluginSkillModal({
               >
                 技能
               </button>
-             </div>
+              </div>
 
-             {tab === "plugins" && pluginConfigMode === "document" ? (
+              {projectRequired ? (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm" role="alert">
+                  請先開啟專案後再查看 OpenCode {tab === "plugins" ? "plugins" : "skills"}。
+                </div>
+              ) : (
+                <>
+              {tab === "plugins" && pluginConfigMode === "document" ? (
               <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -294,13 +319,18 @@ export function PluginSkillModal({
                 <SkillsList
                 filteredSkillSettings={filteredSkillSettings}
                   onToggleSkill={onToggleSkill}
-                  onDeleteSkill={onDeleteSkill}
+                   onDeleteSkill={onDeleteSkill}
+                   onEditSkill={onEditSkill}
                 skillSettings={skillSettings}
               />
-            )}
-             </>
+              )}
+                </>
+              )}
+            </>
              )}
            </>
+        ) : view === "edit-skill" ? (
+          <SkillEditorForm content={skillDocument} name={skillEditingName} onCancel={() => onViewChange("list")} onChange={onSkillDocumentChange} onScopeChange={onSkillEditingScopeChange} onSubmit={onSaveSkill} scope={skillEditingScope} />
         ) : view === "add-plugin" || view === "plugin-detail" ? (
           <AddPluginForm
             form={pluginForm}
