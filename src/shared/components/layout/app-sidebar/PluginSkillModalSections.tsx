@@ -470,22 +470,27 @@ export function AddSkillForm({
       {form.method === "upload" ? (
         <label className="grid gap-1 text-muted-foreground text-xs">
           上傳 Skill 壓縮檔（可一次選取多個）
-          <Input
-            aria-label="Skill archive"
-            accept=".zip,.tar,.tgz,.tar.gz"
-            multiple
-            disabled={loading}
-            onChange={(event) => {
-              onInstallResultChange(null)
-              const files = Array.from(event.target.files ?? [])
-              onFormChange((current) => ({
-                ...current,
-                archiveName: files.map((file) => file.name).join(", "),
-                archiveFiles: files,
-              }))
-            }}
-            type="file"
-          />
+          <label className={`flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-lg border border-input bg-background px-3 text-sm shadow-xs transition-colors hover:bg-accent/50 ${loading ? "cursor-not-allowed opacity-60" : ""}`} htmlFor="skill-archive-upload">
+            <span className="shrink-0 rounded-md bg-foreground px-3 py-1.5 font-medium text-background text-xs">選擇檔案</span>
+            <span className="min-w-0 truncate text-muted-foreground text-xs">{form.archiveFiles.length > 0 ? `${form.archiveFiles.length} 個檔案已選取` : "尚未選擇檔案"}</span>
+            <Input
+              accept=".zip,.tar,.tgz,.tar.gz,.gz"
+              className="sr-only"
+              disabled={loading}
+              id="skill-archive-upload"
+              multiple
+              onChange={(event) => {
+                onInstallResultChange(null)
+                const files = Array.from(event.target.files ?? [])
+                onFormChange((current) => ({
+                  ...current,
+                  archiveName: files.map((file) => file.name).join(", "),
+                  archiveFiles: files,
+                }))
+              }}
+              type="file"
+            />
+          </label>
         </label>
       ) : null}
       {form.archiveName && (
