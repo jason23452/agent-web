@@ -69,6 +69,7 @@ type PluginSkillModalProps = {
   search: string
   skillForm: SkillForm
   skillInstallResult: InstallResult | null
+  skillImportLoading: boolean
   skillSettings: SkillDefinition[]
   tab: PluginSkillTab
   view: PluginSkillDialogView
@@ -116,6 +117,7 @@ export function PluginSkillModal({
   search,
   skillForm,
   skillInstallResult,
+  skillImportLoading,
   skillSettings,
   tab,
   view,
@@ -179,7 +181,8 @@ export function PluginSkillModal({
           onViewChange("list")
         }
       }}
-      open={open}
+       open={open}
+       panelClassName="h-[min(86dvh,640px)]"
       title={
         view === "plugin-detail"
           ? "檢視 Plugin"
@@ -190,15 +193,14 @@ export function PluginSkillModal({
             : "外掛/技能"
       }
     >
-       <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 pb-6">
+       <div className="grid min-h-[420px] min-w-0 flex-1 content-start gap-5 overflow-y-auto px-6 pb-6">
         {view === "list" ? (
           <>
               <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
               <button
                 className={`h-8 rounded-md font-medium text-sm transition ${tab === "plugins" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
                 onClick={() => {
-                onTabChange("plugins")
-                  onPluginConfigModeChange("interface")
+                  onTabChange("plugins")
                   onSearchChange("")
                 }}
                 type="button"
@@ -209,6 +211,7 @@ export function PluginSkillModal({
                 className={`h-8 rounded-md font-medium text-sm transition ${tab === "skills" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
                 onClick={() => {
                   onTabChange("skills")
+                  onPluginConfigModeChange("interface")
                   onSearchChange("")
                 }}
                 type="button"
@@ -271,7 +274,7 @@ export function PluginSkillModal({
 
             {tab === "plugins" && (
               pluginConfigLoading ? (
-                <div className="grid gap-2" aria-label="載入 Plugin 中" role="status">
+               <div className="grid gap-2" aria-label="載入 Plugin 中" role="status">
                   <Skeleton className="h-4 w-28" />
                   <Skeleton className="h-20 w-full rounded-lg" />
                   <Skeleton className="h-20 w-full rounded-lg" />
@@ -317,6 +320,7 @@ export function PluginSkillModal({
           <AddSkillForm
             form={skillForm}
             installResult={skillInstallResult}
+            loading={skillImportLoading}
             onCancel={() => onViewChange("list")}
             onFormChange={onSkillFormChange}
             onInstallResultChange={onSkillInstallResultChange}

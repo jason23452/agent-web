@@ -169,6 +169,7 @@ type AddPluginFormProps = {
   onFormChange: Dispatch<SetStateAction<PluginForm>>
   onInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onSubmit: () => void
+  loading?: boolean
   readOnly?: boolean
   currentProjectName?: string
   editorMode: PluginEditorMode
@@ -345,6 +346,7 @@ type AddSkillFormProps = {
   onFormChange: Dispatch<SetStateAction<SkillForm>>
   onInstallResultChange: Dispatch<SetStateAction<InstallResult | null>>
   onSubmit: () => void
+  loading?: boolean
 }
 
 export function AddSkillForm({
@@ -354,33 +356,45 @@ export function AddSkillForm({
   onFormChange,
   onInstallResultChange,
   onSubmit,
+  loading = false,
 }: AddSkillFormProps) {
   return (
     <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
       <div className="grid gap-1">
         <h3 className="font-semibold text-sm">新增 Skill</h3>
         <p className="text-muted-foreground text-xs leading-5">
-          依 OpenCode 官方方式建立 name/SKILL.md，可放在 OpenCode、Claude 或 Agents
-          相容目錄。
+          選擇 Skill 的來源，匯入完成後會重新讀取目前清單。
         </p>
       </div>
+      <div className="grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist" aria-label="Skill 匯入方式">
+        <button
+          aria-selected={form.method === "remote"}
+          className={`h-9 rounded-md font-medium text-sm transition ${form.method === "remote" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          disabled={loading}
+          onClick={() => {
+            onInstallResultChange(null)
+            onFormChange((current) => ({ ...current, method: "remote", archiveFiles: [], archiveName: "" }))
+          }}
+          role="tab"
+          type="button"
+        >
+          遠端下載 Skill
+        </button>
+        <button
+          aria-selected={form.method === "upload"}
+          className={`h-9 rounded-md font-medium text-sm transition ${form.method === "upload" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          disabled={loading}
+          onClick={() => {
+            onInstallResultChange(null)
+            onFormChange((current) => ({ ...current, method: "upload", sources: "" }))
+          }}
+          role="tab"
+          type="button"
+        >
+          上傳 Skill
+        </button>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          Skill name
-          <Input
-            aria-label="Skill name"
-            autoFocus
-            onChange={(event) => {
-              onInstallResultChange(null)
-              onFormChange((current) => ({
-                ...current,
-                name: event.target.value,
-              }))
-            }}
-            placeholder="git-release"
-            value={form.name}
-          />
-        </label>
         <label className="grid gap-1 text-muted-foreground text-xs">
           Install target
           <select
@@ -393,82 +407,38 @@ export function AddSkillForm({
             }
             value={form.installTarget}
           >
-            <option value="project-opencode">project .opencode</option>
-            <option value="global-opencode">global opencode</option>
-            <option value="project-claude">project .claude</option>
-            <option value="global-claude">global claude</option>
-            <option value="project-agents">project .agents</option>
-            <option value="global-agents">global agents</option>
+            <option value="project">Project</option>
+            <option value="global">Global</option>
           </select>
         </label>
       </div>
-      <label className="grid gap-1 text-muted-foreground text-xs">
-        skills.sh URL 或 npx skills add 指令（每行一筆）
-        <Textarea aria-label="Skill 來源" className="min-h-24 font-mono text-xs" onChange={(event) => { onInstallResultChange(null); onFormChange((current) => ({ ...current, sources: event.target.value })) }} placeholder="https://www.skills.sh/anthropics/skills/frontend-design" value={form.sources} />
-      </label>
-      <label className="grid gap-1 text-muted-foreground text-xs">
-        Description
-        <Input
-          aria-label="Skill description"
-          onChange={(event) => {
-            onInstallResultChange(null)
-            onFormChange((current) => ({
-              ...current,
-              description: event.target.value,
-            }))
-          }}
-          placeholder="Create consistent releases and changelogs"
-          value={form.description}
-        />
-      </label>
-      <div className="grid gap-3 sm:grid-cols-2">
+      {form.method === "remote" ? (
         <label className="grid gap-1 text-muted-foreground text-xs">
-          License
+          skills.sh URL 或 npx skills add 指令（每行一筆）
+          <Textarea aria-label="Skill 來源" className="min-h-24 font-mono text-xs" disabled={loading} onChange={(event) => { onInstallResultChange(null); onFormChange((current) => ({ ...current, sources: event.target.value })) }} placeholder="https://www.skills.sh/anthropics/skills/frontend-design" value={form.sources} />
+        </label>
+      ) : null}
+      {form.method === "upload" ? (
+        <label className="grid gap-1 text-muted-foreground text-xs">
+          上傳 Skill 壓縮檔（可一次選取多個）
           <Input
-            aria-label="Skill license"
-            onChange={(event) =>
+            aria-label="Skill archive"
+            accept=".zip,.tar,.tgz,.tar.gz"
+            multiple
+            disabled={loading}
+            onChange={(event) => {
+              onInstallResultChange(null)
+              const files = Array.from(event.target.files ?? [])
               onFormChange((current) => ({
                 ...current,
-                license: event.target.value,
+                archiveName: files.map((file) => file.name).join(", "),
+                archiveFiles: files,
               }))
-            }
-            placeholder="MIT"
-            value={form.license}
+            }}
+            type="file"
           />
         </label>
-        <label className="grid gap-1 text-muted-foreground text-xs">
-          Compatibility
-          <Input
-            aria-label="Skill compatibility"
-            onChange={(event) =>
-              onFormChange((current) => ({
-                ...current,
-                compatibility: event.target.value,
-              }))
-            }
-            placeholder="opencode"
-            value={form.compatibility}
-          />
-        </label>
-      </div>
-      <label className="grid gap-1 text-muted-foreground text-xs">
-        壓縮檔批次上傳（可選）
-        <Input
-          aria-label="Skill archive"
-          accept=".zip,.tar,.tgz,.gz"
-           multiple
-           onChange={(event) => {
-             onInstallResultChange(null)
-             const files = Array.from(event.target.files ?? [])
-             onFormChange((current) => ({
-               ...current,
-               archiveName: files.map((file) => file.name).join(", "),
-               archiveFiles: files,
-             }))
-          }}
-          type="file"
-        />
-      </label>
+      ) : null}
       {form.archiveName && (
         <p className="truncate text-muted-foreground text-xs">
           已選擇：{form.archiveName}
@@ -482,15 +452,16 @@ export function AddSkillForm({
         </div>
       )}
       <p className="text-muted-foreground text-xs">
-        官方規則：名稱需符合 `^[a-z0-9]+(-[a-z0-9]+)*$`，目錄名需與 SKILL.md
-        frontmatter 的 `name` 一致。
+        {form.method === "remote"
+          ? "支援 skills.sh URL 或固定格式的 npx skills add 指令；Skill name 與 description 會自動偵測。"
+          : "壓縮檔需包含有效的 SKILL.md；名稱與 description 會從 frontmatter 自動偵測。"}
       </p>
       <div className="flex justify-end gap-2">
-        <Button onClick={onCancel} size="sm" variant="outline">
+        <Button disabled={loading} onClick={onCancel} size="sm" variant="outline">
           取消
         </Button>
-        <Button onClick={onSubmit} size="sm" type="button">
-          新增 Skill
+        <Button disabled={loading} loading={loading} onClick={onSubmit} size="sm" type="button">
+          {loading ? (form.method === "remote" ? "下載中..." : "上傳中...") : "新增 Skill"}
         </Button>
       </div>
     </div>

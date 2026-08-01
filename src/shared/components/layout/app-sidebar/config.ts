@@ -279,9 +279,10 @@ export const CustomToolsPlugin: Plugin = async () => ({
 ] as const;
 
 export const emptySkillForm: SkillForm = {
+  method: "remote",
   name: "",
   description: "",
-  installTarget: "project-opencode",
+  installTarget: "project",
   license: "",
   compatibility: "opencode",
   archiveName: "",

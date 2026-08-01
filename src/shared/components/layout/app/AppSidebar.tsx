@@ -68,7 +68,6 @@ import {
   emptyToolForm,
   initialMcpServers,
   initialModelProviders,
-  initialSkillSettings,
   initialToolDefinitions,
 } from "@/shared/components/layout/app-sidebar/config";
 import type {
@@ -622,7 +621,7 @@ export function AppSidebar({
    const [, setPluginConfig] = useState<Record<string, unknown>>({});
    const [pluginConfigLoading, setPluginConfigLoading] = useState(false);
   const [skillSettings, setSkillSettings] =
-    useState<SkillDefinition[]>(initialSkillSettings);
+     useState<SkillDefinition[]>([]);
    const [pluginForm, setPluginForm] = useState(emptyPluginForm);
    const [editingPluginId, setEditingPluginId] = useState<string | null>(null);
    const [pluginReadOnly, setPluginReadOnly] = useState(false);
@@ -634,8 +633,9 @@ export function AppSidebar({
   const [skillForm, setSkillForm] = useState(emptySkillForm);
   const [pluginInstallResult, setPluginInstallResult] =
     useState<InstallResult | null>(null);
-  const [skillInstallResult, setSkillInstallResult] =
-    useState<InstallResult | null>(null);
+   const [skillInstallResult, setSkillInstallResult] =
+     useState<InstallResult | null>(null);
+   const [skillImportLoading, setSkillImportLoading] = useState(false);
   const [batchUpdateNotice, setBatchUpdateNotice] = useState("");
   const [pluginSkillHasChanges, setPluginSkillHasChanges] = useState(false);
   const [agentsDialogOpen, setAgentsDialogOpen] = useState(false);
@@ -1908,7 +1908,9 @@ export function AppSidebar({
       return;
     }
 
-    setPluginConfigLoading(true);
+    // Keep the current cards visible when returning to this tab. Only the
+    // initial load needs a skeleton; tab navigation must not flash the modal.
+    setPluginConfigLoading(plugins.length === 0);
     try {
       const [response, globalResponse, localResponse] = await Promise.all([
         getOpenCodeConfig(pluginConfigScope as OpenCodeConfigScope, activeProjectName),
@@ -1959,7 +1961,7 @@ export function AppSidebar({
     } finally {
       setPluginConfigLoading(false);
     }
-  }, [activeProjectName, pluginConfigScope, pluginSkillHasChanges]);
+  }, [activeProjectName, pluginConfigScope, pluginSkillHasChanges, plugins.length]);
 
   useEffect(() => {
     if (!pluginSkillDialogOpen || pluginSkillTab !== "plugins") return;
@@ -1977,7 +1979,7 @@ export function AppSidebar({
 
   function cancelPluginSkillChanges() {
     void loadPluginConfig();
-    setSkillSettings(initialSkillSettings);
+    setSkillSettings([]);
     setPluginForm(emptyPluginForm);
     setSkillForm(emptySkillForm);
     setPluginInstallResult(null);
@@ -2143,29 +2145,35 @@ export function AppSidebar({
   }
 
   async function importSkills() {
-    const scope = skillForm.installTarget === "global-opencode" ? "global" : "project" as const;
+    if (skillImportLoading) return;
+    const scope = skillForm.installTarget;
     const project = scope === "project" ? activeProjectName : undefined;
+    setSkillImportLoading(true);
     try {
       const sources = skillForm.sources.split(/\r?\n/).map((source) => source.trim()).filter(Boolean);
       const result = sources.length > 0
         ? await importSkillUrls({ scope, project, sources, overwrite: true, restart: false })
         : await importSkillArchives(skillForm.archiveFiles, { scope, project, overwrite: true, restart: false });
-      setSkillInstallResult({ status: result.failed.length ? "error" : "success", message: `匯入 ${result.imported.length} 個，略過 ${result.skipped.length} 個，失敗 ${result.failed.length} 個。` });
+      const failureDetails = result.failed.map((item) => `${item.source}: ${item.reason}`).join("；");
+      setSkillInstallResult({
+        status: result.imported.length > 0 ? "success" : "error",
+        message: `匯入 ${result.imported.length} 個，略過 ${result.skipped.length} 個，失敗 ${result.failed.length} 個。${failureDetails ? ` ${failureDetails}` : ""}`,
+      });
       await loadSkills();
+      if (result.imported.length === 0) return;
       setSkillForm(emptySkillForm);
       setPluginSkillTab("skills");
       setPluginSkillDialogView("list");
     } catch (error) { setSkillInstallResult({ status: "error", message: getApiErrorMessage(error) }); }
+    finally { setSkillImportLoading(false); }
   }
 
   const loadSkills = useCallback(async () => {
     if (!activeProjectName) return;
-    setPluginConfigLoading(true);
     try {
       const response = await listOpenCodeSkills("project", activeProjectName, true);
       setSkillSettings(response.entries.map((entry) => ({ id: `${entry.scope}-${entry.name}`, name: entry.name, description: entry.description, scope: entry.scope, enabled: true, path: entry.path })));
     } catch (error) { setSkillInstallResult({ status: "error", message: `載入 Skill 失敗：${getApiErrorMessage(error)}` }); }
-    finally { setPluginConfigLoading(false); }
   }, [activeProjectName]);
 
   useEffect(() => {
@@ -2177,9 +2185,23 @@ export function AppSidebar({
       setSkillInstallResult({ status: "error", message: "此 Skill 來自 Global inherited，請切換 Global scope 後刪除。" });
       return;
     }
-    if (!window.confirm(`確定刪除 ${skill.name}？`)) return;
-    try { const scope = skill.scope === "global" ? "global" : "project"; await deleteOpenCodeSkill(skill.name, scope, activeProjectName); await loadSkills(); }
-    catch (error) { setSkillInstallResult({ status: "error", message: getApiErrorMessage(error) }); }
+    showConfirmationToast({
+      id: `skill-delete-confirm-${skill.name}`,
+      title: `確定刪除 ${skill.name}？`,
+      description: "此操作會刪除目前 scope 的 Skill 資料夾。",
+      onConfirm: () => {
+        void (async () => {
+            try {
+              const scope = skill.scope === "global" ? "global" : "project";
+              await deleteOpenCodeSkill(skill.name, scope, activeProjectName);
+              await loadSkills();
+              toastManager.add({ id: `skill-delete-success-${skill.name}`, title: "Skill 已刪除", description: skill.name, type: "success" });
+            } catch (error) {
+              toastManager.add({ id: `skill-delete-error-${skill.name}`, title: "Skill 刪除失敗", description: getApiErrorMessage(error), type: "error" });
+            }
+        })();
+      },
+    });
   }
 
   function openAddMcpServer() {
@@ -3024,7 +3046,8 @@ export function AppSidebar({
         plugins={plugins}
         search={pluginSkillSearch}
         skillForm={skillForm}
-        skillInstallResult={skillInstallResult}
+         skillInstallResult={skillInstallResult}
+         skillImportLoading={skillImportLoading}
         skillSettings={skillSettings}
         tab={pluginSkillTab}
         view={pluginSkillDialogView}

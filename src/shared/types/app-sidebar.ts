@@ -86,12 +86,8 @@ export type PluginForm = {
 };
 
 export type SkillInstallTarget =
-  | "project-opencode"
-  | "global-opencode"
-  | "project-claude"
-  | "global-claude"
-  | "project-agents"
-  | "global-agents";
+  | "project"
+  | "global";
 
 export type SkillDefinition = {
   id: string;
@@ -107,6 +103,7 @@ export type SkillDefinition = {
 };
 
 export type SkillForm = {
+  method: "remote" | "upload";
   name: string;
   description: string;
   installTarget: SkillInstallTarget;

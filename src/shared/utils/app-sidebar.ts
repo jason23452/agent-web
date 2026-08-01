@@ -83,12 +83,8 @@ export function taskPermissionFor(subagents: string[]) {
 
 export function getSkillBasePath(target: SkillInstallTarget) {
   const paths: Record<SkillInstallTarget, string> = {
-    "project-opencode": ".opencode/skills",
-    "global-opencode": "~/.config/opencode/skills",
-    "project-claude": ".claude/skills",
-    "global-claude": "~/.claude/skills",
-    "project-agents": ".agents/skills",
-    "global-agents": "~/.agents/skills",
+    project: ".opencode/skills",
+    global: "~/.config/opencode/skills",
   };
   return paths[target];
 }
@@ -96,8 +92,6 @@ export function getSkillBasePath(target: SkillInstallTarget) {
 export function getSkillScope(
   target: SkillInstallTarget,
 ): SkillDefinition["scope"] {
-  if (target.includes("claude")) return "claude";
-  if (target.includes("agents")) return "agents";
   return target.startsWith("global") ? "global" : "project";
 }
 
