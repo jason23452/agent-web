@@ -31,20 +31,40 @@ export type AppSidebarProps = {
   sessionsLoading?: boolean;
 };
 
+export type McpServerType = "local" | "remote";
+export type McpConfigMode = "interface" | "document";
+
 export type McpServer = {
   id: string;
-  url: string;
   name: string;
-  username: string;
-  password: string;
-  version: string;
-  isDefault: boolean;
+  scope: "project" | "global";
+  type: McpServerType;
+  url: string;
+  command: string[];
+  cwd: string;
+  environment: Record<string, string>;
+  headers: Record<string, string>;
+  oauth?: Record<string, unknown> | false;
+  enabled: boolean;
+  timeout?: number;
+  inherited?: boolean;
 };
 
-export type McpForm = Pick<
-  McpServer,
-  "url" | "name" | "username" | "password"
->;
+export type McpKeyValueField = { key: string; value: string };
+export type McpOAuthForm = { clientId: string; clientSecret: string; scope: string; disabled: boolean };
+
+export type McpForm = {
+  name: string;
+  type: McpServerType;
+  url: string;
+  command: string;
+  cwd: string;
+  environment: McpKeyValueField[];
+  headers: McpKeyValueField[];
+  oauth: McpOAuthForm;
+  enabled: boolean;
+  timeout: string;
+};
 
 export type McpDialogView = "list" | "add" | "edit";
 export type ProjectDialogView = "list" | "create";

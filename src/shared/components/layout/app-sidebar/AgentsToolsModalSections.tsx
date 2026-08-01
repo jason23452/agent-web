@@ -2,6 +2,7 @@
 import { MoreHorizontalIcon, PlusIcon, XIcon } from "lucide-react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
+import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Input } from "@/shared/components/ui/input";
 import {
   Menu,
@@ -1668,18 +1669,20 @@ export function AgentConfigPanel({
               value={agentForm.description}
             />
           </label>
-          <section className="grid gap-3 rounded-lg border bg-background p-3">
-            <div className="flex items-center justify-between gap-3">
-            <h4 className="font-semibold text-sm text-foreground">進階</h4>
-              <Badge size="sm" variant="outline">
-                OpenCode
-              </Badge>
-            </div>
-             <div className="grid gap-3 sm:grid-cols-2">
-               <label className="grid gap-2 text-muted-foreground text-sm">
+           <section className="grid gap-5 rounded-xl border border-border/70 bg-background p-4 shadow-sm">
+             <div className="flex items-start justify-between gap-3 border-b border-border/70 pb-3">
+               <div className="grid gap-1">
+                 <h4 className="font-semibold text-sm text-foreground">進階設定</h4>
+                 <p className="text-muted-foreground text-xs">OpenCode agent 的執行與顯示選項。</p>
+               </div>
+               <Badge size="sm" variant="outline">OpenCode</Badge>
+             </div>
+
+             <div className="grid gap-4 sm:grid-cols-2">
+               <label className="grid gap-1.5 text-muted-foreground text-xs">
                  Install target
                  <select
-                   className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                   className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
                    onChange={(event) =>
                      onAgentFormChange((current) => ({
                        ...current,
@@ -1692,125 +1695,134 @@ export function AgentConfigPanel({
                    <option value="global">Global</option>
                  </select>
                </label>
-               <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm">
-                <input
-                  checked={agentForm.disable}
-                  onChange={(event) =>
-                    onAgentFormChange((current) => ({
-                      ...current,
-                      disable: event.target.checked,
-                    }))
-                  }
-                  type="checkbox"
-                />
-                 停用智能體
-              </label>
-              {agentForm.mode === "subagent" && (
-                <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-muted-foreground text-sm">
-                  <input
-                    checked={agentForm.hidden}
-                    onChange={(event) =>
-                      onAgentFormChange((current) => ({
-                        ...current,
-                        hidden: event.target.checked,
-                      }))
-                    }
-                    type="checkbox"
-                  />
+               <div className="grid gap-1.5">
+                 <span className="text-muted-foreground text-xs">狀態</span>
+                 <label className="flex min-h-10 items-center gap-2 rounded-lg border border-input bg-muted/20 px-3 text-sm text-muted-foreground">
+                   <Checkbox
+                     checked={agentForm.disable}
+                     onCheckedChange={(checked) =>
+                       onAgentFormChange((current) => ({
+                         ...current,
+                         disable: checked === true,
+                       }))
+                     }
+                   />
+                   停用智能體
+                 </label>
+               </div>
+               {agentForm.mode === "subagent" && (
+                 <label className="flex min-h-10 items-center gap-2 rounded-lg border border-input bg-muted/20 px-3 text-sm text-muted-foreground sm:col-span-2">
+                   <Checkbox
+                     checked={agentForm.hidden}
+                     onCheckedChange={(checked) =>
+                       onAgentFormChange((current) => ({
+                         ...current,
+                         hidden: checked === true,
+                       }))
+                     }
+                   />
                    在 @ 功能表中隱藏
-                </label>
-              )}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="grid gap-2 text-muted-foreground text-sm">
-                顏色
-                <select
-                  className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                  onChange={(event) =>
-                    onAgentFormChange((current) => ({
-                      ...current,
-                      color: event.target.value,
-                    }))
-                  }
-                  value={agentForm.color}
-                >
-                  {agentColors.map((color) => (
-                    <option key={color || "default"} value={color}>
+                 </label>
+               )}
+             </div>
+
+             <div className="grid gap-4 rounded-lg bg-muted/30 p-3 sm:grid-cols-2">
+               <label className="grid gap-1.5 text-muted-foreground text-xs">
+                 顏色
+                 <select
+                   className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
+                   onChange={(event) =>
+                     onAgentFormChange((current) => ({
+                       ...current,
+                       color: event.target.value,
+                     }))
+                   }
+                   value={agentForm.color}
+                 >
+                   {agentColors.map((color) => (
+                     <option key={color || "default"} value={color}>
                        {color || "預設"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-2 text-muted-foreground text-sm">
-                提示來源
-                <select
-                  className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                  onChange={(event) =>
-                    onAgentFormChange((current) => ({
-                      ...current,
-                      promptSource: event.target.value as AgentForm["promptSource"],
-                    }))
-                  }
-                  value={agentForm.promptSource}
-                >
-                  <option value="inline">內嵌 markdown 內容</option>
-                  <option value="file">參考檔案</option>
-                </select>
-              </label>
-            </div>
-            {agentForm.promptSource === "file" && (
-              <label className="grid gap-2 text-muted-foreground text-sm">
-                提示檔案
-                <Input
-                  aria-label="提示檔案"
-                  onChange={(event) =>
-                    onAgentFormChange((current) => ({
-                      ...current,
-                      promptFile: event.target.value,
-                    }))
-                  }
-                  placeholder="./prompts/review.txt"
-                  value={agentForm.promptFile}
-                />
-              </label>
-            )}
-            <label className="grid gap-2 text-muted-foreground text-sm">
-              權限規則 JSON
-              <Textarea
-                aria-label="權限規則 JSON"
-                className="font-mono"
-                onChange={(event) =>
-                  onAgentFormChange((current) => ({
-                    ...current,
-                    permissionRulesJson: event.target.value,
-                  }))
-                }
-                placeholder={
-                  '{"bash":{"*":"ask","git *":"allow"},"external_directory":{"~/projects/**":"allow"}}'
-                }
-                rows={3}
-                spellCheck={false}
-                value={agentForm.permissionRulesJson}
-              />
-            </label>
-              <label className="grid gap-2 text-muted-foreground text-sm">
-              供應商特定選項 JSON
-              <Textarea
-                aria-label="供應商特定選項 JSON"
-                className="font-mono"
-                onChange={(event) =>
-                  onAgentFormChange((current) => ({
-                    ...current,
-                    providerOptionsJson: event.target.value,
-                  }))
-                }
-                placeholder={'{"reasoningEffort":"high","textVerbosity":"low"}'}
-                rows={3}
-                spellCheck={false}
-                value={agentForm.providerOptionsJson}
-              />
-            </label>
-          </section>
+                     </option>
+                   ))}
+                 </select>
+               </label>
+               <label className="grid gap-1.5 text-muted-foreground text-xs">
+                 提示來源
+                 <select
+                   className="h-10 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
+                   onChange={(event) =>
+                     onAgentFormChange((current) => ({
+                       ...current,
+                       promptSource: event.target.value as AgentForm["promptSource"],
+                     }))
+                   }
+                   value={agentForm.promptSource}
+                 >
+                   <option value="inline">內嵌 markdown 內容</option>
+                   <option value="file">參考檔案</option>
+                 </select>
+               </label>
+             </div>
+
+             {agentForm.promptSource === "file" && (
+               <label className="grid gap-1.5 text-muted-foreground text-xs">
+                 提示檔案
+                 <Input
+                   aria-label="提示檔案"
+                   className="h-10"
+                   onChange={(event) =>
+                     onAgentFormChange((current) => ({
+                       ...current,
+                       promptFile: event.target.value,
+                     }))
+                   }
+                   placeholder="./prompts/review.txt"
+                   value={agentForm.promptFile}
+                 />
+               </label>
+             )}
+
+             <div className="grid gap-3 rounded-lg border border-border/70 bg-muted/15 p-3">
+               <div className="grid gap-1">
+                 <h5 className="font-medium text-foreground text-sm">技術設定</h5>
+                 <p className="text-muted-foreground text-xs">選填。請使用有效的 JSON。</p>
+               </div>
+               <label className="grid gap-1.5 text-muted-foreground text-xs">
+                 權限規則 JSON
+                 <Textarea
+                   aria-label="權限規則 JSON"
+                   className="min-h-24 bg-background font-mono text-xs leading-5"
+                   onChange={(event) =>
+                     onAgentFormChange((current) => ({
+                       ...current,
+                       permissionRulesJson: event.target.value,
+                     }))
+                   }
+                   placeholder={'{"bash":{"*":"ask","git *":"allow"}}'}
+                   rows={4}
+                   spellCheck={false}
+                   value={agentForm.permissionRulesJson}
+                 />
+               </label>
+               <label className="grid gap-1.5 text-muted-foreground text-xs">
+                 供應商特定選項 JSON
+                 <Textarea
+                   aria-label="供應商特定選項 JSON"
+                   className="min-h-20 bg-background font-mono text-xs leading-5"
+                   onChange={(event) =>
+                     onAgentFormChange((current) => ({
+                       ...current,
+                       providerOptionsJson: event.target.value,
+                     }))
+                   }
+                   placeholder={'{"reasoningEffort":"high","textVerbosity":"low"}'}
+                   rows={3}
+                   spellCheck={false}
+                   value={agentForm.providerOptionsJson}
+                 />
+               </label>
+             </div>
+           </section>
           {agentForm.promptSource === "inline" && (
             <label className="grid gap-2 text-muted-foreground text-sm">
                系統提示詞

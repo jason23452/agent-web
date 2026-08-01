@@ -87,6 +87,7 @@ import type {
   AppSidebarProject,
   AppSidebarProps,
   InstallResult,
+  McpConfigMode,
   McpServer,
   McpDialogView,
   PluginDefinition,
@@ -398,6 +399,93 @@ function getProjectNameFromPath(path: string) {
   return normalizedPath.split("/").filter(Boolean).at(-1) ?? "";
 }
 
+function toMcpServers(value: unknown, scope: OpenCodeConfigScope): McpServer[] {
+  if (!isRecord(value)) return [];
+
+  return Object.entries(value).flatMap(([name, entry]) => {
+    if (!isRecord(entry)) return [];
+
+    const type: McpServer["type"] | null = entry.type === "local" ? "local" : entry.type === "remote" ? "remote" : null;
+    if (!type) return [];
+
+    const command = Array.isArray(entry.command)
+      ? entry.command.filter((item): item is string => typeof item === "string")
+      : [];
+    const environment: Record<string, string> = isRecord(entry.environment)
+      ? Object.fromEntries(Object.entries(entry.environment).filter(([, item]) => typeof item === "string")) as Record<string, string>
+      : {};
+    const headers: Record<string, string> = isRecord(entry.headers)
+      ? Object.fromEntries(Object.entries(entry.headers).filter(([, item]) => typeof item === "string")) as Record<string, string>
+      : {};
+    const oauth: McpServer["oauth"] = entry.oauth === false
+      ? false
+      : isRecord(entry.oauth)
+        ? entry.oauth
+        : undefined;
+
+    return [{
+      id: `${scope}-${name}`,
+      name,
+      scope,
+      type,
+      url: typeof entry.url === "string" ? entry.url : "",
+      command,
+      cwd: typeof entry.cwd === "string" ? entry.cwd : "",
+      environment,
+      headers,
+      oauth,
+      enabled: entry.enabled !== false,
+      timeout: typeof entry.timeout === "number" ? entry.timeout : undefined,
+    }];
+  }).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function mcpServerToForm(server: McpServer) {
+  const oauth = server.oauth === false
+    ? { clientId: "", clientSecret: "", scope: "", disabled: true }
+    : {
+      clientId: typeof server.oauth?.clientId === "string" ? server.oauth.clientId : "",
+      clientSecret: typeof server.oauth?.clientSecret === "string" ? server.oauth.clientSecret : "",
+      scope: typeof server.oauth?.scope === "string" ? server.oauth.scope : "",
+      disabled: false,
+    };
+
+  return {
+    name: server.name,
+    type: server.type,
+    url: server.url,
+    command: server.command.join("\n"),
+    cwd: server.cwd,
+    environment: Object.entries(server.environment).map(([key, value]) => ({ key, value })),
+    headers: Object.entries(server.headers).map(([key, value]) => ({ key, value })),
+    oauth,
+    enabled: server.enabled,
+    timeout: server.timeout === undefined ? "" : String(server.timeout),
+  };
+}
+
+function buildMcpConfig(servers: McpServer[]): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(servers.map((server) => {
+    const config: Record<string, unknown> = {
+      type: server.type,
+      enabled: server.enabled,
+    };
+
+    if (server.type === "remote") {
+      config.url = server.url.trim();
+      if (Object.keys(server.headers).length > 0) config.headers = server.headers;
+      if (server.oauth !== undefined) config.oauth = server.oauth;
+    } else {
+      config.command = server.command;
+      if (server.cwd.trim()) config.cwd = server.cwd.trim();
+      if (Object.keys(server.environment).length > 0) config.environment = server.environment;
+    }
+
+    if (server.timeout !== undefined) config.timeout = server.timeout;
+    return [server.name, config];
+  }));
+}
+
 function getRegistryFilenameFromEntry(
   name: string,
   entry: string,
@@ -683,10 +771,14 @@ export function AppSidebar({
   const [historySearch, setHistorySearch] = useState("");
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
   const [mcpDialogView, setMcpDialogView] = useState<McpDialogView>("list");
-  const [mcpSearch, setMcpSearch] = useState("");
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
   const [mcpForm, setMcpForm] = useState(emptyMcpForm);
+  const [mcpScope, setMcpScope] = useState<OpenCodeConfigScope>("project");
+  const [mcpConfigMode, setMcpConfigMode] = useState<McpConfigMode>("interface");
+  const [mcpConfigDocument, setMcpConfigDocument] = useState("");
+  const [mcpConfigLoading, setMcpConfigLoading] = useState(false);
+  const [mcpHasChanges, setMcpHasChanges] = useState(false);
   const [pluginSkillDialogOpen, setPluginSkillDialogOpen] = useState(false);
   const [pluginSkillDialogView, setPluginSkillDialogView] =
     useState<PluginSkillDialogView>("list");
@@ -820,15 +912,7 @@ export function AppSidebar({
     );
   });
 
-  const filteredMcpServers = mcpServers.filter((server) => {
-    const keyword = mcpSearch.trim().toLowerCase();
-    if (!keyword) return true;
-    return (
-      server.url.toLowerCase().includes(keyword) ||
-      server.name.toLowerCase().includes(keyword) ||
-      server.username.toLowerCase().includes(keyword)
-    );
-  });
+  const filteredMcpServers = mcpServers;
   const filteredPlugins = plugins.filter((plugin) => {
     const keyword = pluginSkillSearch.trim().toLowerCase();
     if (!keyword || pluginSkillTab !== "plugins") return true;
@@ -1973,27 +2057,59 @@ export function AppSidebar({
     });
   }
 
-  async function openMcpList() {
-    setMcpDialogView("list");
-    setMcpDialogOpen(true);
-
-    if (!activeProjectName) {
-      setMcpServers([]);
-      return;
-    }
-
+  const loadMcpConfig = useCallback(async (selectedScope: OpenCodeConfigScope = mcpScope) => {
+    setMcpConfigLoading(true);
+    setMcpServers([]);
     try {
-      const response = await getOpenCodeConfig("project", activeProjectName);
-      setMcpServers(toMcpServers(response.config.mcp));
+      const [globalResponse, projectResponse] = await Promise.all([
+        getOpenCodeConfig("global"),
+        activeProjectName ? getOpenCodeConfig("project", activeProjectName) : Promise.resolve(null),
+      ]);
+      const globalServers = toMcpServers(globalResponse.config.mcp, "global");
+      const projectServers = projectResponse ? toMcpServers(projectResponse.config.mcp, "project") : [];
+      setMcpServers([...globalServers, ...projectServers].sort((left, right) => left.name.localeCompare(right.name) || left.scope.localeCompare(right.scope)));
+      const selectedResponse = selectedScope === "project" ? projectResponse : globalResponse;
+      setMcpConfigDocument(selectedResponse?.content ?? "");
+      setMcpHasChanges(false);
     } catch (error) {
       setMcpServers([]);
+      setMcpConfigDocument("");
       toastManager.add({
-        id: `mcp-load-error-${Date.now()}`,
+        id: `mcp-load-error-${selectedScope}-${Date.now()}`,
         description: getApiErrorMessage(error),
         title: "載入 MCP 設定失敗",
         type: "error",
       });
+    } finally {
+      setMcpConfigLoading(false);
     }
+  }, [activeProjectName, mcpScope]);
+
+  async function loadMcpDocument(scope: OpenCodeConfigScope) {
+    if (scope === "project" && !activeProjectName) {
+      setMcpConfigDocument("");
+      return;
+    }
+
+    setMcpConfigLoading(true);
+    try {
+      const response = await getOpenCodeConfig(scope, scope === "project" ? activeProjectName : undefined);
+      setMcpConfigDocument(response.content);
+    } catch (error) {
+      toastManager.add({ id: `mcp-document-load-error-${scope}-${Date.now()}`, description: getApiErrorMessage(error), title: "載入 MCP 文件失敗", type: "error" });
+    } finally {
+      setMcpConfigLoading(false);
+    }
+  }
+
+  async function openMcpList() {
+    const initialScope: OpenCodeConfigScope = activeProjectName ? "project" : "global";
+    setMcpScope(initialScope);
+    setMcpConfigMode("interface");
+    setMcpDialogView("list");
+    setMcpHasChanges(false);
+    setMcpDialogOpen(true);
+    await loadMcpConfig(initialScope);
   }
 
   function openPluginSkillSettings() {
@@ -2633,131 +2749,152 @@ export function AppSidebar({
   function openAddMcpServer() {
     setEditingMcpId(null);
     setMcpForm(emptyMcpForm);
+    setMcpScope(activeProjectName ? "project" : "global");
+    setMcpConfigMode("interface");
     setMcpDialogView("add");
   }
 
   function openEditMcpServer(server: McpServer) {
+    if (server.inherited) return;
     setEditingMcpId(server.id);
-    setMcpForm({
-      url: server.url,
-      name: server.name,
-      username: server.username,
-      password: server.password,
-    });
+    setMcpForm(mcpServerToForm(server));
+    setMcpScope(server.scope);
+    setMcpConfigMode("interface");
     setMcpDialogView("edit");
   }
 
-  async function submitMcpServer() {
-    if (!mcpForm.url.trim()) return;
+  function submitMcpServer() {
+    const name = mcpForm.name.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(name)) {
+      toastManager.add({ id: `mcp-name-error-${Date.now()}`, description: "Server 名稱只能使用英文、數字、底線與連字號，且需以英文或數字開頭。", title: "MCP Server 名稱無效", type: "error" });
+      return;
+    }
 
-    let nextServers: McpServer[];
-    if (mcpDialogView === "edit" && editingMcpId) {
-      nextServers = mcpServers.map((server) =>
-        server.id === editingMcpId ? { ...server, ...mcpForm } : server,
-      );
-    } else {
-      nextServers = [
-        ...mcpServers,
-        {
-          id: `mcp-${Date.now()}`,
-          ...mcpForm,
-          version: "",
-          isDefault: mcpServers.length === 0,
-        },
-      ];
+    const command = mcpForm.command.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+    if (mcpForm.type === "remote" && !mcpForm.url.trim()) {
+      toastManager.add({ id: `mcp-url-error-${Date.now()}`, description: "Remote MCP Server 需要 URL。", title: "MCP 設定不完整", type: "error" });
+      return;
+    }
+    if (mcpForm.type === "local" && command.length === 0) {
+      toastManager.add({ id: `mcp-command-error-${Date.now()}`, description: "Local MCP Server 需要至少一個 command 參數。", title: "MCP 設定不完整", type: "error" });
+      return;
+    }
+
+    const environment = Object.fromEntries(mcpForm.environment.map(({ key, value }) => [key.trim(), value]).filter(([key]) => key));
+    const headers = Object.fromEntries(mcpForm.headers.map(({ key, value }) => [key.trim(), value]).filter(([key]) => key));
+    const hasOAuth = Boolean(mcpForm.oauth.clientId.trim() || mcpForm.oauth.clientSecret.trim() || mcpForm.oauth.scope.trim());
+    const oauth = mcpForm.oauth.disabled
+      ? false
+      : hasOAuth
+        ? {
+          ...(mcpForm.oauth.clientId.trim() ? { clientId: mcpForm.oauth.clientId.trim() } : {}),
+          ...(mcpForm.oauth.clientSecret.trim() ? { clientSecret: mcpForm.oauth.clientSecret.trim() } : {}),
+          ...(mcpForm.oauth.scope.trim() ? { scope: mcpForm.oauth.scope.trim() } : {}),
+        }
+        : undefined;
+
+    const timeoutText = mcpForm.timeout.trim();
+    const timeout = timeoutText ? Number(timeoutText) : undefined;
+    if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1)) {
+      toastManager.add({ id: `mcp-timeout-error-${Date.now()}`, description: "Timeout 必須是正整數毫秒。", title: "MCP 設定不完整", type: "error" });
+      return;
+    }
+
+    const nextServer: McpServer = {
+      id: `${mcpScope}-${name}`,
+      name,
+      scope: mcpScope,
+      type: mcpForm.type,
+      url: mcpForm.url.trim(),
+      command,
+      cwd: mcpForm.cwd.trim(),
+      environment,
+      headers,
+      oauth,
+      enabled: mcpForm.enabled,
+      timeout,
+    };
+    const duplicate = mcpServers.some((server) => server.scope === mcpScope && server.name === name && server.id !== editingMcpId);
+    if (duplicate) {
+      toastManager.add({ id: `mcp-duplicate-error-${Date.now()}`, description: "同一 scope 不可使用重複的 Server 名稱。", title: "MCP Server 已存在", type: "error" });
+      return;
+    }
+
+    setMcpServers((current) => [
+      ...current.filter((server) => server.id !== editingMcpId),
+      nextServer,
+    ].sort((left, right) => left.name.localeCompare(right.name) || left.scope.localeCompare(right.scope)));
+    setMcpHasChanges(true);
+    setMcpDialogView("list");
+    setMcpForm(emptyMcpForm);
+    setEditingMcpId(null);
+  }
+
+  function deleteMcpServer(serverId: string) {
+    const server = mcpServers.find((item) => item.id === serverId);
+    if (!server || server.inherited) return;
+    setMcpServers((current) => current.filter((item) => item.id !== serverId));
+    setMcpHasChanges(true);
+  }
+
+  function toggleMcpServer(serverId: string, enabled: boolean) {
+    setMcpServers((current) => current.map((server) => server.id === serverId ? { ...server, enabled } : server));
+    setMcpHasChanges(true);
+  }
+
+  async function changeMcpScope(scope: OpenCodeConfigScope) {
+    if (scope === mcpScope) return;
+    if (mcpConfigMode === "document" && mcpHasChanges) {
+      toastManager.add({ id: "mcp-scope-draft-warning", description: "請先更新或取消目前 MCP draft，再切換 scope。", title: "尚有未儲存變更", type: "warning" });
+      return;
+    }
+    setMcpScope(scope);
+    if (mcpConfigMode === "document") await loadMcpDocument(scope);
+  }
+
+  function changeMcpConfigMode(mode: McpConfigMode) {
+    if (mode === mcpConfigMode) return;
+    if (mcpConfigMode === "document" && mcpHasChanges) {
+      toastManager.add({ id: "mcp-mode-draft-warning", description: "請先更新或取消目前 MCP draft，再切換編輯方式。", title: "尚有未儲存變更", type: "warning" });
+      return;
+    }
+    setMcpConfigMode(mode);
+    if (mode === "document") void loadMcpDocument(mcpScope);
+  }
+
+  function cancelMcpChanges() {
+    setMcpDialogView("list");
+    setMcpForm(emptyMcpForm);
+    setEditingMcpId(null);
+    setMcpConfigMode("interface");
+    void loadMcpConfig(mcpScope);
+  }
+
+  async function applyMcpChanges() {
+    if (!mcpHasChanges) return;
+    if (mcpScope === "project" && !activeProjectName) {
+      toastManager.add({ id: "mcp-project-required", description: "Project scope 需要先開啟 Project。", title: "無法更新 MCP", type: "error" });
+      return;
     }
 
     try {
-      await persistMcpServers(nextServers);
-      setMcpServers(nextServers);
+      if (mcpConfigMode === "document") {
+        await applyOpenCodeConfig(mcpScope, { content: mcpConfigDocument, restart: false, wait: false, reason: "mcp-document-updated" }, mcpScope === "project" ? activeProjectName : undefined);
+      } else {
+        await applyOpenCodeConfig("global", { mcp: buildMcpConfig(mcpServers.filter((server) => server.scope === "global")), restart: false, wait: false, reason: "mcp-settings-updated" });
+        if (activeProjectName) {
+          await applyOpenCodeConfig("project", { mcp: buildMcpConfig(mcpServers.filter((server) => server.scope === "project")), restart: false, wait: false, reason: "mcp-settings-updated" }, activeProjectName);
+        }
+      }
+      await onRestartOpenCode("Apply MCP server updates");
+      setMcpHasChanges(false);
       setMcpDialogView("list");
+      setMcpConfigMode("interface");
+      await loadMcpConfig(mcpScope);
+      toastManager.add({ id: "mcp-updated", description: "MCP Server 設定已寫入並重新啟動 OpenCode。", title: "MCP Server 已更新", type: "success" });
     } catch (error) {
-      toastManager.add({
-        id: `mcp-save-error-${Date.now()}`,
-        description: getApiErrorMessage(error),
-        title: "儲存 MCP 設定失敗",
-        type: "error",
-      });
+      toastManager.add({ id: `mcp-update-error-${Date.now()}`, description: getApiErrorMessage(error), title: "更新 MCP 設定失敗", type: "error" });
     }
-  }
-
-  async function setDefaultMcpServer(serverId: string) {
-    const nextServers = mcpServers.map((server) => ({
-      ...server,
-      isDefault: server.id === serverId,
-    }));
-
-    try {
-      await persistMcpServers(nextServers);
-      setMcpServers(nextServers);
-    } catch (error) {
-      toastManager.add({
-        id: `mcp-default-error-${Date.now()}`,
-        description: getApiErrorMessage(error),
-        title: "更新 MCP 預設值失敗",
-        type: "error",
-      });
-    }
-  }
-
-  async function deleteMcpServer(serverId: string) {
-    const filtered = mcpServers.filter((server) => server.id !== serverId);
-    const nextServers = filtered.some((server) => server.isDefault) || filtered.length === 0
-      ? filtered
-      : filtered.map((server, index) => ({ ...server, isDefault: index === 0 }));
-
-    try {
-      await persistMcpServers(nextServers);
-      setMcpServers(nextServers);
-    } catch (error) {
-      toastManager.add({
-        id: `mcp-delete-error-${Date.now()}`,
-        description: getApiErrorMessage(error),
-        title: "刪除 MCP 設定失敗",
-        type: "error",
-      });
-    }
-  }
-
-  async function persistMcpServers(servers: McpServer[]) {
-    if (!activeProjectName) throw new Error("請先開啟 Project。 ");
-
-    const mcp = Object.fromEntries(servers.map((server) => [server.name.trim() || server.id, {
-      enabled: true,
-      headers: server.username || server.password
-        ? { Authorization: `Basic ${btoa(`${server.username}:${server.password}`)}` }
-        : undefined,
-      type: "remote",
-      url: server.url.trim(),
-    }]));
-
-    await applyOpenCodeConfig("project", {
-      mcp,
-      reason: "mcp-settings-updated",
-      restart: true,
-      wait: true,
-    }, activeProjectName);
-  }
-
-  function toMcpServers(value: unknown): McpServer[] {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-
-    return Object.entries(value).flatMap(([name, entry], index) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-      const record = entry as Record<string, unknown>;
-      if (typeof record.url !== "string" || !record.url.trim()) return [];
-      const headers = record.headers && typeof record.headers === "object" ? record.headers as Record<string, unknown> : {};
-
-      return [{
-        id: `mcp-${name}`,
-        isDefault: index === 0,
-        name,
-        password: "",
-        url: record.url,
-        username: typeof headers.Authorization === "string" ? "configured" : "",
-        version: "",
-      }];
-    });
   }
 
   function openAgentsList() {
@@ -4013,21 +4150,34 @@ export function AppSidebar({
       />
 
       <McpServersDialog
+        configDocument={mcpConfigDocument}
+        configLoading={mcpConfigLoading}
+        configMode={mcpConfigMode}
+        currentProjectName={activeProjectName}
         filteredServers={filteredMcpServers}
         form={mcpForm}
+        hasChanges={mcpHasChanges}
+        onApplyChanges={applyMcpChanges}
+        onCancelChanges={cancelMcpChanges}
         onClose={() => setMcpDialogOpen(false)}
+        onConfigModeChange={changeMcpConfigMode}
         onDeleteServer={deleteMcpServer}
+        onDocumentChange={(content) => {
+          setMcpConfigDocument(content);
+          setMcpHasChanges(true);
+        }}
         onEditServer={openEditMcpServer}
         onFormChange={(updates) =>
           setMcpForm((current) => ({ ...current, ...updates }))
         }
         onOpenAddServer={openAddMcpServer}
-        onSearchChange={setMcpSearch}
-        onSetDefaultServer={setDefaultMcpServer}
+        onRefresh={() => void loadMcpConfig(mcpScope)}
         onSubmit={submitMcpServer}
+        onToggleServer={toggleMcpServer}
         onViewChange={setMcpDialogView}
+        onScopeChange={changeMcpScope}
         open={mcpDialogOpen}
-        search={mcpSearch}
+        scope={mcpScope}
         view={mcpDialogView}
       />
 

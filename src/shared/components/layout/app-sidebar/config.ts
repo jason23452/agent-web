@@ -8,10 +8,16 @@ import type {
 } from "@/shared/types/app-sidebar"
 
 export const emptyMcpForm: McpForm = {
-  url: "",
   name: "",
-  username: "",
-  password: "",
+  type: "remote",
+  url: "",
+  command: "",
+  cwd: "",
+  environment: [{ key: "", value: "" }],
+  headers: [{ key: "", value: "" }],
+  oauth: { clientId: "", clientSecret: "", scope: "", disabled: false },
+  enabled: true,
+  timeout: "5000",
 }
 
 export const emptyPluginForm: PluginForm = {

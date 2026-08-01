@@ -1,261 +1,336 @@
-import {
-  ArrowLeftIcon,
-  CheckIcon,
-  MoreHorizontalIcon,
-  PlusIcon,
-  SearchIcon,
-  ServerIcon,
-  XIcon,
-} from "lucide-react";
+import { MinusIcon, PlusIcon, ServerIcon } from "lucide-react";
+import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/shared/components/ui/empty";
+import { Checkbox } from "@/shared/components/ui/checkbox";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/shared/components/ui/empty";
 import { Input } from "@/shared/components/ui/input";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/shared/components/ui/input-group";
-import {
-  Menu,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "@/shared/components/ui/menu";
-import type { McpDialogView, McpForm, McpServer } from "@/shared/types/app-sidebar";
+import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
+import { Switch } from "@/shared/components/ui/switch";
+import { Textarea } from "@/shared/components/ui/textarea";
+import type { McpConfigMode, McpDialogView, McpForm, McpKeyValueField, McpOAuthForm, McpServer } from "@/shared/types/app-sidebar";
 
 type McpServersDialogProps = {
+  configDocument: string;
+  configLoading: boolean;
+  configMode: McpConfigMode;
+  currentProjectName?: string;
   filteredServers: McpServer[];
   form: McpForm;
+  hasChanges: boolean;
+  onApplyChanges: () => void;
+  onCancelChanges: () => void;
   onClose: () => void;
+  onConfigModeChange: (mode: McpConfigMode) => void;
   onDeleteServer: (serverId: string) => void;
+  onDocumentChange: (content: string) => void;
   onEditServer: (server: McpServer) => void;
   onFormChange: (updates: Partial<McpForm>) => void;
   onOpenAddServer: () => void;
-  onSearchChange: (value: string) => void;
-  onSetDefaultServer: (serverId: string) => void;
+  onRefresh: () => void;
   onSubmit: () => void;
+  onToggleServer: (serverId: string, enabled: boolean) => void;
   onViewChange: (view: McpDialogView) => void;
+  onScopeChange: (scope: "project" | "global") => void;
   open: boolean;
-  search: string;
+  scope: "project" | "global";
   view: McpDialogView;
 };
 
 export function McpServersDialog({
+  configDocument,
+  configLoading,
+  configMode,
+  currentProjectName,
   filteredServers,
   form,
+  hasChanges,
+  onApplyChanges,
+  onCancelChanges,
   onClose,
+  onConfigModeChange,
   onDeleteServer,
+  onDocumentChange,
   onEditServer,
   onFormChange,
   onOpenAddServer,
-  onSearchChange,
-  onSetDefaultServer,
+  onRefresh,
   onSubmit,
+  onToggleServer,
   onViewChange,
+  onScopeChange,
   open,
-  search,
+  scope,
   view,
 }: McpServersDialogProps) {
-  if (!open) return null;
+  const isEditor = view === "add" || view === "edit";
 
   return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/28 p-4"
-      role="presentation"
+    <ModalShell
+      ariaLabel="MCP Server 設定"
+      backButton={view !== "list" ? { ariaLabel: "返回 MCP Server 列表", onClick: () => onViewChange("list") } : undefined}
+      bodyClassName="p-0"
+      closeAriaLabel="關閉 MCP Server 設定"
+      description={view === "list" ? "Global · Project" : scope === "project" ? "Project" : "Global"}
+      footer={(
+        <>
+          <p className="text-muted-foreground text-xs">按下更新會重新啟動 OpenCode server。</p>
+          <div className="flex items-center gap-2">
+            <Button disabled={!hasChanges} onClick={onCancelChanges} size="lg" variant="outline">取消</Button>
+            <Button disabled={!hasChanges} onClick={onApplyChanges} size="lg">更新</Button>
+          </div>
+        </>
+      )}
+      headerActions={view === "list" ? (
+        <Button onClick={onOpenAddServer} size="sm" variant="outline">
+          <PlusIcon aria-hidden="true" />
+          新增 MCP
+        </Button>
+      ) : undefined}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      open={open}
+      panelClassName="h-[min(86dvh,640px)]"
+      title={view === "list" ? "MCP Server" : view === "add" ? "新增 MCP" : "編輯 MCP"}
     >
-      <section
-        aria-label={
-          view === "list" ? "服務器" : view === "add" ? "添加服務器" : "編輯服務器"
-        }
-        className="w-full max-w-[640px] overflow-hidden rounded-xl border bg-background shadow-[0_20px_60px_rgb(0_0_0_/_20%)]"
-      >
-        <div className="flex h-14 items-center justify-between gap-4 px-5">
-          <div className="flex min-w-0 items-center gap-2">
-            {view !== "list" && (
-              <button
-                aria-label="返回服務器列表"
-                className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onViewChange("list")}
-                type="button"
-              >
-                <ArrowLeftIcon aria-hidden="true" className="size-4" />
-              </button>
-            )}
-            <h2 className="truncate font-semibold text-base">
-              {view === "list" ? "服務器" : view === "add" ? "添加服務器" : "編輯服務器"}
-            </h2>
-          </div>
-          <button
-            aria-label="關閉服務器"
-            className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onClose}
-            type="button"
-          >
-            <XIcon aria-hidden="true" className="size-4" />
-          </button>
-        </div>
-
-        {view === "list" ? (
-          <div className="grid gap-4 px-6 pb-6">
-            <InputGroup data-size="sm">
-              <InputGroupAddon>
-                <SearchIcon aria-hidden="true" />
-              </InputGroupAddon>
-              <InputGroupInput
-                aria-label="搜索服務器"
-                onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="搜索服務器"
-                value={search}
-              />
-              {search && (
-                <InputGroupAddon align="inline-end">
-                  <button
-                    aria-label="清除服務器搜尋"
-                    className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => onSearchChange("")}
-                    type="button"
-                  >
-                    <XIcon aria-hidden="true" className="size-3.5" />
-                  </button>
-                </InputGroupAddon>
-              )}
-            </InputGroup>
-
-            <ul className="grid min-h-24 gap-2">
-              {filteredServers.map((server) => (
-                <li key={server.id}>
-                  <div className="flex items-center gap-3 rounded-lg bg-muted/55 px-4 py-3">
-                    <span
-                      aria-hidden="true"
-                      className="size-1.5 shrink-0 rounded-full bg-green-500"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-semibold text-sm">
-                          {server.url.replace(/^https?:\/\//, "")}
-                        </span>
-                        <span className="shrink-0 text-muted-foreground text-xs">
-                          {server.version}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 truncate text-muted-foreground text-sm">
-                        {server.username || "無用戶名"}
-                      </p>
-                    </div>
-                    {server.isDefault && (
-                      <CheckIcon
-                        aria-hidden="true"
-                        className="size-4 shrink-0 text-muted-foreground"
-                      />
-                    )}
-                    <Menu>
-                      <MenuTrigger className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        <MoreHorizontalIcon aria-hidden="true" className="size-4" />
-                      </MenuTrigger>
-                      <MenuPopup align="end" className="min-w-32">
-                        <MenuItem onClick={() => onEditServer(server)}>編輯</MenuItem>
-                        <MenuItem onClick={() => onSetDefaultServer(server.id)}>
-                          設為默認
-                        </MenuItem>
-                        <MenuSeparator />
-                        <MenuItem
-                          onClick={() => onDeleteServer(server.id)}
-                          variant="destructive"
-                        >
-                          刪除
-                        </MenuItem>
-                      </MenuPopup>
-                    </Menu>
-                  </div>
-                </li>
-              ))}
-              {filteredServers.length === 0 && (
-                <li>
-                  <Empty className="rounded-lg border border-dashed bg-background px-3 py-8 md:py-8">
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <ServerIcon aria-hidden="true" />
-                      </EmptyMedia>
-                      <EmptyTitle className="text-sm">沒有符合的服務器</EmptyTitle>
-                      <EmptyDescription className="text-xs">
-                        請換個關鍵字或新增服務器。
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                </li>
-              )}
-            </ul>
-
-            <div>
-              <Button onClick={onOpenAddServer} size="sm" variant="outline">
-                <PlusIcon aria-hidden="true" />
-                添加服務器
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="grid gap-4 px-6 pb-6">
-            <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
-              <label className="grid gap-2 text-muted-foreground text-sm">
-                服務器 URL
-                <Input
-                  aria-label="服務器 URL"
-                  onChange={(event) => onFormChange({ url: event.target.value })}
-                  placeholder="http://localhost:4096"
-                  value={form.url}
-                />
-              </label>
-              <label className="grid gap-2 text-muted-foreground text-sm">
-                服務器名稱（可選）
-                <Input
-                  aria-label="服務器名稱"
-                  onChange={(event) => onFormChange({ name: event.target.value })}
-                  placeholder="Localhost"
-                  value={form.name}
-                />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-2 text-muted-foreground text-sm">
-                  用戶名（可選）
-                  <Input
-                    aria-label="用戶名"
-                    onChange={(event) =>
-                      onFormChange({ username: event.target.value })
-                    }
-                    placeholder="用戶名"
-                    value={form.username}
-                  />
-                </label>
-                <label className="grid gap-2 text-muted-foreground text-sm">
-                  密碼（可選）
-                  <Input
-                    aria-label="密碼"
-                    onChange={(event) =>
-                      onFormChange({ password: event.target.value })
-                    }
-                    placeholder="密碼"
-                    type="password"
-                    value={form.password}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div>
-              <Button disabled={!form.url.trim()} onClick={onSubmit}>
-                {view === "add" ? "添加服務器" : "保存"}
-              </Button>
-            </div>
-          </div>
+      <div className="grid min-h-[420px] min-w-0 flex-1 content-start gap-5 overflow-y-auto px-6 pb-6">
+        {view === "list" && (
+          <McpServerList
+            configLoading={configLoading}
+            servers={filteredServers}
+            onDeleteServer={onDeleteServer}
+            onEditServer={onEditServer}
+            onToggleServer={onToggleServer}
+          />
         )}
-      </section>
+        {isEditor && (
+          <McpEditor
+            configDocument={configDocument}
+            configLoading={configLoading}
+            configMode={configMode}
+            currentProjectName={currentProjectName}
+            form={form}
+            onCancel={() => onViewChange("list")}
+            onChange={onFormChange}
+            onConfigModeChange={onConfigModeChange}
+            onDocumentChange={onDocumentChange}
+            onRefresh={onRefresh}
+            onScopeChange={onScopeChange}
+            onSubmit={onSubmit}
+            scope={scope}
+            view={view}
+          />
+        )}
+      </div>
+    </ModalShell>
+  );
+}
+
+function McpServerList({ configLoading, onDeleteServer, onEditServer, onToggleServer, servers }: {
+  configLoading: boolean;
+  onDeleteServer: (serverId: string) => void;
+  onEditServer: (server: McpServer) => void;
+  onToggleServer: (serverId: string, enabled: boolean) => void;
+  servers: McpServer[];
+}) {
+  return (
+    <section className="grid gap-2" aria-labelledby="mcp-server-list-title">
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-wide" id="mcp-server-list-title">已設定 MCP Server</h3>
+        <Badge size="sm" variant="secondary">{servers.length}</Badge>
+      </div>
+      {configLoading ? (
+        <div className="grid gap-2" aria-label="載入 MCP Server 中" role="status">
+          <div className="h-16 animate-pulse rounded-lg bg-muted" />
+          <div className="h-16 animate-pulse rounded-lg bg-muted" />
+        </div>
+      ) : servers.length === 0 ? (
+        <Empty className="rounded-lg border border-dashed bg-background px-3 py-8 md:py-8">
+          <EmptyHeader>
+            <EmptyMedia variant="icon"><ServerIcon aria-hidden="true" /></EmptyMedia>
+            <EmptyTitle className="text-sm">目前沒有 MCP Server</EmptyTitle>
+            <EmptyDescription className="text-xs">請按右上角新增 MCP Server。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <ul className="grid gap-1">
+          {servers.map((server) => (
+            <li className="flex items-center gap-3 rounded-lg bg-muted/55 px-3 py-3" key={server.id}>
+              <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${server.enabled ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate font-semibold text-sm">{server.name}</span>
+                  <Badge size="sm" variant="outline">{server.scope}</Badge>
+                  <Badge size="sm" variant="outline">{server.type}</Badge>
+                </div>
+                <p className="mt-0.5 text-muted-foreground text-xs">{server.enabled ? "已啟用" : "已停用"}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <Switch aria-label={`${server.name} 啟用`} checked={server.enabled} onCheckedChange={(checked) => onToggleServer(server.id, checked)} />
+                <Button onClick={() => onEditServer(server)} size="sm" variant="ghost">編輯</Button>
+                <Button onClick={() => onDeleteServer(server.id)} size="sm" variant="ghost">刪除</Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function McpEditor({ configDocument, configLoading, configMode, currentProjectName, form, onCancel, onChange, onConfigModeChange, onDocumentChange, onRefresh, onScopeChange, onSubmit, scope, view }: {
+  configDocument: string;
+  configLoading: boolean;
+  configMode: McpConfigMode;
+  currentProjectName?: string;
+  form: McpForm;
+  onCancel: () => void;
+  onChange: (updates: Partial<McpForm>) => void;
+  onConfigModeChange: (mode: McpConfigMode) => void;
+  onDocumentChange: (content: string) => void;
+  onRefresh: () => void;
+  onScopeChange: (scope: "project" | "global") => void;
+  onSubmit: () => void;
+  scope: "project" | "global";
+  view: "add" | "edit";
+}) {
+  return (
+    <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+      <div className="grid gap-1">
+        <h3 className="font-semibold text-sm">{view === "add" ? "新增 MCP Server" : "編輯 MCP Server"}</h3>
+        <p className="text-muted-foreground text-xs">{scope === "project" ? "Project" : "Global"}</p>
+      </div>
+      <div className="grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist" aria-label="MCP 編輯方式">
+        <button aria-selected={configMode === "interface"} className={`h-8 rounded-md font-medium text-sm ${configMode === "interface" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground"}`} onClick={() => onConfigModeChange("interface")} role="tab" type="button">介面新增</button>
+        <button aria-selected={configMode === "document"} className={`h-8 rounded-md font-medium text-sm ${configMode === "document" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground"}`} onClick={() => onConfigModeChange("document")} role="tab" type="button">文件新增</button>
+      </div>
+      <label className="grid gap-1 text-muted-foreground text-xs">
+        Scope
+        <select
+          aria-label="MCP Server scope"
+          className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          disabled={scope === "project" && !currentProjectName}
+          onChange={(event) => onScopeChange(event.target.value as "project" | "global")}
+          value={scope}
+        >
+          <option disabled={!currentProjectName} value="project">Project</option>
+          <option value="global">Global</option>
+        </select>
+      </label>
+      {configMode === "document" ? (
+        <McpDocumentEditor configDocument={configDocument} configLoading={configLoading} onChange={onDocumentChange} onRefresh={onRefresh} />
+      ) : (
+        <McpInterfaceForm form={form} onCancel={onCancel} onChange={onChange} onSubmit={onSubmit} view={view} />
+      )}
+    </div>
+  );
+}
+
+function McpDocumentEditor({ configDocument, configLoading, onChange, onRefresh }: {
+  configDocument: string;
+  configLoading: boolean;
+  onChange: (content: string) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h4 className="font-medium text-sm">文件新增</h4>
+          <p className="text-muted-foreground text-xs">編輯完整 opencode.jsonc</p>
+        </div>
+        <Button disabled={configLoading} onClick={onRefresh} size="sm" variant="outline">重新整理</Button>
+      </div>
+      <Textarea aria-label="OpenCode MCP 設定文件" className="min-h-[min(56dvh,480px)] font-mono text-xs" disabled={configLoading} onChange={(event) => onChange(event.target.value)} value={configDocument} />
+    </div>
+  );
+}
+
+function McpInterfaceForm({ form, onCancel, onChange, onSubmit, view }: {
+  form: McpForm;
+  onCancel: () => void;
+  onChange: (updates: Partial<McpForm>) => void;
+  onSubmit: () => void;
+  view: "add" | "edit";
+}) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-muted-foreground text-xs">Server 名稱<Input aria-label="MCP Server 名稱" onChange={(event) => onChange({ name: event.target.value })} placeholder="context7" value={form.name} /></label>
+        <label className="grid gap-1 text-muted-foreground text-xs">類型<select className="h-9 rounded-lg border border-input bg-background px-2 text-sm" onChange={(event) => onChange({ type: event.target.value as "local" | "remote" })} value={form.type}><option value="remote">Remote</option><option value="local">Local</option></select></label>
+      </div>
+      {form.type === "remote" ? (
+        <label className="grid gap-1 text-muted-foreground text-xs">Remote URL<Input aria-label="MCP Remote URL" onChange={(event) => onChange({ url: event.target.value })} placeholder="https://mcp.context7.com/mcp" value={form.url} /></label>
+      ) : (
+        <label className="grid gap-1 text-muted-foreground text-xs">Command（每行一個參數）<Textarea aria-label="MCP Local command" className="min-h-20 font-mono text-xs" onChange={(event) => onChange({ command: event.target.value })} placeholder={'npx\n-y\n@modelcontextprotocol/server-everything'} value={form.command} /></label>
+      )}
+      <details className="rounded-lg border border-border/70 bg-background px-3 py-2" open>
+        <summary className="cursor-pointer text-muted-foreground text-xs">進階設定</summary>
+        <div className="mt-3 grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-muted-foreground text-xs">CWD<Input aria-label="MCP CWD" onChange={(event) => onChange({ cwd: event.target.value })} placeholder="." value={form.cwd} /></label>
+            <label className="grid gap-1 text-muted-foreground text-xs">Timeout（毫秒）<Input aria-label="MCP timeout" inputMode="numeric" onChange={(event) => onChange({ timeout: event.target.value })} placeholder="5000" value={form.timeout} /></label>
+          </div>
+          {form.type === "remote" ? (
+            <>
+              <KeyValueEditor label="Headers" keyPlaceholder="Header 名稱" rows={form.headers} valuePlaceholder="Header 值" onChange={(headers) => onChange({ headers })} />
+              <OAuthEditor form={form.oauth} onChange={(oauth) => onChange({ oauth })} />
+            </>
+          ) : (
+            <KeyValueEditor label="Environment" keyPlaceholder="變數名稱" rows={form.environment} valuePlaceholder="變數值" onChange={(environment) => onChange({ environment })} />
+          )}
+        </div>
+      </details>
+      <div className="flex justify-end gap-2"><Button onClick={onCancel} size="sm" variant="outline">取消</Button><Button disabled={!form.name.trim()} onClick={onSubmit} size="sm">{view === "add" ? "加入" : "儲存"}</Button></div>
+    </div>
+  );
+}
+
+function KeyValueEditor({ keyPlaceholder, label, onChange, rows, valuePlaceholder }: {
+  keyPlaceholder: string;
+  label: string;
+  onChange: (rows: McpKeyValueField[]) => void;
+  rows: McpKeyValueField[];
+  valuePlaceholder: string;
+}) {
+  const visibleRows = rows.length > 0 ? rows : [{ key: "", value: "" }];
+
+  function updateRow(index: number, field: keyof McpKeyValueField, value: string) {
+    onChange(visibleRows.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row));
+  }
+
+  function removeRow(index: number) {
+    const next = visibleRows.filter((_, rowIndex) => rowIndex !== index);
+    onChange(next.length > 0 ? next : [{ key: "", value: "" }]);
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-muted-foreground text-xs">{label}</span>
+        <Button aria-label={`新增${label}`} onClick={() => onChange([...visibleRows, { key: "", value: "" }])} size="xs" type="button" variant="outline"><PlusIcon aria-hidden="true" /></Button>
+      </div>
+      {visibleRows.map((row, index) => (
+        <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" key={`${label}-${index}`}>
+          <Input aria-label={`${label} 名稱 ${index + 1}`} onChange={(event) => updateRow(index, "key", event.target.value)} placeholder={keyPlaceholder} value={row.key} />
+          <Input aria-label={`${label} 值 ${index + 1}`} onChange={(event) => updateRow(index, "value", event.target.value)} placeholder={valuePlaceholder} value={row.value} />
+          <Button aria-label={`刪除${label}第 ${index + 1} 列`} className="size-9" onClick={() => removeRow(index)} size="sm" type="button" variant="ghost"><MinusIcon aria-hidden="true" /></Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OAuthEditor({ form, onChange }: { form: McpOAuthForm; onChange: (form: McpOAuthForm) => void }) {
+  return (
+    <div className="grid gap-2">
+      <span className="text-muted-foreground text-xs">OAuth</span>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-muted-foreground text-xs">Client ID<Input aria-label="OAuth Client ID" onChange={(event) => onChange({ ...form, clientId: event.target.value })} placeholder="Client ID" value={form.clientId} /></label>
+        <label className="grid gap-1 text-muted-foreground text-xs">Client Secret<Input aria-label="OAuth Client Secret" onChange={(event) => onChange({ ...form, clientSecret: event.target.value })} placeholder="Client Secret" type="password" value={form.clientSecret} /></label>
+      </div>
+      <label className="grid gap-1 text-muted-foreground text-xs">Scope<Input aria-label="OAuth Scope" onChange={(event) => onChange({ ...form, scope: event.target.value })} placeholder="tools:read tools:execute" value={form.scope} /></label>
+      <label className="flex items-center gap-2 text-muted-foreground text-xs"><Checkbox checked={form.disabled} onCheckedChange={(checked) => onChange({ ...form, disabled: checked === true })} />停用自動 OAuth</label>
     </div>
   );
 }
