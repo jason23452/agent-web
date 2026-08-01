@@ -1524,10 +1524,21 @@ export function AppSidebar({
           },
         };
         if (hasGlobalPluginDraft && activeProjectName) {
+          const globalFiles: Record<string, string> = {};
+          const projectFiles: Record<string, string> = {};
+          for (const [name, file] of Object.entries(pendingPluginFiles)) {
+            (file.scope === "global" ? globalFiles : projectFiles)[name] = file.code;
+          }
+          const globalDeletes = Object.entries(pendingPluginDeletes).filter(([, deleteScope]) => deleteScope === "global").map(([name]) => name);
+          const projectDeletes = Object.entries(pendingPluginDeletes).filter(([, deleteScope]) => deleteScope === "project").map(([name]) => name);
           await syncOpenCodePluginConfig({
             globalPlugins: globalPluginNames,
+            globalFiles,
+            globalDeletes,
             project: activeProjectName,
             projectPlugins: projectPluginNames,
+            projectFiles,
+            projectDeletes,
             reason: "global-plugin-updated",
           });
         } else if (pluginConfigScope === "global") {

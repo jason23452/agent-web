@@ -50,8 +50,12 @@ export function applyOpenCodeConfig(
 
 export function syncOpenCodePluginConfig(body: {
   globalPlugins: string[];
+  globalFiles?: Record<string, string>;
+  globalDeletes?: string[];
   project: string;
   projectPlugins: string[];
+  projectFiles?: Record<string, string>;
+  projectDeletes?: string[];
   reason?: string;
   restart?: boolean;
   wait?: boolean;
