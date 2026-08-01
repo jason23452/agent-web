@@ -624,33 +624,53 @@ export function CommandDetailPanel({
 }
 
 export function CommandConfigPanel({
+  commandConfigMode,
+  commandDocument,
   commandForm,
   commandEditMode,
+  onCommandConfigModeChange,
+  onCommandDocumentChange,
   onCommandFormChange,
   onSubmitCommandConfig,
 }: {
+  commandConfigMode: "interface" | "document";
+  commandDocument: string;
   commandForm: CommandForm;
   commandEditMode: "add" | "edit";
+  onCommandConfigModeChange: (mode: "interface" | "document") => void;
+  onCommandDocumentChange: (content: string) => void;
   onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
   onSubmitCommandConfig: () => void;
 }) {
   return (
     <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
-      <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="grid gap-2 text-muted-foreground text-sm">
-            Command 名稱
-            <Input
-              aria-label="Command 名稱"
-              onChange={(event) => onCommandFormChange((current) => ({ ...current, name: event.target.value }))}
-              placeholder="review"
-              value={commandForm.name}
-            />
-          </label>
+      <div className="grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist" aria-label="Command 新增方式">
+        <button
+          aria-selected={commandConfigMode === "interface"}
+          className={`h-8 rounded-md font-medium text-sm transition ${commandConfigMode === "interface" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => onCommandConfigModeChange("interface")}
+          role="tab"
+          type="button"
+        >
+          介面新增
+        </button>
+        <button
+          aria-selected={commandConfigMode === "document"}
+          className={`h-8 rounded-md font-medium text-sm transition ${commandConfigMode === "document" ? "bg-background text-foreground shadow-xs/5" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => onCommandConfigModeChange("document")}
+          role="tab"
+          type="button"
+        >
+          文件新增
+        </button>
+      </div>
+
+      {commandConfigMode === "document" ? (
+        <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
           <label className="grid gap-2 text-muted-foreground text-sm">
             Install target
             <select
-              className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              className="h-9 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
               onChange={(event) => onCommandFormChange((current) => ({ ...current, installTarget: event.target.value as CommandForm["installTarget"] }))}
               value={commandForm.installTarget}
             >
@@ -658,61 +678,101 @@ export function CommandConfigPanel({
               <option value="global">Global</option>
             </select>
           </label>
-        </div>
-        <label className="grid gap-2 text-muted-foreground text-sm">
-          說明
-          <Input
-            aria-label="Command 說明"
-            onChange={(event) => onCommandFormChange((current) => ({ ...current, description: event.target.value }))}
-            placeholder="Review recent changes"
-            value={commandForm.description}
-          />
-        </label>
-        <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-2 text-muted-foreground text-sm">
-            Agent（可選）
-            <Input
-              aria-label="Command agent"
-              onChange={(event) => onCommandFormChange((current) => ({ ...current, agent: event.target.value }))}
-              placeholder="build"
-              value={commandForm.agent}
-            />
-          </label>
-          <label className="grid gap-2 text-muted-foreground text-sm">
-            Model（可選）
-            <Input
-              aria-label="Command model"
-              onChange={(event) => onCommandFormChange((current) => ({ ...current, model: event.target.value }))}
-              placeholder="anthropic/claude-sonnet-4-5"
-              value={commandForm.model}
+            Command Markdown 文件
+            <p className="text-muted-foreground text-xs">
+              檔名會成為 <code>/command</code>。Prompt 支援 <code>$ARGUMENTS</code>、<code>$1</code>、<code>!`command`</code> 與 <code>@file</code>。
+            </p>
+            <Textarea
+              aria-label="Command Markdown 文件"
+              className="min-h-[min(56dvh,480px)] bg-background font-mono text-xs leading-5"
+              onChange={(event) => onCommandDocumentChange(event.target.value)}
+              placeholder={'---\ndescription: Review recent changes\n---\nReview the current changes.\n'}
+              rows={14}
+              spellCheck={false}
+              value={commandDocument}
             />
           </label>
         </div>
-        <label className="flex items-center gap-2 text-muted-foreground text-sm">
-          <input
-            checked={commandForm.subtask}
-            onChange={(event) => onCommandFormChange((current) => ({ ...current, subtask: event.target.checked }))}
-            type="checkbox"
-          />
-          以 subtask 執行
-        </label>
-        <label className="grid gap-2 text-muted-foreground text-sm">
-          Prompt template
-          <Textarea
-            aria-label="Command prompt template"
-            className="min-h-56 font-mono"
-            onChange={(event) => onCommandFormChange((current) => ({ ...current, template: event.target.value }))}
-            placeholder="Review the current changes and suggest improvements.\n\n$ARGUMENTS"
-            rows={10}
-            spellCheck={false}
-            value={commandForm.template}
-          />
-        </label>
-        <p className="text-muted-foreground text-xs">
-          儲存後會產生 OpenCode command markdown：<code>{`{name}.md`}</code>。
-          可使用 <code>$ARGUMENTS</code>、<code>$1</code> 等參數。
-        </p>
-      </div>
+      ) : (
+        <div className="grid gap-4 rounded-lg bg-muted/45 p-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-2 text-muted-foreground text-sm">
+              Command 名稱
+              <Input
+                aria-label="Command 名稱"
+                onChange={(event) => onCommandFormChange((current) => ({ ...current, name: event.target.value }))}
+                placeholder="review"
+                value={commandForm.name}
+              />
+            </label>
+            <label className="grid gap-2 text-muted-foreground text-sm">
+              Install target
+              <select
+                className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                onChange={(event) => onCommandFormChange((current) => ({ ...current, installTarget: event.target.value as CommandForm["installTarget"] }))}
+                value={commandForm.installTarget}
+              >
+                <option value="project">Project</option>
+                <option value="global">Global</option>
+              </select>
+            </label>
+          </div>
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            說明
+            <Input
+              aria-label="Command 說明"
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, description: event.target.value }))}
+              placeholder="Review recent changes"
+              value={commandForm.description}
+            />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-2 text-muted-foreground text-sm">
+              Agent（可選）
+              <Input
+                aria-label="Command agent"
+                onChange={(event) => onCommandFormChange((current) => ({ ...current, agent: event.target.value }))}
+                placeholder="build"
+                value={commandForm.agent}
+              />
+            </label>
+            <label className="grid gap-2 text-muted-foreground text-sm">
+              Model（可選）
+              <Input
+                aria-label="Command model"
+                onChange={(event) => onCommandFormChange((current) => ({ ...current, model: event.target.value }))}
+                placeholder="anthropic/claude-sonnet-4-5"
+                value={commandForm.model}
+              />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-muted-foreground text-sm">
+            <input
+              checked={commandForm.subtask}
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, subtask: event.target.checked }))}
+              type="checkbox"
+            />
+            以 subtask 執行
+          </label>
+          <label className="grid gap-2 text-muted-foreground text-sm">
+            Prompt template
+            <Textarea
+              aria-label="Command prompt template"
+              className="min-h-56 font-mono"
+              onChange={(event) => onCommandFormChange((current) => ({ ...current, template: event.target.value }))}
+              placeholder="Review the current changes and suggest improvements.\n\n$ARGUMENTS"
+              rows={10}
+              spellCheck={false}
+              value={commandForm.template}
+            />
+          </label>
+          <p className="text-muted-foreground text-xs">
+            儲存後會產生 OpenCode command markdown：<code>{`{name}.md`}</code>。
+            可使用 <code>$ARGUMENTS</code>、<code>$1</code> 等參數。
+          </p>
+        </div>
+      )}
       <div className="flex justify-end">
         <Button
           disabled={!commandForm.name.trim() || !commandForm.template.trim()}

@@ -138,11 +138,11 @@ export default tool({
 }
 
 export const emptyCommandForm: CommandForm = {
-  name: "",
+  name: "test",
   installTarget: "project",
-  description: "",
-  agent: "",
-  model: "",
+  description: "Run tests with coverage",
+  agent: "build",
+  model: "anthropic/claude-3-5-sonnet-20241022",
   subtask: false,
-  template: "",
+  template: "Run the full test suite with coverage report and show any failures.\nFocus on the failing tests and suggest fixes.",
 }

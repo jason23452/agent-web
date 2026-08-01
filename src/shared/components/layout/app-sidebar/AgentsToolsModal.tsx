@@ -4,6 +4,7 @@ import { Button } from "@/shared/components/ui/button";
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import type {
   AgentConfigMode,
+  CommandConfigMode,
   CommandDefinition,
   CommandForm,
   AgentDialogView,
@@ -41,6 +42,8 @@ type AgentsToolsModalProps = {
   availableSkillNames: string[];
   batchUpdateNotice: string;
   commandEditMode: "add" | "edit";
+  commandConfigMode: CommandConfigMode;
+  commandDocument: string;
   commandForm: CommandForm;
   commands: CommandDefinition[];
   commandsError?: string | null;
@@ -59,6 +62,8 @@ type AgentsToolsModalProps = {
   onConfirmBatchUpdate: () => void;
   onCancelBatchUpdate: () => void;
   onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
+  onCommandConfigModeChange: (mode: CommandConfigMode) => void;
+  onCommandDocumentChange: (content: string) => void;
   onDeleteCommand: (command: CommandDefinition) => void;
   onDeleteGlobalCommand: (command: CommandDefinition) => void;
   onDeleteAgent: (agentId: string) => void;
@@ -126,6 +131,8 @@ export function AgentsToolsModal({
   availableSkillNames,
   batchUpdateNotice,
   commandEditMode,
+  commandConfigMode,
+  commandDocument,
   commandForm,
   commands,
   commandsError,
@@ -144,6 +151,8 @@ export function AgentsToolsModal({
   onConfirmBatchUpdate,
   onCancelBatchUpdate,
   onCommandFormChange,
+  onCommandConfigModeChange,
+  onCommandDocumentChange,
   onDeleteCommand,
   onDeleteGlobalCommand,
   onDeleteAgent,
@@ -219,7 +228,9 @@ export function AgentsToolsModal({
             ? "JS / TS 自訂工具"
             : view === "tool-detail"
               ? "OpenCode 工具說明"
-            : "介面設定 / YAML 設定"
+              : view === "command-config"
+                ? "介面新增 / 文件新增"
+                : "介面設定 / YAML 設定"
         }
          footer={(
           <>
@@ -359,8 +370,12 @@ export function AgentsToolsModal({
 
       {view === "command-config" && (
         <CommandConfigPanel
+          commandConfigMode={commandConfigMode}
+          commandDocument={commandDocument}
           commandEditMode={commandEditMode}
           commandForm={commandForm}
+          onCommandConfigModeChange={onCommandConfigModeChange}
+          onCommandDocumentChange={onCommandDocumentChange}
           onCommandFormChange={onCommandFormChange}
           onSubmitCommandConfig={onSubmitCommandConfig}
         />

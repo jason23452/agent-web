@@ -79,6 +79,7 @@ import {
 import type {
   AgentConfigMode,
   CommandDefinition,
+  CommandConfigMode,
   CommandForm,
   AgentDefinition,
   AgentDialogView,
@@ -88,6 +89,7 @@ import type {
   AppSidebarProps,
   InstallResult,
   McpConfigMode,
+  McpForm,
   McpServer,
   McpDialogView,
   PluginDefinition,
@@ -339,7 +341,7 @@ function toRuntimeCommandDefinition(command: OpenCodeRuntimeCommand): CommandDef
 }
 
 function parseCommandDocument(content: string, fallback: CommandDefinition): CommandForm {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/);
   const metadata = new Map<string, string>();
 
   for (const line of match?.[1]?.split("\n") ?? []) {
@@ -370,6 +372,34 @@ function commandToMarkdown(command: CommandDefinition): string {
   ].filter(Boolean);
 
   return `---\n${metadata.join("\n")}\n---\n${command.template.trim()}\n`;
+}
+
+function commandFormToMarkdown(form: CommandForm): string {
+  return commandToMarkdown({
+    id: "command-draft",
+    name: form.name.trim() || "new-command",
+    description: form.description,
+    source: "custom",
+    agent: form.agent,
+    model: form.model,
+    subtask: form.subtask,
+    template: form.template,
+    installTarget: form.installTarget,
+  });
+}
+
+function commandFormFallback(form: CommandForm): CommandDefinition {
+  return {
+    id: "command-draft",
+    name: form.name.trim() || "new-command",
+    description: form.description,
+    source: "custom",
+    agent: form.agent,
+    model: form.model,
+    subtask: form.subtask,
+    template: form.template,
+    installTarget: form.installTarget,
+  };
 }
 
 function getToolEntryPath(
@@ -462,6 +492,67 @@ function mcpServerToForm(server: McpServer) {
     enabled: server.enabled,
     timeout: server.timeout === undefined ? "" : String(server.timeout),
   };
+}
+
+function mcpFormToServer(form: McpForm, scope: OpenCodeConfigScope, id?: string): McpServer | null {
+  const name = form.name.trim();
+  if (!name) return null;
+
+  const environment = Object.fromEntries(form.environment.map(({ key, value }) => [key.trim(), value]).filter(([key]) => key));
+  const headers = Object.fromEntries(form.headers.map(({ key, value }) => [key.trim(), value]).filter(([key]) => key));
+  const hasOAuth = Boolean(form.oauth.clientId.trim() || form.oauth.clientSecret.trim() || form.oauth.scope.trim());
+  const oauth = form.oauth.disabled
+    ? false
+    : hasOAuth
+      ? {
+        ...(form.oauth.clientId.trim() ? { clientId: form.oauth.clientId.trim() } : {}),
+        ...(form.oauth.clientSecret.trim() ? { clientSecret: form.oauth.clientSecret.trim() } : {}),
+        ...(form.oauth.scope.trim() ? { scope: form.oauth.scope.trim() } : {}),
+      }
+      : undefined;
+
+  return {
+    id: id ?? `${scope}-${name}`,
+    name,
+    scope,
+    type: form.type,
+    url: form.url.trim(),
+    command: form.command.split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    cwd: form.cwd.trim(),
+    environment,
+    headers,
+    oauth,
+    enabled: form.enabled,
+    timeout: form.timeout.trim() ? Number(form.timeout) : undefined,
+  };
+}
+
+function parseOpenCodeDocument(content: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    try {
+      const withoutComments = content
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/.*$/gm, "$1");
+      const parsed = JSON.parse(withoutComments.replace(/,\s*([}\]])/g, "$1")) as unknown;
+      return isRecord(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function syncMcpDocument(content: string, servers: McpServer[]): string {
+  const config = parseOpenCodeDocument(content) ?? { $schema: "https://opencode.ai/config.json" };
+  config.mcp = buildMcpConfig(servers);
+  return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+function mcpServersFromDocument(content: string, scope: OpenCodeConfigScope): McpServer[] | null {
+  const config = parseOpenCodeDocument(content);
+  return config ? toMcpServers(config.mcp, scope) : null;
 }
 
 function buildMcpConfig(servers: McpServer[]): Record<string, Record<string, unknown>> {
@@ -777,6 +868,7 @@ export function AppSidebar({
   const [mcpScope, setMcpScope] = useState<OpenCodeConfigScope>("project");
   const [mcpConfigMode, setMcpConfigMode] = useState<McpConfigMode>("interface");
   const [mcpConfigDocument, setMcpConfigDocument] = useState("");
+  const [mcpDocumentScope, setMcpDocumentScope] = useState<OpenCodeConfigScope>("project");
   const [mcpConfigLoading, setMcpConfigLoading] = useState(false);
   const [mcpHasChanges, setMcpHasChanges] = useState(false);
   const [pluginSkillDialogOpen, setPluginSkillDialogOpen] = useState(false);
@@ -844,6 +936,8 @@ export function AppSidebar({
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
   const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
   const [commandEditMode, setCommandEditMode] = useState<"add" | "edit">("add");
+  const [commandConfigMode, setCommandConfigMode] = useState<CommandConfigMode>("interface");
+  const [commandDocument, setCommandDocument] = useState("");
   const [commandEditTargetScope, setCommandEditTargetScope] = useState<RegistryConfigScope | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
@@ -2070,6 +2164,7 @@ export function AppSidebar({
       setMcpServers([...globalServers, ...projectServers].sort((left, right) => left.name.localeCompare(right.name) || left.scope.localeCompare(right.scope)));
       const selectedResponse = selectedScope === "project" ? projectResponse : globalResponse;
       setMcpConfigDocument(selectedResponse?.content ?? "");
+      setMcpDocumentScope(selectedScope);
       setMcpHasChanges(false);
     } catch (error) {
       setMcpServers([]);
@@ -2085,18 +2180,22 @@ export function AppSidebar({
     }
   }, [activeProjectName, mcpScope]);
 
-  async function loadMcpDocument(scope: OpenCodeConfigScope) {
+  async function loadMcpDocument(scope: OpenCodeConfigScope): Promise<string> {
     if (scope === "project" && !activeProjectName) {
       setMcpConfigDocument("");
-      return;
+      setMcpDocumentScope(scope);
+      return "";
     }
 
     setMcpConfigLoading(true);
     try {
       const response = await getOpenCodeConfig(scope, scope === "project" ? activeProjectName : undefined);
       setMcpConfigDocument(response.content);
+      setMcpDocumentScope(scope);
+      return response.content;
     } catch (error) {
       toastManager.add({ id: `mcp-document-load-error-${scope}-${Date.now()}`, description: getApiErrorMessage(error), title: "載入 MCP 文件失敗", type: "error" });
+      return "";
     } finally {
       setMcpConfigLoading(false);
     }
@@ -2852,14 +2951,57 @@ export function AppSidebar({
     if (mcpConfigMode === "document") await loadMcpDocument(scope);
   }
 
-  function changeMcpConfigMode(mode: McpConfigMode) {
+  async function changeMcpConfigMode(mode: McpConfigMode) {
     if (mode === mcpConfigMode) return;
-    if (mcpConfigMode === "document" && mcpHasChanges) {
-      toastManager.add({ id: "mcp-mode-draft-warning", description: "請先更新或取消目前 MCP draft，再切換編輯方式。", title: "尚有未儲存變更", type: "warning" });
-      return;
+
+    if (mode === "document") {
+      const content = mcpDocumentScope === mcpScope
+        ? mcpConfigDocument
+        : await loadMcpDocument(mcpScope);
+      const draftServer = mcpFormToServer(mcpForm, mcpScope, editingMcpId ?? undefined);
+      const scopeServers = draftServer
+        ? [...mcpServers.filter((server) => server.scope === mcpScope && server.id !== editingMcpId), draftServer]
+        : mcpServers.filter((server) => server.scope === mcpScope);
+      setMcpConfigDocument(syncMcpDocument(content, scopeServers));
+      setMcpDocumentScope(mcpScope);
+      setMcpHasChanges(Boolean(draftServer) || mcpHasChanges);
+    } else {
+      const documentServers = mcpServersFromDocument(mcpConfigDocument, mcpScope);
+      if (documentServers) {
+        setMcpServers((current) => [
+          ...current.filter((server) => server.scope !== mcpScope),
+          ...documentServers,
+        ].sort((left, right) => left.name.localeCompare(right.name) || left.scope.localeCompare(right.scope)));
+
+        const currentName = editingMcpId
+          ? mcpServers.find((server) => server.id === editingMcpId)?.name
+          : mcpForm.name.trim();
+        const matchedServer = documentServers.find((server) => server.name === currentName) ?? (documentServers.length === 1 ? documentServers[0] : undefined);
+        if (matchedServer) setMcpForm(mcpServerToForm(matchedServer));
+        setMcpHasChanges(true);
+      }
     }
+
     setMcpConfigMode(mode);
-    if (mode === "document") void loadMcpDocument(mcpScope);
+  }
+
+  function changeMcpDocument(content: string) {
+    setMcpConfigDocument(content);
+    setMcpHasChanges(true);
+
+    const documentServers = mcpServersFromDocument(content, mcpScope);
+    if (!documentServers) return;
+
+    setMcpServers((current) => [
+      ...current.filter((server) => server.scope !== mcpScope),
+      ...documentServers,
+    ].sort((left, right) => left.name.localeCompare(right.name) || left.scope.localeCompare(right.scope)));
+
+    const currentName = editingMcpId
+      ? mcpServers.find((server) => server.id === editingMcpId)?.name
+      : mcpForm.name.trim();
+    const matchedServer = documentServers.find((server) => server.name === currentName) ?? (documentServers.length === 1 ? documentServers[0] : undefined);
+    if (matchedServer) setMcpForm(mcpServerToForm(matchedServer));
   }
 
   function cancelMcpChanges() {
@@ -2959,7 +3101,10 @@ export function AppSidebar({
     setEditingCommandId(null);
     setSelectedCommandId(null);
     setCommandEditTargetScope(null);
-    setCommandForm({ ...emptyCommandForm, installTarget: agentsToolsScope });
+    const nextForm = { ...emptyCommandForm, installTarget: agentsToolsScope };
+    setCommandConfigMode("interface");
+    setCommandForm(nextForm);
+    setCommandDocument(commandFormToMarkdown(nextForm));
     setAgentDialogView("command-config");
   }
 
@@ -2976,6 +3121,7 @@ export function AppSidebar({
     setCommandEditTargetScope(command.inherited ? "project" : null);
     setEditingCommandId(command.id);
     setSelectedCommandId(command.id);
+    setCommandConfigMode("interface");
     setCommandForm({
       ...emptyCommandForm,
       name: command.name,
@@ -2992,6 +3138,7 @@ export function AppSidebar({
     setCommandEditTargetScope("global");
     setEditingCommandId(command.id);
     setSelectedCommandId(command.id);
+    setCommandConfigMode("interface");
     setCommandForm({
       ...emptyCommandForm,
       name: command.name,
@@ -3008,6 +3155,7 @@ export function AppSidebar({
 
     const pendingContent = pendingCommandUpserts[`${sourceScope}:${command.name}`]?.content;
     if (pendingContent) {
+      setCommandDocument(pendingContent);
       const parsed = parseCommandDocument(pendingContent, command);
       setCommands((current) => current.map((item) =>
         item.id === command.id
@@ -3038,6 +3186,7 @@ export function AppSidebar({
       const content = response.content ?? Object.values(response.files ?? {})[0] ?? "";
       if (!content) return;
 
+      setCommandDocument(content);
       const parsed = parseCommandDocument(content, command);
       setCommands((current) => current.map((item) =>
         item.id === command.id
@@ -3060,6 +3209,25 @@ export function AppSidebar({
       if (error instanceof ApiError && error.status === 404) return;
       setCommandsError(`讀取 command 內容失敗：${getApiErrorMessage(error)}`);
     }
+  }
+
+  function changeCommandConfigMode(mode: CommandConfigMode) {
+    if (mode === commandConfigMode) return;
+
+    if (mode === "document") {
+      setCommandDocument(commandFormToMarkdown(commandForm));
+    } else {
+      const parsed = parseCommandDocument(commandDocument, commandFormFallback(commandForm));
+      setCommandForm((current) => ({ ...parsed, installTarget: current.installTarget }));
+    }
+
+    setCommandConfigMode(mode);
+  }
+
+  function changeCommandDocument(content: string) {
+    setCommandDocument(content);
+    const parsed = parseCommandDocument(content, commandFormFallback(commandForm));
+    setCommandForm((current) => ({ ...parsed, installTarget: current.installTarget }));
   }
 
   function openEditToolMode(tool: ToolDefinition) {
@@ -4162,10 +4330,7 @@ export function AppSidebar({
         onClose={() => setMcpDialogOpen(false)}
         onConfigModeChange={changeMcpConfigMode}
         onDeleteServer={deleteMcpServer}
-        onDocumentChange={(content) => {
-          setMcpConfigDocument(content);
-          setMcpHasChanges(true);
-        }}
+        onDocumentChange={changeMcpDocument}
         onEditServer={openEditMcpServer}
         onFormChange={(updates) =>
           setMcpForm((current) => ({ ...current, ...updates }))
@@ -4256,8 +4421,10 @@ export function AppSidebar({
          availableModels={availableAgentModels}
          availableSkillNames={availableSkillNames}
          batchUpdateNotice={batchUpdateNotice}
-         commandEditMode={commandEditMode}
-         commandForm={commandForm}
+          commandEditMode={commandEditMode}
+          commandConfigMode={commandConfigMode}
+          commandDocument={commandDocument}
+          commandForm={commandForm}
          commands={commands}
          commandsError={commandsError}
          commandsLoading={commandsLoading}
@@ -4273,8 +4440,10 @@ export function AppSidebar({
          onAgentToolTabChange={setAgentToolTab}
         onAgentYamlChange={setAgentYaml}
          onConfirmBatchUpdate={() => confirmBatchUpdate("agents-tools")}
-         onCancelBatchUpdate={cancelAgentsToolsChanges}
-         onCommandFormChange={setCommandForm}
+          onCancelBatchUpdate={cancelAgentsToolsChanges}
+          onCommandConfigModeChange={changeCommandConfigMode}
+          onCommandDocumentChange={changeCommandDocument}
+          onCommandFormChange={setCommandForm}
          onDeleteCommand={deleteCommand}
          onDeleteGlobalCommand={deleteGlobalCommand}
          onDeleteAgent={deleteAgent}

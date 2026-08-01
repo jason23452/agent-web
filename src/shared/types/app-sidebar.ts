@@ -262,6 +262,7 @@ export type AgentEditMode = "add" | "edit";
 export type ToolEditMode = "add" | "edit";
 export type AgentToolTab = "agents" | "tools" | "commands";
 export type AgentConfigMode = "interface" | "yaml";
+export type CommandConfigMode = "interface" | "document";
 
 export type InstallResult = {
   status: "success" | "error";
