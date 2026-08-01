@@ -59,6 +59,7 @@ type AgentsToolsModalProps = {
   onCancelBatchUpdate: () => void;
   onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
   onDeleteCommand: (command: CommandDefinition) => void;
+  onDeleteGlobalCommand: (command: CommandDefinition) => void;
   onDeleteAgent: (agentId: string) => void;
   onDeleteTool: (tool: ToolDefinition) => void;
   onGetCallableSubagentOptions: (
@@ -75,6 +76,7 @@ type AgentsToolsModalProps = {
   onOpenAgentDetail: (agent: AgentDefinition) => void;
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
   onOpenEditCommandMode: (command: CommandDefinition) => void;
+  onOpenEditGlobalCommandMode: (command: CommandDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
   onOpenCommandDetail: (command: CommandDefinition) => void;
   onOpenToolDetail: (tool: ToolDefinition) => void;
@@ -141,6 +143,7 @@ export function AgentsToolsModal({
   onCancelBatchUpdate,
   onCommandFormChange,
   onDeleteCommand,
+  onDeleteGlobalCommand,
   onDeleteAgent,
   onDeleteTool,
   onGetCallableSubagentOptions,
@@ -154,6 +157,7 @@ export function AgentsToolsModal({
   onOpenAgentDetail,
   onOpenCommandDetail,
   onOpenEditCommandMode,
+  onOpenEditGlobalCommandMode,
   onOpenEditAgentMode,
   onOpenEditToolMode,
   onOpenToolDetail,
@@ -240,7 +244,7 @@ export function AgentsToolsModal({
         </>
         )}
         headerActions={
-           view === "list" && !projectRequired && (
+            view === "list" && (!projectRequired || agentToolTab === "commands") && (
              <Button
                onClick={
                  agentToolTab === "tools"
@@ -278,11 +282,13 @@ export function AgentsToolsModal({
                  : view === "tool-detail"
                    ? "工具說明"
                    : view === "command-config"
-                     ? selectedCommand?.inherited
-                       ? "建立 Project Command Override"
-                       : commandEditMode === "add"
-                         ? "新增 Command"
-                         : "編輯 Command"
+                     ? selectedCommand?.inherited && commandForm.installTarget !== "global"
+                        ? "建立 Project Command Override"
+                        : commandEditMode === "add"
+                          ? "新增 Command"
+                          : commandForm.installTarget === "global"
+                            ? "編輯 Global Command"
+                            : "編輯 Command"
                      : view === "command-detail"
                        ? "Command 說明"
                        : selectedAgent?.inherited
@@ -304,11 +310,13 @@ export function AgentsToolsModal({
              projectRequired={projectRequired}
            onAgentToolTabChange={onAgentToolTabChange}
           onDeleteCommand={onDeleteCommand}
+          onDeleteGlobalCommand={onDeleteGlobalCommand}
           onDeleteAgent={onDeleteAgent}
           onDeleteTool={onDeleteTool}
            onOpenAgentDetail={onOpenAgentDetail}
           onOpenCommandDetail={onOpenCommandDetail}
           onOpenEditCommandMode={onOpenEditCommandMode}
+          onOpenEditGlobalCommandMode={onOpenEditGlobalCommandMode}
           onOpenEditAgentMode={onOpenEditAgentMode}
           onOpenEditToolMode={onOpenEditToolMode}
           onOpenToolDetail={onOpenToolDetail}
@@ -341,6 +349,8 @@ export function AgentsToolsModal({
       {view === "command-detail" && selectedCommand && (
         <CommandDetailPanel
           command={selectedCommand}
+          onDeleteGlobalCommand={onDeleteGlobalCommand}
+          onOpenEditGlobalCommandMode={onOpenEditGlobalCommandMode}
           onOpenEditCommandMode={onOpenEditCommandMode}
         />
       )}

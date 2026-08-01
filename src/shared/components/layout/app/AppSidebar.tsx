@@ -785,6 +785,7 @@ export function AppSidebar({
   const [editingToolId, setEditingToolId] = useState<string | null>(null);
   const [toolEditMode, setToolEditMode] = useState<ToolEditMode>("add");
   const [commandEditMode, setCommandEditMode] = useState<"add" | "edit">("add");
+  const [commandEditTargetScope, setCommandEditTargetScope] = useState<RegistryConfigScope | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [selectedCommandId, setSelectedCommandId] = useState<string | null>(null);
@@ -1943,6 +1944,7 @@ export function AppSidebar({
       setPendingToolDeletes({});
       setPendingCommandUpserts({});
       setPendingCommandDeletes({});
+      setCommandEditTargetScope(null);
       setPendingPluginFiles({});
        setPendingPluginDeletes({});
        setPendingPluginScopeMoves({});
@@ -2727,6 +2729,7 @@ export function AppSidebar({
     setPendingToolDeletes({});
     setPendingCommandUpserts({});
     setPendingCommandDeletes({});
+    setCommandEditTargetScope(null);
     setAgentsToolsHasChanges(false);
     setBatchUpdateNotice("");
     setAgentDialogView("list");
@@ -2764,6 +2767,7 @@ export function AppSidebar({
     setCommandEditMode("add");
     setEditingCommandId(null);
     setSelectedCommandId(null);
+    setCommandEditTargetScope(null);
     setCommandForm({ ...emptyCommandForm, installTarget: agentsToolsScope });
     setAgentDialogView("command-config");
   }
@@ -2778,6 +2782,7 @@ export function AppSidebar({
   function openEditCommandMode(command: CommandDefinition) {
     if (command.source !== "custom") return;
     setCommandEditMode("edit");
+    setCommandEditTargetScope(command.inherited ? "project" : null);
     setEditingCommandId(command.id);
     setSelectedCommandId(command.id);
     setCommandForm({
@@ -2790,9 +2795,48 @@ export function AppSidebar({
     void loadCommandRegistryContent(command);
   }
 
+  function openEditGlobalCommandMode(command: CommandDefinition) {
+    if (command.source !== "custom" || !command.inherited) return;
+    setCommandEditMode("edit");
+    setCommandEditTargetScope("global");
+    setEditingCommandId(command.id);
+    setSelectedCommandId(command.id);
+    setCommandForm({
+      ...emptyCommandForm,
+      name: command.name,
+      installTarget: "global",
+      description: command.description,
+    });
+    setAgentDialogView("command-config");
+    void loadCommandRegistryContent(command);
+  }
+
   async function loadCommandRegistryContent(command: CommandDefinition) {
     const sourceScope = command.inherited ? "global" : command.installTarget ?? agentsToolsScope;
     if (sourceScope === "project" && !activeProjectName) return;
+
+    const pendingContent = pendingCommandUpserts[`${sourceScope}:${command.name}`]?.content;
+    if (pendingContent) {
+      const parsed = parseCommandDocument(pendingContent, command);
+      setCommands((current) => current.map((item) =>
+        item.id === command.id
+          ? {
+              ...item,
+              description: parsed.description,
+              agent: parsed.agent || undefined,
+              model: parsed.model || undefined,
+              subtask: parsed.subtask,
+              template: parsed.template,
+            }
+          : item,
+      ));
+      setCommandForm((current) =>
+        current.name === command.name
+          ? { ...parsed, installTarget: current.installTarget }
+          : current,
+      );
+      return;
+    }
 
     try {
       const response = await readCommandRegistryEntry(
@@ -3419,7 +3463,7 @@ export function AppSidebar({
       commandEditMode === "add"
         ? commandForm.installTarget
         : currentCommand?.inherited
-          ? "project"
+          ? commandEditTargetScope ?? "project"
           : commandForm.installTarget;
 
     if (targetScope === "project" && !activeProjectName) {
@@ -3554,6 +3598,41 @@ export function AppSidebar({
       return;
     }
     removeCommand();
+  }
+
+  function deleteGlobalCommand(command: CommandDefinition) {
+    if (command.source !== "custom" || !command.inherited) return;
+
+    const removeGlobalCommand = () => {
+      const key = `global:${command.name}`;
+      setPendingCommandUpserts((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      if (!command.id.startsWith("command-") || !pendingCommandUpserts[key]) {
+        setPendingCommandDeletes((current) => ({
+          ...current,
+          [key]: { scope: "global", name: command.name },
+        }));
+      } else {
+        setPendingCommandDeletes((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      }
+      setCommands((current) => current.filter((item) => item.id !== command.id));
+      setAgentsToolsHasChanges(true);
+      setBatchUpdateNotice("");
+    };
+
+    showConfirmationToast({
+      id: `command-global-delete-confirm-${command.name}`,
+      title: `刪除 Global command ${command.name}？`,
+      description: "刪除後會影響所有 Project，按下 modal 底部的「更新」後才會真正刪除。",
+      onConfirm: removeGlobalCommand,
+    });
   }
 
   async function runToolCallTest() {
@@ -3992,6 +4071,7 @@ export function AppSidebar({
          onCancelBatchUpdate={cancelAgentsToolsChanges}
          onCommandFormChange={setCommandForm}
          onDeleteCommand={deleteCommand}
+         onDeleteGlobalCommand={deleteGlobalCommand}
          onDeleteAgent={deleteAgent}
         onDeleteTool={deleteTool}
         onGetCallableSubagentOptions={getCallableSubagentOptions}
@@ -4006,6 +4086,7 @@ export function AppSidebar({
         onOpenChange={setAgentsDialogOpen}
          onOpenEditAgentMode={openEditAgentMode}
          onOpenEditCommandMode={openEditCommandMode}
+         onOpenEditGlobalCommandMode={openEditGlobalCommandMode}
         onOpenEditToolMode={openEditToolMode}
         onOpenToolDetail={openToolDetail}
         onRemoveFormSubagent={removeFormSubagent}

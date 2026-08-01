@@ -92,10 +92,12 @@ export function AgentsToolsList({
   commandsLoading = false,
   onAgentToolTabChange,
   onDeleteCommand,
+  onDeleteGlobalCommand,
   onDeleteAgent,
   onDeleteTool,
   onOpenAgentDetail,
   onOpenCommandDetail,
+  onOpenEditGlobalCommandMode,
   onOpenEditCommandMode,
   onOpenEditAgentMode,
   onOpenEditToolMode,
@@ -114,10 +116,12 @@ export function AgentsToolsList({
   commandsLoading?: boolean;
   onAgentToolTabChange: Dispatch<SetStateAction<AgentToolTab>>;
   onDeleteCommand: (command: CommandDefinition) => void;
+  onDeleteGlobalCommand: (command: CommandDefinition) => void;
   onDeleteAgent: (agentId: string) => void;
   onDeleteTool: (tool: ToolDefinition) => void;
   onOpenAgentDetail: (agent: AgentDefinition) => void;
   onOpenCommandDetail: (command: CommandDefinition) => void;
+  onOpenEditGlobalCommandMode: (command: CommandDefinition) => void;
   onOpenEditCommandMode: (command: CommandDefinition) => void;
   onOpenEditAgentMode: (agent: AgentDefinition) => void;
   onOpenEditToolMode: (tool: ToolDefinition) => void;
@@ -454,7 +458,9 @@ export function AgentsToolsList({
                     <CommandListItem
                       command={command}
                       onDeleteCommand={onDeleteCommand}
+                      onDeleteGlobalCommand={onDeleteGlobalCommand}
                       onOpenCommandDetail={onOpenCommandDetail}
+                      onOpenEditGlobalCommandMode={onOpenEditGlobalCommandMode}
                       onOpenEditCommandMode={onOpenEditCommandMode}
                     />
                   </li>
@@ -471,12 +477,16 @@ export function AgentsToolsList({
 export function CommandListItem({
   command,
   onDeleteCommand,
+  onDeleteGlobalCommand,
   onOpenCommandDetail,
+  onOpenEditGlobalCommandMode,
   onOpenEditCommandMode,
 }: {
   command: CommandDefinition;
   onDeleteCommand: (command: CommandDefinition) => void;
+  onDeleteGlobalCommand: (command: CommandDefinition) => void;
   onOpenCommandDetail: (command: CommandDefinition) => void;
+  onOpenEditGlobalCommandMode: (command: CommandDefinition) => void;
   onOpenEditCommandMode: (command: CommandDefinition) => void;
 }) {
   return (
@@ -511,8 +521,20 @@ export function CommandListItem({
           {command.source === "custom" && (
             <>
               <MenuItem onClick={() => onOpenEditCommandMode(command)}>編輯</MenuItem>
+              {command.inherited && (
+                <MenuItem onClick={() => onOpenEditGlobalCommandMode(command)}>
+                  編輯 Global
+                </MenuItem>
+              )}
               <MenuSeparator />
-              <MenuItem onClick={() => onDeleteCommand(command)} variant="destructive">
+              <MenuItem
+                onClick={() =>
+                  command.inherited
+                    ? onDeleteGlobalCommand(command)
+                    : onDeleteCommand(command)
+                }
+                variant="destructive"
+              >
                 刪除
               </MenuItem>
             </>
@@ -525,9 +547,13 @@ export function CommandListItem({
 
 export function CommandDetailPanel({
   command,
+  onDeleteGlobalCommand,
+  onOpenEditGlobalCommandMode,
   onOpenEditCommandMode,
 }: {
   command: CommandDefinition;
+  onDeleteGlobalCommand: (command: CommandDefinition) => void;
+  onOpenEditGlobalCommandMode: (command: CommandDefinition) => void;
   onOpenEditCommandMode: (command: CommandDefinition) => void;
 }) {
   return (
@@ -571,7 +597,21 @@ export function CommandDetailPanel({
       </section>
       <div className="flex justify-end">
         {command.source === "custom" ? (
-          <Button onClick={() => onOpenEditCommandMode(command)} size="sm">編輯 Command</Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={() => onOpenEditCommandMode(command)} size="sm">
+              {command.inherited ? "建立 Project Override" : "編輯 Command"}
+            </Button>
+            {command.inherited && (
+              <>
+                <Button onClick={() => onOpenEditGlobalCommandMode(command)} size="sm" variant="outline">
+                  編輯 Global
+                </Button>
+                <Button onClick={() => onDeleteGlobalCommand(command)} size="sm" variant="destructive">
+                  刪除 Global
+                </Button>
+              </>
+            )}
+          </div>
         ) : (
           <p className="text-muted-foreground text-xs">
             此 Command 由 OpenCode runtime 載入，請透過其來源設定修改。
