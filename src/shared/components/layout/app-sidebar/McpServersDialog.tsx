@@ -36,6 +36,7 @@ type McpServersDialogProps = {
   onViewChange: (view: McpDialogView) => void;
   onScopeChange: (scope: "project" | "global") => void;
   open: boolean;
+  projectRequired?: boolean;
   scope: "project" | "global";
   view: McpDialogView;
 };
@@ -66,19 +67,20 @@ export function McpServersDialog({
   onViewChange,
   onScopeChange,
   open,
+  projectRequired = false,
   scope,
   view,
 }: McpServersDialogProps) {
-  const isEditor = view === "add" || view === "edit";
+  const isEditor = !projectRequired && (view === "add" || view === "edit");
 
   return (
     <ModalShell
       ariaLabel="MCP Server 設定"
-      backButton={view !== "list" ? { ariaLabel: "返回 MCP Server 列表", onClick: () => onViewChange("list") } : undefined}
+      backButton={!projectRequired && view !== "list" ? { ariaLabel: "返回 MCP Server 列表", onClick: () => onViewChange("list") } : undefined}
       bodyClassName="p-0"
       closeAriaLabel="關閉 MCP Server 設定"
-      description={view === "list" ? "Global · Project" : scope === "project" ? "Project" : "Global"}
-      footer={(
+      description={projectRequired ? "尚未開啟專案" : view === "list" ? "Global · Project" : scope === "project" ? "Project" : "Global"}
+      footer={!projectRequired && (
         <>
           <p className="text-muted-foreground text-xs">按下更新會重新啟動 OpenCode server。</p>
           <div className="flex items-center gap-2">
@@ -87,7 +89,7 @@ export function McpServersDialog({
           </div>
         </>
       )}
-      headerActions={view === "list" ? (
+      headerActions={!projectRequired && view === "list" ? (
         <Button onClick={onOpenAddServer} size="sm" variant="outline">
           <PlusIcon aria-hidden="true" />
           新增 MCP
@@ -98,10 +100,14 @@ export function McpServersDialog({
       }}
       open={open}
       panelClassName="h-[min(86dvh,640px)]"
-      title={view === "list" ? "MCP Server" : view === "add" ? "新增 MCP" : "編輯 MCP"}
+      title={projectRequired || view === "list" ? "MCP Server" : view === "add" ? "新增 MCP" : "編輯 MCP"}
     >
       <div className="grid min-h-[420px] min-w-0 flex-1 content-start gap-5 overflow-y-auto px-6 pb-6">
-        {view === "list" && (
+        {projectRequired ? (
+          <div className="rounded-lg border border-destructive/35 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm" role="alert">
+            請先開啟專案後再查看 OpenCode MCP。
+          </div>
+        ) : view === "list" ? (
           <McpServerList
             configLoading={configLoading}
             servers={filteredServers}
@@ -109,7 +115,7 @@ export function McpServersDialog({
             onEditServer={onEditServer}
             onToggleServer={onToggleServer}
           />
-        )}
+        ) : null}
         {isEditor && (
           <McpEditor
             configDocument={configDocument}

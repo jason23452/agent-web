@@ -4398,8 +4398,9 @@ export function AppSidebar({
         onToggleServer={toggleMcpServer}
         onViewChange={setMcpDialogView}
         onScopeChange={changeMcpScope}
-        open={mcpDialogOpen}
-        scope={mcpScope}
+         open={mcpDialogOpen}
+         projectRequired={!activeProjectName}
+         scope={mcpScope}
         view={mcpDialogView}
       />
 
