@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type SetStateAction } from "react"
 import { getApiErrorMessage } from "@/shared/api"
 import { testOpenCodeMcpConnection, type OpenCodeMcpTestResult } from "@/shared/api/opencodeMcpTest"
 import { testToolScript } from "@/shared/api/opencodeRegistry"
@@ -18,20 +18,24 @@ import type {
   ToolForm,
 } from "@/shared/types/app-sidebar"
 import type { ResourceNodeData, WorkflowNode } from "@/features/workflows/types"
+import type { ModelOption } from "@/shared/types/workspace"
+import { buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
 
 type WorkflowResourceConfigPanelProps = {
+  availableModels?: string[]
+  modelOptions?: ModelOption[]
   node: WorkflowNode
   onClose: () => void
   onUpdateNode: (node: WorkflowNode) => void
   project?: string
 }
 
-export function WorkflowResourceConfigPanel({ node, onClose, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
+export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, onClose, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
   switch (node.type) {
     case "resource.tool":
       return <WorkflowToolConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} project={project} />
     case "resource.command":
-      return <WorkflowCommandConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} />
+      return <WorkflowCommandConfigPanel availableModels={availableModels} key={node.id} modelOptions={modelOptions} node={node} onUpdateNode={onUpdateNode} />
     case "resource.plugin":
       return <WorkflowPluginConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
     case "resource.skill":
@@ -126,22 +130,32 @@ function WorkflowToolConfigPanel({ node, onUpdateNode, project }: Pick<WorkflowR
   )
 }
 
-function WorkflowCommandConfigPanel({ node, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "node" | "onUpdateNode">) {
+function WorkflowCommandConfigPanel({ availableModels, modelOptions, node, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "availableModels" | "modelOptions" | "node" | "onUpdateNode">) {
   const data = resourceData(node)
   const [commandConfigMode, setCommandConfigMode] = useState<CommandConfigMode>("interface")
   const [commandForm, setCommandForm] = useState<CommandForm>(() => commandFormFromDocument(data.content ?? "", data.name, data.scope))
   const [commandDocument, setCommandDocument] = useState(() => data.content?.trim() ? data.content : commandFormToMarkdown(commandFormFromDocument("", data.name, data.scope)))
+  const variantOptions = [...new Set([...buildAgentVariantOptions(commandForm.model, modelOptions ?? []), commandForm.variant ?? ""])]
+
+  function updateCommandForm(update: SetStateAction<CommandForm>) {
+    setCommandForm((current) => {
+      const next = typeof update === "function" ? update(current) : update
+      if (next.model === current.model) return next
+      const variants = buildAgentVariantOptions(next.model, modelOptions ?? [])
+      return next.variant && !variants.includes(next.variant) ? { ...next, variant: "" } : next
+    })
+  }
 
   function changeMode(mode: CommandConfigMode) {
     if (mode === commandConfigMode) return
     if (mode === "document") setCommandDocument(commandFormToMarkdown(commandForm))
-    else setCommandForm(commandFormFromDocument(commandDocument, data.name, data.scope))
+    else updateCommandForm(commandFormFromDocument(commandDocument, data.name, data.scope))
     setCommandConfigMode(mode)
   }
 
   function changeDocument(content: string) {
     setCommandDocument(content)
-    setCommandForm((current) => commandFormFromDocument(content, current.name || data.name, current.installTarget))
+    updateCommandForm((current) => commandFormFromDocument(content, current.name || data.name, current.installTarget))
   }
 
   function submit() {
@@ -160,9 +174,12 @@ function WorkflowCommandConfigPanel({ node, onUpdateNode }: Pick<WorkflowResourc
       commandDocument={commandDocument}
       commandEditMode="edit"
       commandForm={commandForm}
+      availableModels={availableModels}
+      modelOptions={modelOptions}
+      variantOptions={variantOptions}
       onCommandConfigModeChange={changeMode}
       onCommandDocumentChange={changeDocument}
-      onCommandFormChange={setCommandForm}
+      onCommandFormChange={updateCommandForm}
       onSubmitCommandConfig={submit}
     />
   )
@@ -361,6 +378,7 @@ function commandFormFromDocument(content: string, fallbackName: string, scope: R
     description: values.description ?? "",
     agent: values.agent ?? "",
     model: values.model ?? "",
+    variant: values.variant ?? "",
     subtask: values.subtask === "true",
     template: (match?.[2] ?? content).trim() || emptyCommandForm.template,
   }
@@ -371,6 +389,7 @@ function commandFormToMarkdown(form: CommandForm) {
     form.description.trim() ? `description: ${form.description.trim()}` : "",
     form.agent.trim() ? `agent: ${form.agent.trim()}` : "",
     form.model.trim() ? `model: ${form.model.trim()}` : "",
+    form.variant?.trim() ? `variant: ${form.variant.trim()}` : "",
     form.subtask ? "subtask: true" : "",
   ].filter(Boolean)
   return `---\n${metadata.join("\n")}\n---\n${form.template.trim()}\n`

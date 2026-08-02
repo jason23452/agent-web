@@ -17,6 +17,7 @@ import type {
   ToolEditMode,
   ToolForm,
 } from "@/shared/types/app-sidebar";
+import type { ModelOption } from "@/shared/types/workspace";
 import {
   AgentsToolsList,
   AgentConfigPanel,
@@ -39,6 +40,7 @@ type AgentsToolsModalProps = {
   agentsLoading?: boolean;
   agentsToolsHasChanges: boolean;
   availableModels: string[];
+  modelOptions?: ModelOption[];
   availableSkillNames: string[];
   batchUpdateNotice: string;
   commandEditMode: "add" | "edit";
@@ -128,6 +130,7 @@ export function AgentsToolsModal({
   agentsLoading = false,
   agentsToolsHasChanges,
   availableModels,
+  modelOptions,
   availableSkillNames,
   batchUpdateNotice,
   commandEditMode,
@@ -369,12 +372,13 @@ export function AgentsToolsModal({
       )}
 
       {view === "command-config" && (
-        <CommandConfigPanel
-          commandConfigMode={commandConfigMode}
-          commandDocument={commandDocument}
-          commandEditMode={commandEditMode}
-          commandForm={commandForm}
-          onCommandConfigModeChange={onCommandConfigModeChange}
+           <CommandConfigPanel
+             commandConfigMode={commandConfigMode}
+             commandDocument={commandDocument}
+             commandEditMode={commandEditMode}
+             commandForm={commandForm}
+             modelOptions={modelOptions}
+             onCommandConfigModeChange={onCommandConfigModeChange}
           onCommandDocumentChange={onCommandDocumentChange}
           onCommandFormChange={onCommandFormChange}
           onSubmitCommandConfig={onSubmitCommandConfig}
@@ -404,9 +408,10 @@ export function AgentsToolsModal({
           agentEditMode={agentEditMode}
           agentForm={agentForm}
           agentYaml={agentYaml}
-          agents={agents}
-          availableModels={availableModels}
-          availableSkillNames={availableSkillNames}
+           agents={agents}
+           availableModels={availableModels}
+           modelOptions={modelOptions}
+           availableSkillNames={availableSkillNames}
           editingAgentId={editingAgentId}
           guidanceSkill={guidanceSkill}
           guidanceSubagent={guidanceSubagent}

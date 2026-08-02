@@ -26,6 +26,7 @@ import type {
   ToolForm,
   InstallResult,
 } from "@/shared/types/app-sidebar";
+import type { ModelOption } from "@/shared/types/workspace";
 import {
   getPermissionLabel,
   getPermissionVariant,
@@ -33,6 +34,7 @@ import {
   getToolPermissionKey,
   taskPermissionFor,
 } from "@/shared/utils/app-sidebar";
+import { buildAgentModelKeys, buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils";
 import { agentColors, modelVariants } from "./config";
 
 
@@ -628,6 +630,9 @@ export function CommandConfigPanel({
   commandDocument,
   commandForm,
   commandEditMode,
+  availableModels = [],
+  modelOptions,
+  variantOptions,
   onCommandConfigModeChange,
   onCommandDocumentChange,
   onCommandFormChange,
@@ -637,11 +642,28 @@ export function CommandConfigPanel({
   commandDocument: string;
   commandForm: CommandForm;
   commandEditMode: "add" | "edit";
+  availableModels?: string[];
+  modelOptions?: ModelOption[];
+  variantOptions?: string[];
   onCommandConfigModeChange: (mode: "interface" | "document") => void;
   onCommandDocumentChange: (content: string) => void;
   onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
   onSubmitCommandConfig: () => void;
 }) {
+  const resolvedAvailableModels = modelOptions === undefined ? availableModels : buildAgentModelKeys(modelOptions)
+  const resolvedVariantOptions = modelOptions === undefined
+    ? variantOptions
+    : [...new Set([...buildAgentVariantOptions(commandForm.model, modelOptions), commandForm.variant ?? ""])]
+
+  function updateCommandModel(model: string) {
+    const options = modelOptions === undefined ? variantOptions ?? [] : buildAgentVariantOptions(model, modelOptions)
+    onCommandFormChange((current) => ({
+      ...current,
+      model,
+      variant: current.variant && !options.includes(current.variant) ? "" : current.variant,
+    }))
+  }
+
   return (
     <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
       <div className="grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist" aria-label="Command 新增方式">
@@ -739,14 +761,44 @@ export function CommandConfigPanel({
             </label>
             <label className="grid gap-2 text-muted-foreground text-sm">
               Model（可選）
-              <Input
-                aria-label="Command model"
-                onChange={(event) => onCommandFormChange((current) => ({ ...current, model: event.target.value }))}
-                placeholder="anthropic/claude-sonnet-4-5"
-                value={commandForm.model}
-              />
+              {resolvedAvailableModels.length > 0 ? (
+                <select
+                  aria-label="Command model"
+                  className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  onChange={(event) => updateCommandModel(event.target.value)}
+                  value={commandForm.model}
+                >
+                  <option value="">未指定</option>
+                  {commandForm.model && !resolvedAvailableModels.includes(commandForm.model) && <option value={commandForm.model}>{commandForm.model}</option>}
+                  {resolvedAvailableModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              ) : (
+                <Input
+                  aria-label="Command model"
+                  onChange={(event) => updateCommandModel(event.target.value)}
+                  placeholder="anthropic/claude-sonnet-4-5"
+                  value={commandForm.model}
+                />
+              )}
             </label>
           </div>
+          {resolvedVariantOptions && (
+            <label className="grid gap-2 text-muted-foreground text-sm">
+              變體
+              <select
+                aria-label="Command 變體"
+                className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                onChange={(event) => onCommandFormChange((current) => ({ ...current, variant: event.target.value }))}
+                value={commandForm.variant ?? ""}
+              >
+                {resolvedVariantOptions.map((variant) => (
+                  <option key={variant || "default"} value={variant}>
+                    {variant || "預設"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="flex items-center gap-2 text-muted-foreground text-sm">
             <input
               checked={commandForm.subtask}
@@ -1502,6 +1554,7 @@ export function AgentConfigPanel({
   agentYaml,
   agents,
   availableModels,
+  modelOptions,
   availableSkillNames,
   editingAgentId,
   guidanceSkill,
@@ -1528,6 +1581,7 @@ export function AgentConfigPanel({
   subagentToAdd,
   toolDefinitions,
   toolToAdd,
+  variantOptions = modelVariants,
 }: {
   agentConfigMode: AgentConfigMode;
   agentEditMode: AgentEditMode;
@@ -1535,6 +1589,7 @@ export function AgentConfigPanel({
   agentYaml: string;
   agents: AgentDefinition[];
   availableModels: string[];
+  modelOptions?: ModelOption[];
   availableSkillNames: string[];
   editingAgentId: string | null;
   guidanceSkill: string | null;
@@ -1564,11 +1619,25 @@ export function AgentConfigPanel({
   subagentToAdd: string;
   toolDefinitions: ToolDefinition[];
   toolToAdd: string;
+  variantOptions?: string[];
 }) {
   const callableSubagentOptions = onGetCallableSubagentOptions(
     editingAgentId,
     agentForm.subagents,
   );
+  const resolvedAvailableModels = modelOptions === undefined ? availableModels : buildAgentModelKeys(modelOptions);
+  const resolvedVariantOptions = modelOptions === undefined
+    ? [...new Set([...variantOptions, agentForm.variant])]
+    : [...new Set([...buildAgentVariantOptions(agentForm.model, modelOptions), agentForm.variant])];
+
+  function updateAgentModel(model: string) {
+    const options = modelOptions === undefined ? variantOptions : buildAgentVariantOptions(model, modelOptions);
+    onAgentFormChange((current) => ({
+      ...current,
+      model,
+      variant: current.variant && !options.includes(current.variant) ? "" : current.variant,
+    }));
+  }
 
   return (
     <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
@@ -1610,18 +1679,13 @@ export function AgentConfigPanel({
               <select
                 aria-label="模型"
                 className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                onChange={(event) =>
-                  onAgentFormChange((current) => ({
-                    ...current,
-                    model: event.target.value,
-                  }))
-                }
+                   onChange={(event) => updateAgentModel(event.target.value)}
                 value={agentForm.model}
               >
-                {!availableModels.includes(agentForm.model) && (
+                 {!resolvedAvailableModels.includes(agentForm.model) && (
                   <option value={agentForm.model}>{agentForm.model}</option>
                 )}
-                {availableModels.map((model) => (
+                 {resolvedAvailableModels.map((model) => (
                   <option key={model} value={model}>
                     {model}
                   </option>
@@ -1692,7 +1756,7 @@ export function AgentConfigPanel({
                 }
                 value={agentForm.variant}
               >
-                {modelVariants.map((variant) => (
+                {resolvedVariantOptions.map((variant) => (
                   <option key={variant || "default"} value={variant}>
                     {variant || "預設"}
                   </option>

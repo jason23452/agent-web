@@ -23,6 +23,7 @@ import {
 } from "@/features/workflows/workflowUtils"
 
 type WorkflowInspectorProps = {
+  availableModels?: string[]
   edges: WorkflowEdge[]
   cacheMetadata: WorkflowCacheMetadataResult | null
   nodes: WorkflowNode[]
@@ -58,6 +59,7 @@ export function WorkflowInspector(props: WorkflowInspectorProps) {
 function NodeInspector({
   edges,
   cacheMetadata,
+  availableModels,
   nodes,
   node,
   run,
@@ -76,6 +78,9 @@ function NodeInspector({
     .filter((edge) => edge.target === node.id && edge.kind === "binding")
     .map((edge) => ({ edge, source: nodes.find((item) => item.id === edge.source) }))
   const lockAllowed = node.type.startsWith("action.")
+  const currentModelKey = node.type === "action.prompt" && node.data.model?.providerID && node.data.model.modelID
+    ? `${node.data.model.providerID}/${node.data.model.modelID}`
+    : ""
 
   async function clearCache() {
     setClearing(true)
@@ -131,8 +136,31 @@ function NodeInspector({
           <InspectorGroup title="Prompt 設定">
             <InspectorField label="Prompt text"><Textarea aria-label="Prompt text" onChange={(event) => onUpdateNode({ ...node, data: { ...node.data, text: event.target.value } })} placeholder="描述要 OpenCode 完成的工作..." value={node.data.text} /></InspectorField>
             <SessionModeSelect node={node} onUpdateNode={onUpdateNode} />
-            <InspectorField label="Provider ID（選填）"><Input aria-label="Provider ID" onChange={(event) => onUpdateNode({ ...node, data: { ...node.data, model: { ...node.data.model, providerID: event.target.value } } })} value={node.data.model?.providerID ?? ""} /></InspectorField>
-            <InspectorField label="Model ID（選填）"><Input aria-label="Model ID" onChange={(event) => onUpdateNode({ ...node, data: { ...node.data, model: { ...node.data.model, modelID: event.target.value } } })} value={node.data.model?.modelID ?? ""} /></InspectorField>
+            {availableModels?.length ? (
+              <InspectorField label="Model（選填）">
+                <select
+                  aria-label="Model"
+                  className="workflow-select"
+                  onChange={(event) => {
+                    const separator = event.target.value.indexOf("/")
+                    const model = separator > 0
+                      ? { providerID: event.target.value.slice(0, separator), modelID: event.target.value.slice(separator + 1) }
+                      : undefined
+                    onUpdateNode({ ...node, data: { ...node.data, model } })
+                  }}
+                  value={currentModelKey}
+                >
+                  <option value="">未指定</option>
+                  {currentModelKey && !availableModels.includes(currentModelKey) && <option value={currentModelKey}>{currentModelKey}</option>}
+                  {availableModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </InspectorField>
+            ) : (
+              <>
+                <InspectorField label="Provider ID（選填）"><Input aria-label="Provider ID" onChange={(event) => onUpdateNode({ ...node, data: { ...node.data, model: { ...node.data.model, providerID: event.target.value } } })} value={node.data.model?.providerID ?? ""} /></InspectorField>
+                <InspectorField label="Model ID（選填）"><Input aria-label="Model ID" onChange={(event) => onUpdateNode({ ...node, data: { ...node.data, model: { ...node.data.model, modelID: event.target.value } } })} value={node.data.model?.modelID ?? ""} /></InspectorField>
+              </>
+            )}
             <BindingSummary inbound={inbound} />
           </InspectorGroup>
         )}

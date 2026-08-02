@@ -131,6 +131,7 @@ export function AppRouter() {
     return (
       <Suspense fallback={<div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground" role="status">正在載入 Workflow Builder...</div>}>
         <WorkflowsRoute
+          modelOptions={modelOptions}
           onBack={() => route.projectName ? navigateToWorkspaceProject(route.projectName) : navigateToRoute({ name: "workspace" })}
           project={route.projectName}
         />
@@ -202,9 +203,10 @@ export function AppRouter() {
            onCreateSession={createSessionAndCloseSurfaces}
           onDeleteProject={deleteProject}
           onClose={() => setSidebarOpen(false)}
-          onOpenCodeDisabledModelsChange={setDisabledOpenCodeModelKeys}
-          onOpenCodeProviderCatalogChange={setOpenCodeProviderCatalog}
-          onProjectChange={changeProject}
+           onOpenCodeDisabledModelsChange={setDisabledOpenCodeModelKeys}
+           onOpenCodeProviderCatalogChange={setOpenCodeProviderCatalog}
+           modelOptions={modelOptions}
+           onProjectChange={changeProject}
           onRefreshProjects={refreshProjects}
            onRestartOpenCode={workspaceData.restartOpenCodeServer}
           onWorkflowOpen={() => navigateToWorkflows(checkedProjectName ?? (activeProjectPath ? getProjectRouteName(activeProjectPath) : undefined))}

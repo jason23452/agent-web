@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type SetStateAction } from "react"
 import { AgentConfigPanel } from "@/shared/components/layout/app-sidebar/AgentsToolsModalSections"
 import { emptyAgentForm } from "@/shared/components/layout/app-sidebar/config"
 import type {
@@ -9,6 +9,8 @@ import type {
 } from "@/shared/types/app-sidebar"
 import { agentToYaml } from "@/shared/utils/app-sidebar"
 import type { ResourceNodeData, WorkflowNode } from "@/features/workflows/types"
+import type { ModelOption } from "@/shared/types/workspace"
+import { buildAgentModelKeys, buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
 
 const DEFAULT_PERMISSION: Record<string, PermissionAction> = {
   edit: "allow",
@@ -19,6 +21,7 @@ const DEFAULT_PERMISSION: Record<string, PermissionAction> = {
 }
 
 type WorkflowAgentConfigPanelProps = {
+  modelOptions?: ModelOption[]
   node: WorkflowAgentNode
   nodes: WorkflowNode[]
   onUpdateNode: (node: WorkflowNode) => void
@@ -26,7 +29,7 @@ type WorkflowAgentConfigPanelProps = {
 
 type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }
 
-export function WorkflowAgentConfigPanel({ node, nodes, onUpdateNode }: WorkflowAgentConfigPanelProps) {
+export function WorkflowAgentConfigPanel({ modelOptions = [], node, nodes, onUpdateNode }: WorkflowAgentConfigPanelProps) {
   const data = node.data as ResourceNodeData
   const initialForm = agentFormFromContent(data.content ?? "", data.name, data.scope)
   const availableSkillNames = nodes
@@ -45,7 +48,7 @@ export function WorkflowAgentConfigPanel({ node, nodes, onUpdateNode }: Workflow
         source: "custom",
       }
     })
-  const availableModels = initialForm.model ? ["", initialForm.model] : [""]
+  const availableModels = [...new Set([...buildAgentModelKeys(modelOptions), initialForm.model].filter(Boolean))]
   const [agentConfigMode, setAgentConfigMode] = useState<AgentConfigMode>("interface")
   const [agentForm, setAgentForm] = useState<AgentForm>(initialForm)
   const [agentYaml, setAgentYaml] = useState(() =>
@@ -57,13 +60,23 @@ export function WorkflowAgentConfigPanel({ node, nodes, onUpdateNode }: Workflow
   const [guidanceTool, setGuidanceTool] = useState<string | null>(null)
   const [guidanceSkill, setGuidanceSkill] = useState<string | null>(null)
   const [guidanceSubagent, setGuidanceSubagent] = useState<string | null>(null)
+  const variantOptions = [...new Set([...buildAgentVariantOptions(agentForm.model, modelOptions), agentForm.variant])]
+
+  function updateAgentForm(update: SetStateAction<AgentForm>) {
+    setAgentForm((current) => {
+      const next = typeof update === "function" ? update(current) : update
+      if (next.model === current.model) return next
+      const variants = buildAgentVariantOptions(next.model, modelOptions)
+      return next.variant && !variants.includes(next.variant) ? { ...next, variant: "" } : next
+    })
+  }
 
   function changeConfigMode(mode: AgentConfigMode) {
     if (mode === agentConfigMode) return
     if (mode === "yaml") {
       setAgentYaml(agentToYaml(agentFromForm(agentForm, node)))
     } else {
-      setAgentForm(agentFormFromContent(agentYaml, data.name, data.scope))
+      updateAgentForm(agentFormFromContent(agentYaml, data.name, data.scope))
     }
     setAgentConfigMode(mode)
   }
@@ -119,6 +132,7 @@ export function WorkflowAgentConfigPanel({ node, nodes, onUpdateNode }: Workflow
       agentYaml={agentYaml}
       agents={[]}
       availableModels={availableModels}
+      modelOptions={modelOptions}
       availableSkillNames={availableSkillNames}
       editingAgentId={node.id}
       guidanceSkill={guidanceSkill}
@@ -127,7 +141,7 @@ export function WorkflowAgentConfigPanel({ node, nodes, onUpdateNode }: Workflow
       isCustomToolName={(toolName) => toolDefinitions.some((tool) => tool.name === toolName && tool.source === "custom")}
       onAddFormSubagent={addSubagent}
       onAgentConfigModeChange={changeConfigMode}
-      onAgentFormChange={setAgentForm}
+      onAgentFormChange={updateAgentForm}
       onAgentYamlChange={setAgentYaml}
       onGetCallableSubagentOptions={() => []}
       onGuidanceSkillChange={setGuidanceSkill}
@@ -145,6 +159,7 @@ export function WorkflowAgentConfigPanel({ node, nodes, onUpdateNode }: Workflow
       subagentToAdd={subagentToAdd}
       toolDefinitions={toolDefinitions}
       toolToAdd={toolToAdd}
+      variantOptions={variantOptions}
     />
   )
 }

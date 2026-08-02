@@ -116,6 +116,7 @@ import {
   isCustomTool,
   taskPermissionFor,
 } from "@/shared/utils/app-sidebar";
+import { buildAgentModelKeys } from "@/shared/utils/openCodeModelUtils";
 
 const PROJECT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
 
@@ -362,6 +363,7 @@ function parseCommandDocument(content: string, fallback: CommandDefinition): Com
     description: metadata.get("description") ?? fallback.description,
     agent: metadata.get("agent") ?? "",
     model: metadata.get("model") ?? "",
+    variant: metadata.get("variant") ?? fallback.variant ?? "",
     subtask: metadata.get("subtask") === "true",
     template: match?.[2] ?? content,
   };
@@ -372,6 +374,7 @@ function commandToMarkdown(command: CommandDefinition): string {
     command.description.trim() ? `description: ${command.description.trim()}` : "",
     command.agent?.trim() ? `agent: ${command.agent.trim()}` : "",
     command.model?.trim() ? `model: ${command.model.trim()}` : "",
+    command.variant?.trim() ? `variant: ${command.variant.trim()}` : "",
     command.subtask ? "subtask: true" : "",
   ].filter(Boolean);
 
@@ -386,6 +389,7 @@ function commandFormToMarkdown(form: CommandForm): string {
     source: "custom",
     agent: form.agent,
     model: form.model,
+    variant: form.variant,
     subtask: form.subtask,
     template: form.template,
     installTarget: form.installTarget,
@@ -400,6 +404,7 @@ function commandFormFallback(form: CommandForm): CommandDefinition {
     source: "custom",
     agent: form.agent,
     model: form.model,
+    variant: form.variant,
     subtask: form.subtask,
     template: form.template,
     installTarget: form.installTarget,
@@ -840,6 +845,7 @@ export function AppSidebar({
   onRefreshProjects,
   onRestartOpenCode,
   onWorkflowOpen,
+  modelOptions = [],
   open,
   onClose,
   onSelectSession,
@@ -1035,7 +1041,9 @@ export function AppSidebar({
   const availableSkillNames = skillSettings
     .filter((skill) => skill.enabled)
     .map((skill) => skill.name);
-  const availableAgentModels = [...new Set(modelProviders.flatMap((provider) => (provider.availableModels ?? []).map((model) => model.key)))];
+  const availableAgentModels = modelOptions.length > 0
+    ? buildAgentModelKeys(modelOptions)
+    : [...new Set(modelProviders.flatMap((provider) => (provider.availableModels ?? []).map((model) => model.key)))];
   const selectedAgent =
     agents.find((agent) => agent.id === selectedAgentId) ?? null;
   const selectedTool =
@@ -1332,6 +1340,20 @@ export function AppSidebar({
       window.clearTimeout(timeoutId);
     };
   }, [loadModelProviders, userSettingsOpen, userSettingsSection]);
+
+  useEffect(() => {
+    if (!agentsDialogOpen || modelOptions.length > 0) return;
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void loadModelProviders(controller.signal);
+    }, 0);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [agentsDialogOpen, loadModelProviders, modelOptions.length]);
 
   function stageNpmPackageInstalls() {
     const packageSpecs = parseNpmPackageInput(npmPackageInput);
@@ -3891,6 +3913,7 @@ export function AppSidebar({
       source: "custom",
       agent: commandForm.agent.trim() || undefined,
       model: commandForm.model.trim() || undefined,
+      variant: commandForm.variant?.trim() || undefined,
       subtask: commandForm.subtask,
       template: commandForm.template,
       installTarget: targetScope,
@@ -4478,7 +4501,8 @@ export function AppSidebar({
         agentsError={agentsError}
          agentsLoading={agentsLoading}
          agentsToolsHasChanges={agentsToolsHasChanges}
-         availableModels={availableAgentModels}
+          availableModels={availableAgentModels}
+          modelOptions={modelOptions.length > 0 ? modelOptions : undefined}
          availableSkillNames={availableSkillNames}
          batchUpdateNotice={batchUpdateNotice}
           commandEditMode={commandEditMode}

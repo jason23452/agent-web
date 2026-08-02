@@ -1,4 +1,4 @@
-import type { Project, Session } from "@/shared/types/workspace";
+import type { ModelOption, Project, Session } from "@/shared/types/workspace";
 import type { OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders";
 
 export type AppSidebarProject = Pick<Project, "description" | "displayName" | "id" | "name" | "path">;
@@ -21,6 +21,7 @@ export type AppSidebarProps = {
   onRefreshProjects: () => Promise<void>;
   onRestartOpenCode: (reason: string) => Promise<void>;
   onWorkflowOpen: () => void;
+  modelOptions?: ModelOption[];
   open: boolean;
   onClose: () => void;
   onSelectSession: (sessionId: string) => void;
@@ -232,6 +233,7 @@ export type CommandDefinition = {
   source: "runtime" | "custom";
   agent?: string;
   model?: string;
+  variant?: string;
   subtask?: boolean;
   template: string;
   installTarget?: "project" | "global";
@@ -247,6 +249,7 @@ export type CommandForm = {
   description: string;
   agent: string;
   model: string;
+  variant?: string;
   subtask: boolean;
   template: string;
 };

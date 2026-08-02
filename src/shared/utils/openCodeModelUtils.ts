@@ -5,10 +5,12 @@ import type { Agent, ModelOption, ThinkingVariantOption, TokenUsage } from "@/sh
 export const DEFAULT_THINKING_VARIANTS: ThinkingVariantOption[] = [
   { key: "default", label: "Default" },
   { key: "none", label: "None" },
+  { key: "minimal", label: "Minimal" },
   { key: "low", label: "Low" },
   { key: "medium", label: "Medium" },
   { key: "high", label: "High" },
   { key: "xhigh", label: "Xhigh" },
+  { key: "max", label: "Max" },
 ]
 
 export function getModelKey(providerID: string, modelID: string, variant?: string) {
@@ -17,6 +19,24 @@ export function getModelKey(providerID: string, modelID: string, variant?: strin
 
 export function getModelSettingsKey(providerID: string, modelID: string) {
   return `${providerID}/${modelID}`
+}
+
+const DEFAULT_AGENT_VARIANTS = DEFAULT_THINKING_VARIANTS.map((variant) => variant.key === "default" ? "" : variant.key)
+
+export function getAgentModelKey(model: Pick<ModelOption, "providerID" | "id">) {
+  return `${model.providerID}/${model.id}`
+}
+
+export function buildAgentModelKeys(models: ModelOption[]) {
+  return [...new Set(models.map(getAgentModelKey))]
+}
+
+export function buildAgentVariantOptions(modelKey: string, models: ModelOption[]) {
+  if (!modelKey) return [""]
+  const selected = models.find((model) => getAgentModelKey(model) === modelKey)
+  if (selected?.variants?.length) return ["", ...new Set(selected.variants.filter(Boolean))]
+  if (selected?.reasoning || !selected) return DEFAULT_AGENT_VARIANTS
+  return [""]
 }
 
 function getModelVariants(variants: unknown) {
@@ -86,14 +106,13 @@ function formatThinkingVariantLabel(variant: string) {
 }
 
 export function buildThinkingVariantOptions(model: ModelOption | null): ThinkingVariantOption[] {
-  if (!model?.reasoning) return []
-  const apiVariants = model.variants?.filter(Boolean) ?? []
-  if (apiVariants.length === 0) return DEFAULT_THINKING_VARIANTS
-
-  return [
-    { key: "default", label: "Default" },
-    ...apiVariants.map((variant) => ({ key: variant, label: formatThinkingVariantLabel(variant) })),
-  ]
+  if (!model) return []
+  const variants = buildAgentVariantOptions(getAgentModelKey(model), [model])
+  if (variants.length <= 1) return []
+  return variants.map((variant) => ({
+    key: variant || "default",
+    label: variant ? formatThinkingVariantLabel(variant) : "Default",
+  }))
 }
 
 export function getOpenCodeDefaultModelKey(providers: OpenCodeProviderListResponse | null) {

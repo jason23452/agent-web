@@ -19,6 +19,8 @@ import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowP
 import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
 import { WorkflowTopbar } from "@/features/workflows/components/WorkflowTopbar"
+import type { ModelOption } from "@/shared/types/workspace"
+import { buildAgentModelKeys } from "@/shared/utils/openCodeModelUtils"
 
 type RightTab = "palette" | "apps" | "inspector" | "run" | "json"
 
@@ -30,7 +32,7 @@ const RIGHT_TABS = [
   { id: "json", label: "JSON", icon: BracesIcon },
 ] satisfies Array<{ id: RightTab; label: string; icon: typeof PlusIcon }>
 
-export function WorkflowBuilder({ onBack, project }: { onBack: () => void; project?: string }) {
+export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelOptions?: ModelOption[]; onBack: () => void; project?: string }) {
   const builder = useWorkflowBuilder(project)
   const loadCache = builder.loadCache
   const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null)
@@ -47,6 +49,8 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
   const selectedEdge = builder.workflow.edges.find((edge) => edge.id === selectedEdgeID) ?? null
   const selectedAgentNode = isWorkflowAgentNode(selectedNode) ? selectedNode : null
   const selectedResourceNode = selectedNode?.type.startsWith("resource.") ? selectedNode : null
+  const availableModels = buildAgentModelKeys(modelOptions)
+  const activeModelOptions = modelOptions.length > 0 ? modelOptions : undefined
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
 
   useEffect(() => {
@@ -227,7 +231,7 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
            {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} onAdd={(item) => addNode(item)} />}
            {rightTab === "apps" && <WorkflowAgentAppPanel onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} workflow={builder.workflow} />}
-          {rightTab === "inspector" && <WorkflowInspector cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
+          {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
           {rightTab === "json" && <WorkflowJsonPanel onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} workflow={builder.workflow} />}
         </div>
@@ -248,12 +252,12 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
            </DialogHeader>
            <DialogPanel className="min-h-0 overflow-hidden p-0">
              {selectedAgentNode ? (
-               <WorkflowAgentConfigPanel key={selectedAgentNode.id} nodes={builder.workflow.nodes} node={selectedAgentNode} onUpdateNode={updateNode} />
+              <WorkflowAgentConfigPanel key={selectedAgentNode.id} modelOptions={activeModelOptions} nodes={builder.workflow.nodes} node={selectedAgentNode} onUpdateNode={updateNode} />
              ) : selectedResourceNode ? (
-               <WorkflowResourceConfigPanel key={selectedResourceNode.id} node={selectedResourceNode} onClose={() => setNodeDetailOpen(false)} onUpdateNode={updateNode} project={project} />
+               <WorkflowResourceConfigPanel availableModels={availableModels} key={selectedResourceNode.id} modelOptions={activeModelOptions} node={selectedResourceNode} onClose={() => setNodeDetailOpen(false)} onUpdateNode={updateNode} project={project} />
                ) : (
                  <div className="max-h-[68vh] overflow-y-auto">
-                   <WorkflowInspector cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
+                   <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
                  </div>
              )}
            </DialogPanel>
