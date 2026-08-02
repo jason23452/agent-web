@@ -52,7 +52,7 @@ type WorkflowPaletteProps = {
 export function WorkflowPalette({ catalog, error, loading, onAdd }: WorkflowPaletteProps) {
   const [query, setQuery] = useState("")
   const [scope, setScope] = useState<"all" | "project" | "global">("all")
-  const items = buildPaletteItems(catalog?.resources)
+  const items = catalog ? buildPaletteItems(catalog.resources) : []
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-Hant")
   const filteredItems = items.filter((item) => {
     const matchesQuery =
@@ -139,13 +139,15 @@ export function WorkflowPalette({ catalog, error, loading, onAdd }: WorkflowPale
             </section>
           )
         })}
-        {!filteredItems.length && (
+        {!filteredItems.length && !loading && !error && (
           <div className="grid place-items-center gap-2 px-4 py-12 text-center">
             <SearchIcon aria-hidden="true" className="size-5 text-muted-foreground" />
             <p className="font-medium text-sm">找不到符合的節點</p>
             <p className="text-muted-foreground text-xs">調整關鍵字或資源範圍後再試一次。</p>
           </div>
         )}
+        {loading && !filteredItems.length && <p className="px-4 py-12 text-center text-muted-foreground text-xs">正在載入目前專案的 OpenCode 資源...</p>}
+        {error && !filteredItems.length && <p className="px-4 py-12 text-center text-muted-foreground text-xs">目前無法顯示 OpenCode 資源。</p>}
       </div>
     </section>
   )

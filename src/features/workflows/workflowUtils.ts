@@ -43,8 +43,6 @@ const RESOURCE_TYPE_BY_KIND = {
   commands: "resource.command",
 } as const
 
-const MANAGED_RESOURCE_TYPES = Object.values(RESOURCE_TYPE_BY_KIND)
-
 export function createWorkflowDraft(project?: string, input?: Partial<Pick<WorkflowV1, "id" | "name" | "description" | "scope">>): WorkflowV1 {
   const now = new Date().toISOString()
   const scope = input?.scope ?? (project ? "project" : "global")
@@ -111,15 +109,7 @@ export function buildPaletteItems(resources?: Record<string, WorkflowResource[]>
       resource,
     })),
   )
-  const managedItems = MANAGED_RESOURCE_TYPES.map((type) => ({
-    key: `managed:${type}`,
-    type,
-    label: `建立受管 ${WORKFLOW_NODE_META[type].label}`,
-    description: "建立由此 workflow 管理、只在發布時同步的資源",
-    category: WORKFLOW_NODE_META[type].category,
-    resourceMode: "managed" as const,
-  }))
-  return [...staticItems, ...managedItems, ...resourceItems]
+  return [...staticItems, ...resourceItems]
 }
 
 export function createNodeFromPalette(
