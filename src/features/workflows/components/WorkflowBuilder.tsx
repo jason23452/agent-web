@@ -17,6 +17,7 @@ import { WorkflowProductNav } from "@/features/workflows/components/WorkflowProd
 import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowPublishReport"
 import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
+import { WorkflowTestChatDialog } from "@/features/workflows/components/WorkflowTestChatDialog"
 import { WorkflowTopbar } from "@/features/workflows/components/WorkflowTopbar"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentModelKeys } from "@/shared/utils/openCodeModelUtils"
@@ -40,6 +41,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const [browserOpen, setBrowserOpen] = useState(false)
   const [requestedAction, setRequestedAction] = useState<WorkflowRequestedAction | null>(null)
   const [publishReportOpen, setPublishReportOpen] = useState(false)
+  const [testChatOpen, setTestChatOpen] = useState(false)
   const [nodeDetailOpen, setNodeDetailOpen] = useState(false)
   const [cacheTarget, setCacheTarget] = useState<WorkflowTarget>("workflow-test")
   const busy = Boolean(builder.busyAction)
@@ -49,6 +51,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const availableModels = buildAgentModelKeys(modelOptions)
   const activeModelOptions = modelOptions.length > 0 ? modelOptions : undefined
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
+  const testChatDisabled = busy || builder.dirty || !builder.persisted || !builder.testPublished
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -303,9 +306,11 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         onBrowse={() => setBrowserOpen(true)}
         onNameChange={(name) => mutate((workflow) => ({ ...workflow, name }))}
         onOpenPanel={() => setRightPanelOpen(true)}
+        onOpenTestChat={() => setTestChatOpen(true)}
         onRequestAction={setRequestedAction}
         onSave={async () => { await builder.save() }}
         persisted={builder.persisted}
+        testChatDisabled={testChatDisabled}
         workflow={builder.workflow}
       />
       <WorkflowCanvas
@@ -348,7 +353,8 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
       <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} open={browserOpen} project={project} workflows={builder.workflows} />
       <WorkflowConfirmDialog action={requestedAction} busy={busy} name={builder.workflow.name} onConfirm={confirmAction} onOpenChange={(open) => { if (!open && !busy) setRequestedAction(null) }} scope={builder.workflow.scope} />
       <WorkflowPublishReport onOpenChange={setPublishReportOpen} open={publishReportOpen} report={builder.publishReport} />
-       <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
+      <WorkflowTestChatDialog key={`${builder.workflow.id}:${testChatOpen ? "open" : "closed"}`} onOpenChange={setTestChatOpen} open={testChatOpen} published={builder.testPublished && !builder.dirty} workflow={builder.workflow} />
+        <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
          <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>
            <DialogHeader>
              <DialogTitle>{selectedNode?.type.startsWith("resource.") ? `${getWorkflowNodeTitle(selectedNode)} 設定` : "節點詳細配置"}</DialogTitle>

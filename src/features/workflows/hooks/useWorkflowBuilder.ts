@@ -38,6 +38,7 @@ export function useWorkflowBuilder(project?: string) {
   const [libraryLoading, setLibraryLoading] = useState(true)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [publishReport, setPublishReport] = useState<WorkflowPublishReport | null>(null)
+  const [testPublished, setTestPublished] = useState(false)
   const [run, setRun] = useState<WorkflowRun | null>(null)
   const [cacheMetadata, setCacheMetadata] = useState<WorkflowCacheMetadataResult | null>(null)
   const activeRunID = run?.runID
@@ -115,10 +116,12 @@ export function useWorkflowBuilder(project?: string) {
   function updateDraft(updater: (current: WorkflowV1) => WorkflowV1) {
     setWorkflow((current) => touchWorkflow(updater(current), {}))
     setDirty(true)
+    setTestPublished(false)
   }
 
   function replaceDraft(next: WorkflowV1) {
     setWorkflow(next)
+    setTestPublished(false)
     setPersisted(workflows.some((summary) =>
       summary.id === next.id &&
       summary.scope === next.scope &&
@@ -130,6 +133,7 @@ export function useWorkflowBuilder(project?: string) {
   }
 
   async function save() {
+    const shouldInvalidateTest = dirty
     setBusyAction("save")
     try {
       const validation = await validateWorkflow(workflow)
@@ -139,6 +143,7 @@ export function useWorkflowBuilder(project?: string) {
       setWorkflow(response.workflow)
       setPersisted(true)
       setDirty(false)
+      if (shouldInvalidateTest) setTestPublished(false)
       await loadLibrary()
       toast("Workflow 已儲存", "只保存了 workflow JSON，OpenCode runtime 尚未更新。", "success")
       if (response.warnings.length) toast("儲存完成但有提醒", response.warnings.map(issueMessage).join("；"), "warning")
@@ -159,6 +164,7 @@ export function useWorkflowBuilder(project?: string) {
       setWorkflow(response.workflow)
       setPersisted(true)
       setDirty(false)
+      setTestPublished(false)
       setRun(null)
       setPublishReport(null)
       await loadLibrary()
@@ -178,6 +184,7 @@ export function useWorkflowBuilder(project?: string) {
       setWorkflow(response)
       setPersisted(true)
       setDirty(false)
+      setTestPublished(false)
       setRun(null)
       setPublishReport(null)
     } catch (error) {
@@ -193,9 +200,10 @@ export function useWorkflowBuilder(project?: string) {
     try {
       await deleteWorkflow(summary.id, summary.scope, summary.project)
       if (summary.id === workflow.id && summary.scope === workflow.scope) {
-        setWorkflow(createWorkflowDraft(project))
-        setPersisted(false)
-        setDirty(true)
+         setWorkflow(createWorkflowDraft(project))
+         setPersisted(false)
+         setDirty(true)
+         setTestPublished(false)
         setRun(null)
         setPublishReport(null)
       }
@@ -221,6 +229,7 @@ export function useWorkflowBuilder(project?: string) {
         reason: target === "main" ? "Workflow Builder 正式發布" : "Workflow Builder 測試發布",
       })
       setPublishReport(report)
+      if (target === "workflow-test") setTestPublished(report.published)
       toast(report.published ? "發布完成" : "發布未完成", `${target} · ${report.restart.status ?? "未重啟"}`, report.published ? "success" : "error")
       return report
     } catch (error) {
@@ -301,6 +310,7 @@ export function useWorkflowBuilder(project?: string) {
     run,
     save,
     startRun,
+    testPublished,
     updateDraft,
     validateImport: validateWorkflow,
     workflow,

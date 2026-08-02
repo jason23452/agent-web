@@ -312,6 +312,25 @@ export type WorkflowRun = {
   artifacts: WorkflowRunArtifact[]
 }
 
+export type WorkflowTestChatSession = {
+  sessionID: string
+  workflowID: string
+  target: "workflow-test"
+  scope: WorkflowScope
+  project?: string
+  command: string
+  agent: string
+  capabilities: Array<{ kind: WorkflowCapabilityKind; name: string }>
+}
+
+export type WorkflowTestChatMessage = {
+  sessionID: string
+  messageID?: string
+  text: string
+  command: string
+  agent: string
+}
+
 export type WorkflowCacheClearResult = {
   workflowID: string
   nodeID: string
