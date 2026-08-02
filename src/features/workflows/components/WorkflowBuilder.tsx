@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react"
-import { BracesIcon, ListTreeIcon, PanelRightCloseIcon, PlayIcon, PlusIcon, Settings2Icon, XIcon } from "lucide-react"
+import { BracesIcon, Layers2Icon, ListTreeIcon, PanelRightCloseIcon, PlayIcon, PlusIcon, Settings2Icon, XIcon } from "lucide-react"
 import { Button } from "@/shared/components/ui/button"
+import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
-import type { WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
-import { createNodeFromPalette, duplicateWorkflowNode, touchWorkflow } from "@/features/workflows/workflowUtils"
+import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
+import { createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, touchWorkflow } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
+import { WorkflowAgentAppPanel } from "@/features/workflows/components/WorkflowAgentAppPanel"
 import { WorkflowCanvas } from "@/features/workflows/components/WorkflowCanvas"
 import { WorkflowConfirmDialog, type WorkflowRequestedAction } from "@/features/workflows/components/WorkflowConfirmDialog"
+import { WorkflowAgentConfigPanel } from "@/features/workflows/components/WorkflowAgentConfigPanel"
 import { WorkflowInspector } from "@/features/workflows/components/WorkflowInspector"
 import { WorkflowJsonPanel } from "@/features/workflows/components/WorkflowJsonPanel"
 import { WorkflowPalette } from "@/features/workflows/components/WorkflowPalette"
@@ -16,10 +19,11 @@ import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowP
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
 import { WorkflowTopbar } from "@/features/workflows/components/WorkflowTopbar"
 
-type RightTab = "palette" | "inspector" | "run" | "json"
+type RightTab = "palette" | "apps" | "inspector" | "run" | "json"
 
 const RIGHT_TABS = [
   { id: "palette", label: "節點", icon: PlusIcon },
+  { id: "apps", label: "Apps", icon: Layers2Icon },
   { id: "inspector", label: "檢查", icon: Settings2Icon },
   { id: "run", label: "執行", icon: PlayIcon },
   { id: "json", label: "JSON", icon: BracesIcon },
@@ -28,17 +32,19 @@ const RIGHT_TABS = [
 export function WorkflowBuilder({ onBack, project }: { onBack: () => void; project?: string }) {
   const builder = useWorkflowBuilder(project)
   const loadCache = builder.loadCache
-  const [selectedNodeID, setSelectedNodeID] = useState<string | null>("start")
+  const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null)
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null)
   const [rightTab, setRightTab] = useState<RightTab>("palette")
   const [rightPanelOpen, setRightPanelOpen] = useState(false)
   const [browserOpen, setBrowserOpen] = useState(false)
   const [requestedAction, setRequestedAction] = useState<WorkflowRequestedAction | null>(null)
   const [publishReportOpen, setPublishReportOpen] = useState(false)
+  const [nodeDetailOpen, setNodeDetailOpen] = useState(false)
   const [cacheTarget, setCacheTarget] = useState<WorkflowTarget>("workflow-test")
   const busy = Boolean(builder.busyAction)
   const selectedNode = builder.workflow.nodes.find((node) => node.id === selectedNodeID) ?? null
   const selectedEdge = builder.workflow.edges.find((edge) => edge.id === selectedEdgeID) ?? null
+  const selectedAgentNode = isWorkflowAgentNode(selectedNode) ? selectedNode : null
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
 
   useEffect(() => {
@@ -142,6 +148,12 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
     mutate((workflow) => ({ ...workflow, edges: workflow.edges.map((edge) => edge.id === nextEdge.id ? nextEdge : edge) }))
   }
 
+  function openNodeDetails(nodeID: string) {
+    setSelectedNodeID(nodeID)
+    setSelectedEdgeID(null)
+    setNodeDetailOpen(true)
+  }
+
   function importDraft(workflow: WorkflowV1) {
     builder.replaceDraft(touchWorkflow(workflow, {}))
     setSelectedNodeID(workflow.nodes[0]?.id ?? null)
@@ -196,21 +208,23 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
         onDuplicateNode={duplicateNode}
         onLockNode={lockNode}
         onMoveNodes={moveNodes}
+        onOpenNodeDetails={openNodeDetails}
         onSelectEdge={(edgeID) => { setSelectedEdgeID(edgeID); if (edgeID) { setRightTab("inspector"); setRightPanelOpen(true) } }}
-        onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); if (nodeID) { setRightTab("inspector"); setRightPanelOpen(true) } }}
+        onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null) }}
         selectedEdgeID={selectedEdgeID}
         selectedNodeID={selectedNodeID}
       />
 
       <aside className={`workflow-builder-panel ${rightPanelOpen ? "workflow-builder-panel--open" : ""}`} aria-label="Workflow 工具面板">
         <div className="flex items-center border-border border-b px-2 py-2">
-          <div aria-label="Workflow 工具" className="grid flex-1 grid-cols-4 rounded-lg bg-muted p-0.5" role="tablist">
+            <div aria-label="Workflow 工具" className="grid flex-1 grid-cols-5 rounded-lg bg-muted p-0.5" role="tablist">
             {RIGHT_TABS.map((tab) => { const Icon = tab.icon; return <button aria-controls={`workflow-panel-${tab.id}`} aria-selected={rightTab === tab.id} className={`flex min-h-8 items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring ${rightTab === tab.id ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"}`} key={tab.id} onClick={() => setRightTab(tab.id)} role="tab" type="button"><Icon aria-hidden="true" className="size-3.5" />{tab.label}</button> })}
           </div>
           <Button aria-label="關閉工具面板" className="ml-1 min-[1001px]:hidden" onClick={() => setRightPanelOpen(false)} size="icon-sm" variant="ghost"><XIcon aria-hidden="true" /></Button>
         </div>
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
-          {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} onAdd={(item) => addNode(item)} />}
+           {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} onAdd={(item) => addNode(item)} />}
+           {rightTab === "apps" && <WorkflowAgentAppPanel onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} workflow={builder.workflow} />}
           {rightTab === "inspector" && <WorkflowInspector cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
           {rightTab === "json" && <WorkflowJsonPanel onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} workflow={builder.workflow} />}
@@ -224,6 +238,30 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
       <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} open={browserOpen} project={project} workflows={builder.workflows} />
       <WorkflowConfirmDialog action={requestedAction} busy={busy} name={builder.workflow.name} onConfirm={confirmAction} onOpenChange={(open) => { if (!open && !busy) setRequestedAction(null) }} scope={builder.workflow.scope} />
       <WorkflowPublishReport onOpenChange={setPublishReportOpen} open={publishReportOpen} report={builder.publishReport} />
+       <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
+         <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>
+           <DialogHeader>
+             <DialogTitle>{selectedNode?.type === "resource.agent" ? "Agent 設定" : "節點詳細配置"}</DialogTitle>
+             <DialogDescription>{selectedNode ? getWorkflowNodeTitle(selectedNode) : "選取的 Agent App resource"}</DialogDescription>
+           </DialogHeader>
+           <DialogPanel className="min-h-0 overflow-hidden p-0">
+             {selectedAgentNode ? (
+               <WorkflowAgentConfigPanel nodes={builder.workflow.nodes} node={selectedAgentNode} onUpdateNode={updateNode} />
+               ) : (
+                 <div className="max-h-[68vh] overflow-y-auto">
+                   <WorkflowInspector cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
+                 </div>
+             )}
+           </DialogPanel>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>完成配置</DialogClose>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </main>
   )
+}
+
+function isWorkflowAgentNode(node: WorkflowNode | null): node is WorkflowNode & { type: "resource.agent"; data: ResourceNodeData } {
+  return node?.type === "resource.agent"
 }

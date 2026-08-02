@@ -7,17 +7,14 @@ import {
   CopyIcon,
   FlagIcon,
   GitBranchIcon,
-  LockIcon,
   MessageSquareTextIcon,
   PlugZapIcon,
   RotateCwIcon,
   SparklesIcon,
   Trash2Icon,
-  UnlockIcon,
   WrenchIcon,
   ZapIcon,
 } from "lucide-react"
-import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import type { WorkflowNode } from "@/features/workflows/types"
 import { getWorkflowNodeSummary, getWorkflowNodeTitle, WORKFLOW_NODE_META } from "@/features/workflows/workflowUtils"
@@ -50,15 +47,18 @@ const TYPE_ICONS = {
   "flow.merge": GitBranchIcon,
 } as const
 
-const PROMPT_BINDINGS = ["agent", "skill", "tool", "mcp"]
-const COMMAND_BINDINGS = ["command", "agent"]
+const CAPABILITY_TARGETS: Partial<Record<WorkflowNode["type"], string>> = {
+  "resource.agent": "agent",
+  "resource.skill": "skill",
+  "resource.tool": "tool",
+  "resource.mcp": "mcp",
+  "resource.plugin": "plugin",
+}
 
 export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNode>) {
   const node = data.workflowNode
   const Icon = TYPE_ICONS[node.type]
   const isResource = node.type.startsWith("resource.")
-  const isAction = node.type.startsWith("action.")
-  const bindings = node.type === "action.prompt" ? PROMPT_BINDINGS : node.type === "action.command" ? COMMAND_BINDINGS : []
 
   return (
     <article
@@ -66,27 +66,6 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
       className={`workflow-node-card ${selected ? "workflow-node-card--selected" : ""}`}
       data-node-category={node.type.split(".")[0]}
     >
-      {isAction && <Handle className="workflow-handle workflow-handle--control" id="control-input" position={Position.Left} style={{ top: 22 }} type="target" />}
-      {bindings.map((binding, index) => (
-        <Handle
-          className="workflow-handle workflow-handle--binding"
-          id={binding}
-          key={binding}
-          position={Position.Left}
-          style={{ top: 52 + index * 22 }}
-          type="target"
-        />
-      ))}
-      {isAction && (
-        <Handle
-          className="workflow-handle workflow-handle--data"
-          id="context"
-          position={Position.Bottom}
-          style={{ left: 56 }}
-          type="target"
-        />
-      )}
-
       <div className="flex items-start gap-3 p-3.5 pb-2.5">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-muted text-foreground">
           <Icon aria-hidden="true" className="size-4" />
@@ -94,11 +73,6 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex items-center gap-1.5">
             <span className="truncate font-semibold text-sm">{getWorkflowNodeTitle(node)}</span>
-            {node.lock?.enabled && (
-              <Badge className="gap-1" size="sm" variant="warning">
-                <LockIcon aria-hidden="true" /> Locked
-              </Badge>
-            )}
           </div>
           <p className="line-clamp-2 min-h-8 text-muted-foreground text-xs leading-4">{getWorkflowNodeSummary(node)}</p>
         </div>
@@ -107,16 +81,6 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
       <footer className="flex items-center justify-between border-border/70 border-t px-2.5 py-1.5">
         <span className="font-mono text-[10px] text-muted-foreground">{WORKFLOW_NODE_META[node.type].category}</span>
         <div className="nodrag nopan flex items-center gap-0.5">
-          {isAction && (
-            <Button
-              aria-label={node.lock?.enabled ? `解鎖 ${getWorkflowNodeTitle(node)}` : `鎖定 ${getWorkflowNodeTitle(node)}`}
-              onClick={() => data.onLockToggle(node.id)}
-              size="icon-xs"
-              variant="ghost"
-            >
-              {node.lock?.enabled ? <UnlockIcon aria-hidden="true" /> : <LockIcon aria-hidden="true" />}
-            </Button>
-          )}
           <Button aria-label={`複製 ${getWorkflowNodeTitle(node)}`} onClick={() => data.onDuplicate(node.id)} size="icon-xs" variant="ghost">
             <CopyIcon aria-hidden="true" />
           </Button>
@@ -126,13 +90,8 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
         </div>
       </footer>
 
-      {(node.type.startsWith("trigger.") || isAction) && (
-        <Handle className="workflow-handle workflow-handle--control" id="control-output" position={Position.Right} type="source" />
-      )}
-      {isAction && (
-        <Handle className="workflow-handle workflow-handle--data" id="output" position={Position.Bottom} style={{ left: 194 }} type="source" />
-      )}
-      {isResource && <Handle className="workflow-handle workflow-handle--binding" id="resource" position={Position.Right} type="source" />}
+      {isResource && <Handle className="workflow-handle workflow-handle--capability" id="capability-output" position={Position.Right} style={{ top: 38 }} type="source" />}
+      {isResource && CAPABILITY_TARGETS[node.type] && <Handle className="workflow-handle workflow-handle--capability" id={CAPABILITY_TARGETS[node.type]} position={Position.Left} style={{ top: 38 }} type="target" />}
     </article>
   )
 }

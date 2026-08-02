@@ -35,6 +35,7 @@ type WorkflowCanvasProps = {
   onDuplicateNode: (nodeID: string) => void
   onLockNode: (nodeID: string) => void
   onMoveNodes: (positions: Array<{ id: string; position: WorkflowPosition }>) => void
+  onOpenNodeDetails: (nodeID: string) => void
   onSelectEdge: (edgeID: string | null) => void
   onSelectNode: (nodeID: string | null) => void
 }
@@ -59,6 +60,7 @@ function WorkflowCanvasInner({
   onDuplicateNode,
   onLockNode,
   onMoveNodes,
+  onOpenNodeDetails,
   onSelectEdge,
   onSelectNode,
 }: WorkflowCanvasProps) {
@@ -195,6 +197,10 @@ function WorkflowCanvasInner({
           onSelectEdge(null)
           onSelectNode(node.id)
         }}
+        onNodeDoubleClick={(_, node) => {
+          onSelectEdge(null)
+          onOpenNodeDetails(node.id)
+        }}
         onNodesChange={handleNodeChanges}
         onPaneClick={() => {
           onSelectNode(null)
@@ -208,7 +214,7 @@ function WorkflowCanvasInner({
         <MiniMap ariaLabel="Workflow 縮圖" maskColor="color-mix(in srgb, var(--background) 72%, transparent)" nodeColor="var(--muted-foreground)" pannable zoomable />
         <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-muted-foreground text-xs shadow-sm backdrop-blur-sm">
           <MousePointer2Icon aria-hidden="true" className="size-3.5" />
-          拖曳節點、拉動 handle 建立連線
+           單擊選取 · 雙擊開啟詳細配置 · 拉動 handle 建立連線
         </div>
       </ReactFlow>
       <p aria-live="polite" className={`workflow-connection-feedback ${connectionFeedback ? "workflow-connection-feedback--visible" : ""}`}>

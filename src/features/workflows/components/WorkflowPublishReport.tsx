@@ -27,11 +27,12 @@ export function WorkflowPublishReport({ onOpenChange, open, report }: { onOpenCh
             {report.restart.operation?.error && <p className="text-destructive-foreground text-xs" role="alert">{report.restart.operation.error}</p>}
           </section>
 
-          <section>
-            <h3 className="mb-2 flex items-center gap-2 font-semibold text-sm"><ShieldCheckIcon aria-hidden="true" className="size-4" />Runtime verification</h3>
+           <section>
+             <h3 className="mb-2 flex items-center gap-2 font-semibold text-sm"><ShieldCheckIcon aria-hidden="true" className="size-4" />Runtime verification</h3>
             {report.verified.deferred ? <p className="rounded-lg bg-info/8 px-3 py-3 text-info-foreground text-xs">Runtime 驗證已延後。</p> : verifiedGroups.length ? <div className="grid gap-2">{verifiedGroups.map(([kind, values]) => <div className="grid grid-cols-[88px_1fr] gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs" key={kind}><strong className="capitalize">{kind}</strong><span className="break-words text-muted-foreground">{values.join(", ")}</span></div>)}</div> : <p className="rounded-lg bg-muted px-3 py-3 text-muted-foreground text-xs">報告未列出已驗證資源。</p>}
-            {report.verified.missing.length > 0 && <ul className="mt-2 grid gap-1 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs">{report.verified.missing.map((item) => <li key={`${item.type}-${item.name}`}>{item.type}：{item.name}</li>)}</ul>}
-          </section>
+             {report.verified.missing.length > 0 && <ul className="mt-2 grid gap-1 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs">{report.verified.missing.map((item) => <li key={`${item.type}-${item.name}`}>{item.type}：{item.name}</li>)}</ul>}
+             {report.verified.agentApps.length > 0 && <div className="mt-3 grid gap-2"><h4 className="font-medium text-xs">Agent App relationships</h4>{report.verified.agentApps.map((app) => <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs" key={app.id}><strong>{app.command} → {app.agent}</strong><p className="mt-1 text-muted-foreground">{Object.entries(app.capabilities).flatMap(([kind, names]) => names.length ? [`${kind}: ${names.join(", ")}`] : []).join(" · ") || "未配置 capabilities"}</p></div>)}</div>}
+           </section>
 
           {report.updates.length > 0 && (
             <section><h3 className="mb-2 font-semibold text-sm">Resource sync</h3><div className="overflow-hidden rounded-xl border border-border"><table className="w-full text-left text-xs"><thead className="bg-muted/70 text-muted-foreground"><tr><th className="px-3 py-2 font-medium">類型</th><th className="px-3 py-2 font-medium">名稱</th><th className="px-3 py-2 font-medium">狀態</th></tr></thead><tbody>{report.updates.map((update, index) => <tr className="border-border border-t" key={`${update.resourceType}-${update.resourceName}-${index}`}><td className="px-3 py-2">{update.resourceType}</td><td className="px-3 py-2"><span className="block">{update.resourceName}</span>{update.path && <code className="text-[10px] text-muted-foreground">{update.path}</code>}</td><td className="px-3 py-2"><Badge variant="success">{update.operation}</Badge></td></tr>)}</tbody></table></div></section>

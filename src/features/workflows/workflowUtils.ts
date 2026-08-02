@@ -6,6 +6,7 @@ import type {
   WorkflowNodeType,
   WorkflowPaletteItem,
   WorkflowPosition,
+  WorkflowRelationshipProjection,
   WorkflowResource,
   WorkflowScope,
   WorkflowV1,
@@ -31,18 +32,7 @@ export const WORKFLOW_NODE_META: Record<WorkflowNodeType, { label: string; categ
   "flow.merge": { label: "合併流程", category: "流程", description: "合併多個分支（未來支援）" },
 }
 
-const STATIC_PALETTE_TYPES: Array<{ type: WorkflowNodeType; disabled?: boolean }> = [
-  { type: "trigger.manual" },
-  { type: "trigger.schedule", disabled: true },
-  { type: "trigger.webhook", disabled: true },
-  { type: "action.prompt" },
-  { type: "action.command" },
-  { type: "action.restart" },
-  { type: "action.approval", disabled: true },
-  { type: "action.shell", disabled: true },
-  { type: "flow.condition", disabled: true },
-  { type: "flow.merge", disabled: true },
-]
+const STATIC_PALETTE_TYPES: Array<{ type: WorkflowNodeType; disabled?: boolean }> = []
 
 const RESOURCE_TYPE_BY_KIND = {
   agents: "resource.agent",
@@ -68,13 +58,19 @@ export function createWorkflowDraft(project?: string, input?: Partial<Pick<Workf
     ...(scope === "project" && project ? { project } : {}),
     nodes: [
       {
-        id: "start",
-        type: "trigger.manual",
-        position: { x: 0, y: 0 },
-        data: {},
+        id: "command",
+        type: "resource.command",
+        position: { x: 80, y: 120 },
+        data: createManagedResourceData("resource.command", "new-command", scope),
+      },
+      {
+        id: "agent",
+        type: "resource.agent",
+        position: { x: 430, y: 120 },
+        data: createManagedResourceData("resource.agent", "new-agent", scope),
       },
     ],
-    edges: [],
+    edges: [{ id: "command-agent", source: "command", target: "agent", kind: "capability", sourceHandle: "capability", targetHandle: "agent" }],
     variables: {},
     createdAt: now,
     updatedAt: now,
@@ -186,17 +182,6 @@ export function getWorkflowNodeSummary(node: WorkflowNode) {
   return WORKFLOW_NODE_META[node.type].description
 }
 
-const PROMPT_BINDINGS: Record<string, WorkflowNodeType> = {
-  agent: "resource.agent",
-  skill: "resource.skill",
-  tool: "resource.tool",
-  mcp: "resource.mcp",
-}
-const COMMAND_BINDINGS: Record<string, WorkflowNodeType> = {
-  command: "resource.command",
-  agent: "resource.agent",
-}
-
 export function resolveConnectionKind(
   sourceNode: WorkflowNode | undefined,
   targetNode: WorkflowNode | undefined,
@@ -204,18 +189,12 @@ export function resolveConnectionKind(
   targetHandle?: string | null,
 ): WorkflowEdgeKind | null {
   if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return null
-  if (sourceHandle === "control-output" && targetHandle === "control-input") {
-    if ((sourceNode.type.startsWith("trigger.") || sourceNode.type.startsWith("action.")) && targetNode.type.startsWith("action.")) {
-      return "control"
-    }
+  if (sourceHandle === "capability-output" && sourceNode.type.startsWith("resource.") && targetNode.type.startsWith("resource.") && targetHandle === capabilityTargetHandle(targetNode.type)) {
+    if (sourceNode.type === "resource.command" && targetNode.type === "resource.agent") return "capability"
+    if (sourceNode.type === "resource.agent" && ["resource.skill", "resource.tool", "resource.mcp", "resource.plugin"].includes(targetNode.type)) return "capability"
     return null
   }
-  if (sourceHandle === "output" && targetHandle === "context" && sourceNode.type.startsWith("action.") && targetNode.type.startsWith("action.")) {
-    return "data"
-  }
-  if (!sourceNode.type.startsWith("resource.")) return null
-  const bindings = targetNode.type === "action.prompt" ? PROMPT_BINDINGS : targetNode.type === "action.command" ? COMMAND_BINDINGS : null
-  return bindings && targetHandle && bindings[targetHandle] === sourceNode.type ? "binding" : null
+  return null
 }
 
 export function wouldCreateControlCycle(edges: WorkflowEdge[], source: string, target: string) {
@@ -242,11 +221,77 @@ export function getEdgeLabel(kind: WorkflowEdgeKind) {
   const labels: Record<WorkflowEdgeKind, string> = {
     control: "控制",
     binding: "綁定",
+    capability: "能力",
     data: "資料",
     "condition.true": "成立",
     "condition.false": "不成立",
   }
   return labels[kind]
+}
+
+export function projectWorkflowRelationships(workflow: WorkflowV1): WorkflowRelationshipProjection {
+  const nodes = new Map(workflow.nodes.map((node) => [node.id, node]))
+  const commandAgents: WorkflowRelationshipProjection["commandAgents"] = []
+  const agentCapabilities: WorkflowRelationshipProjection["agentCapabilities"] = []
+  const capabilitiesByAgent = new Map<string, WorkflowRelationshipProjection["agentApps"][number]["capabilities"]>()
+
+  for (const edge of workflow.edges.filter((item) => item.kind === "capability")) {
+    const source = nodes.get(edge.source)
+    const target = nodes.get(edge.target)
+    if (!source?.type.startsWith("resource.") || !target?.type.startsWith("resource.")) continue
+    const sourceData = source.data as ResourceNodeData
+    const targetData = target.data as ResourceNodeData
+    if (source.type === "resource.command" && target.type === "resource.agent") {
+      commandAgents.push({ command: sourceData.name, agent: targetData.name, commandNodeID: source.id, agentNodeID: target.id, source: "workflow" })
+      continue
+    }
+    if (source.type !== "resource.agent") continue
+    const kind = capabilityKindForNode(target.type)
+    if (!kind) continue
+    const capabilities = capabilitiesByAgent.get(source.id) ?? emptyCapabilityMap()
+    capabilities[kind].push(targetData.name)
+    capabilitiesByAgent.set(source.id, capabilities)
+    agentCapabilities.push({ agent: sourceData.name, kind, name: targetData.name, agentNodeID: source.id, resourceNodeID: target.id, source: "workflow" })
+  }
+
+  return {
+    commandAgents,
+    agentCapabilities,
+    agentApps: commandAgents.map((relationship) => ({
+      id: `${relationship.commandNodeID}->${relationship.agentNodeID}`,
+      command: relationship.command,
+      agent: relationship.agent,
+      commandNodeID: relationship.commandNodeID,
+      agentNodeID: relationship.agentNodeID,
+      capabilities: capabilitiesByAgent.get(relationship.agentNodeID ?? "") ?? emptyCapabilityMap(),
+      source: "workflow" as const,
+    })),
+  }
+}
+
+function capabilityTargetHandle(type: WorkflowNodeType): string | null {
+  const handles: Partial<Record<WorkflowNodeType, string>> = {
+    "resource.agent": "agent",
+    "resource.skill": "skill",
+    "resource.tool": "tool",
+    "resource.mcp": "mcp",
+    "resource.plugin": "plugin",
+  }
+  return handles[type] ?? null
+}
+
+function capabilityKindForNode(type: WorkflowNodeType) {
+  const kinds = {
+    "resource.skill": "skill",
+    "resource.tool": "tool",
+    "resource.mcp": "mcp",
+    "resource.plugin": "plugin",
+  } as const
+  return type in kinds ? kinds[type as keyof typeof kinds] : undefined
+}
+
+function emptyCapabilityMap(): WorkflowRelationshipProjection["agentApps"][number]["capabilities"] {
+  return { skill: [], tool: [], mcp: [], plugin: [] }
 }
 
 export function issueMessage(issue: string | { message: string }) {

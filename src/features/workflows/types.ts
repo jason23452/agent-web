@@ -5,7 +5,8 @@ export type WorkflowScope = "project" | "global"
 export type WorkflowTarget = "workflow-test" | "main"
 export type WorkflowSessionMode = "create" | "reuse-or-create"
 export type WorkflowResourceMode = "reference" | "managed"
-export type WorkflowEdgeKind = "control" | "binding" | "data" | "condition.true" | "condition.false"
+export type WorkflowEdgeKind = "control" | "binding" | "capability" | "data" | "condition.true" | "condition.false"
+export type WorkflowCapabilityKind = "skill" | "tool" | "mcp" | "plugin"
 export type WorkflowNodeType =
   | "trigger.manual"
   | "trigger.schedule"
@@ -133,7 +134,41 @@ export type WorkflowResourceCatalog = {
   project?: string
   includeGlobal: boolean
   resources: Record<WorkflowResourceKind, WorkflowResource[]>
+  relationships?: WorkflowRelationshipProjection
   warnings: WorkflowValidationIssue[]
+}
+
+export type WorkflowCommandAgentRelationship = {
+  command: string
+  agent: string
+  commandNodeID?: string
+  agentNodeID?: string
+  source: "workflow" | "command-frontmatter" | "registry-metadata"
+}
+
+export type WorkflowAgentCapabilityRelationship = {
+  agent: string
+  kind: WorkflowCapabilityKind
+  name: string
+  agentNodeID?: string
+  resourceNodeID?: string
+  source: "workflow" | "registry-metadata"
+}
+
+export type WorkflowAgentAppSummary = {
+  id: string
+  command: string
+  agent: string
+  commandNodeID?: string
+  agentNodeID?: string
+  capabilities: Record<WorkflowCapabilityKind, string[]>
+  source: "workflow"
+}
+
+export type WorkflowRelationshipProjection = {
+  commandAgents: WorkflowCommandAgentRelationship[]
+  agentCapabilities: WorkflowAgentCapabilityRelationship[]
+  agentApps: WorkflowAgentAppSummary[]
 }
 
 export type WorkflowValidationIssue =
@@ -203,6 +238,8 @@ export type WorkflowPublishReport = {
     skills: string[]
     mcp: string[]
     plugins: string[]
+    agentCapabilities: WorkflowAgentCapabilityRelationship[]
+    agentApps: WorkflowAgentAppSummary[]
     missing: Array<{ nodeID?: string; type: string; name: string }>
     deferred?: boolean
   }
@@ -239,6 +276,11 @@ export type WorkflowRunStep = {
     target?: WorkflowTarget
   }
   output?: unknown
+  execution?: {
+    command?: string
+    agent?: string
+    capabilities: Array<{ kind: WorkflowCapabilityKind; name: string }>
+  }
   error?: WorkflowRunError
   artifacts?: WorkflowRunArtifact[]
 }

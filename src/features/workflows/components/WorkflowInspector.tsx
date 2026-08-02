@@ -115,14 +115,10 @@ function NodeInspector({
             />
           </InspectorField>
           <InspectorField label="Node type"><code className="rounded-md bg-muted px-2 py-1.5 font-mono text-[11px]">{node.type}</code></InspectorField>
-          <div className="grid grid-cols-2 gap-2">
-            <InspectorField label="位置 X"><code className="rounded-md bg-muted px-2 py-1.5 font-mono text-[11px]">{Math.round(node.position.x)}</code></InspectorField>
-            <InspectorField label="位置 Y"><code className="rounded-md bg-muted px-2 py-1.5 font-mono text-[11px]">{Math.round(node.position.y)}</code></InspectorField>
-          </div>
         </InspectorGroup>
 
         {node.type.startsWith("resource.") && (
-          <ResourceInspector node={node} onUpdateNode={onUpdateNode} workflowScope={workflowScope} />
+          <ResourceInspector edges={edges} node={node} nodes={nodes} onUpdateNode={onUpdateNode} workflowScope={workflowScope} />
         )}
 
         {node.type === "trigger.manual" && (
@@ -151,7 +147,7 @@ function NodeInspector({
 
         {node.type === "action.restart" && <p className="rounded-lg bg-muted px-3 py-2.5 text-muted-foreground text-xs">此動作只會重啟本次執行選定的 target runtime。</p>}
 
-        <InspectorGroup title="Lock cache">
+        {lockAllowed && <InspectorGroup title="Lock cache">
           <label className="flex items-center justify-between gap-3 text-xs">
             <span className="flex items-center gap-2"><LockIcon aria-hidden="true" className="size-3.5" />鎖定此 node</span>
             <Switch
@@ -179,18 +175,22 @@ function NodeInspector({
             </InspectorField>
           )}
           {lockAllowed && <Button loading={clearing} onClick={() => void clearCache()} variant="destructive-outline">清除 {target} node cache</Button>}
-        </InspectorGroup>
+        </InspectorGroup>}
       </div>
     </section>
   )
 }
 
 function ResourceInspector({
+  edges,
   node,
+  nodes,
   onUpdateNode,
   workflowScope,
 }: {
+  edges: WorkflowEdge[]
   node: WorkflowNode
+  nodes: WorkflowNode[]
   onUpdateNode: (node: WorkflowNode) => void
   workflowScope: WorkflowScope
 }) {
@@ -256,8 +256,30 @@ function ResourceInspector({
           <Textarea aria-label="Managed resource content" className="min-h-44 font-mono text-xs" onChange={(event) => onUpdateNode({ ...node, data: { ...data, content: event.target.value } } as WorkflowNode)} value={data.content ?? ""} />
         </InspectorField>
       )}
+      <CapabilitySummary edges={edges} node={node} nodes={nodes} />
       {data.scope === "global" && <p className="rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">全域資源發布後會影響所有 Project。</p>}
       <p className="text-muted-foreground text-[11px]">目前範圍：{scopeLabel(data.scope)}</p>
+    </InspectorGroup>
+  )
+}
+
+function CapabilitySummary({ edges, node, nodes }: { edges: WorkflowEdge[]; node: WorkflowNode; nodes: WorkflowNode[] }) {
+  if (!node.type.startsWith("resource.")) return null
+  const related = edges
+    .filter((edge) => edge.kind === "capability" && (edge.source === node.id || edge.target === node.id))
+    .map((edge) => {
+      const otherID = edge.source === node.id ? edge.target : edge.source
+      const other = nodes.find((candidate) => candidate.id === otherID)
+      return { edge, other }
+    })
+  return (
+    <InspectorGroup title="Agent capabilities">
+      {related.length ? (
+        <ul className="grid gap-1.5">
+          {related.map(({ edge, other }) => <li className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-2 text-xs" key={edge.id}><span className="text-muted-foreground">{edge.source === node.id ? "使用" : "被使用"}</span><strong className="truncate">{other ? getWorkflowNodeTitle(other) : edge.source === node.id ? edge.target : edge.source}</strong></li>)}
+        </ul>
+      ) : <p className="rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs">尚未建立 capability relationship。</p>}
+      <p className="text-[11px] text-muted-foreground">此關係是 declarative dependency，不代表 runtime hard isolation。</p>
     </InspectorGroup>
   )
 }
@@ -302,7 +324,7 @@ function EdgeInspector({ edge, nodes, onDeleteEdge, onUpdateEdge }: WorkflowInsp
           <InspectorField label="Edge ID"><code className="workflow-code-value">{edge.id}</code></InspectorField>
           <InspectorField label="Kind">
             <select className="workflow-select" onChange={(event) => onUpdateEdge({ ...edge, kind: event.target.value as WorkflowEdge["kind"] })} value={edge.kind}>
-              <option value="control">control</option><option value="binding">binding</option><option value="data">data</option>
+               <option value="capability">capability</option>
             </select>
           </InspectorField>
           <InspectorField label="Source"><code className="workflow-code-value">{source ? getWorkflowNodeTitle(source) : edge.source}</code></InspectorField>
