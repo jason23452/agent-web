@@ -206,6 +206,7 @@ function WorkflowCommandConfigPanel({ availableModels, modelOptions, node, onUpd
       availableModels={availableModels}
       modelOptions={modelOptions}
       variantOptions={variantOptions}
+      workflowAgentLinked
       onCommandConfigModeChange={changeMode}
       onCommandDocumentChange={changeDocument}
       onCommandFormChange={updateCommandForm}

@@ -54,6 +54,8 @@ export function createWorkflowDraft(project?: string, input?: Partial<Pick<Workf
   const now = new Date().toISOString()
   const scope = input?.scope ?? (project ? "project" : "global")
   const name = input?.name?.trim() || "未命名 Workflow"
+  const agentData = createManagedResourceData("resource.agent", "new-agent", scope)
+  const commandData = createManagedResourceData("resource.command", "new-command", scope)
   return {
     schemaVersion: WORKFLOW_SCHEMA_VERSION,
     id: input?.id?.trim() || slugifyWorkflowID(name),
@@ -66,13 +68,16 @@ export function createWorkflowDraft(project?: string, input?: Partial<Pick<Workf
         id: "command",
         type: "resource.command",
         position: { x: 80, y: 120 },
-        data: createManagedResourceData("resource.command", "new-command", scope),
+        data: {
+          ...commandData,
+          content: syncCommandContentWithAgent(commandData.content, agentData.name, workflowFrontmatterValue(agentData.content, "model")),
+        },
       },
       {
         id: "agent",
         type: "resource.agent",
         position: { x: 430, y: 120 },
-        data: createManagedResourceData("resource.agent", "new-agent", scope),
+        data: agentData,
       },
     ],
     edges: [{ id: "command-agent", source: "command", target: "agent", kind: "capability", sourceHandle: "capability", targetHandle: "agent" }],
@@ -219,6 +224,38 @@ export function createCapabilityEdge(source: WorkflowNode, target: WorkflowNode,
   }
 }
 
+export function workflowFrontmatterValue(content: string | undefined, key: string): string | undefined {
+  if (!content) return undefined
+  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
+  const line = match?.[1]?.split(/\r?\n/).find((item) => item.match(new RegExp(`^${key}:`)))
+  const value = line?.slice(key.length + 1).trim().replace(/^['"]|['"]$/g, "")
+  return value || undefined
+}
+
+export function syncCommandContentWithAgent(content: string | undefined, agentName: string, model?: string): string {
+  const source = content ?? ""
+  const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
+  const frontmatter = match?.[1]?.split(/\r?\n/) ?? []
+  const body = match ? source.slice(match[0].length) : source
+  setFrontmatterValue(frontmatter, "agent", agentName)
+  setFrontmatterValue(frontmatter, "model", model)
+  return `---\n${frontmatter.filter(Boolean).join("\n")}\n---\n${body}`
+}
+
+export function syncCommandNodeToAgent(command: WorkflowNode, agent: WorkflowNode, fallbackModel?: string): WorkflowNode | null {
+  if (command.type !== "resource.command" || agent.type !== "resource.agent") return null
+  const commandData = command.data as ResourceNodeData
+  const agentData = agent.data as ResourceNodeData
+  const model = workflowFrontmatterValue(agentData.content, "model") ?? fallbackModel
+  return {
+    ...command,
+    data: {
+      ...commandData,
+      content: syncCommandContentWithAgent(commandData.content, agentData.name, model),
+    },
+  }
+}
+
 export function getWorkflowAppReadiness(workflow: WorkflowV1) {
   const commands = workflow.nodes.filter((node) => node.type === "resource.command")
   const agents = workflow.nodes.filter((node) => node.type === "resource.agent")
@@ -317,6 +354,17 @@ function capabilityKindForNode(type: WorkflowNodeType) {
     "resource.plugin": "plugin",
   } as const
   return type in kinds ? kinds[type as keyof typeof kinds] : undefined
+}
+
+function setFrontmatterValue(lines: string[], key: string, value?: string) {
+  const index = lines.findIndex((line) => line.match(new RegExp(`^${key}:`)))
+  if (!value) {
+    if (index >= 0) lines.splice(index, 1)
+    return
+  }
+  const next = `${key}: ${value}`
+  if (index >= 0) lines[index] = next
+  else lines.push(next)
 }
 
 function emptyCapabilityMap(): WorkflowRelationshipProjection["agentApps"][number]["capabilities"] {

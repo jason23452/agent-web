@@ -4,7 +4,7 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
-import { createCapabilityEdge, createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, touchWorkflow } from "@/features/workflows/workflowUtils"
+import { createCapabilityEdge, createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, syncCommandNodeToAgent, touchWorkflow } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
 import { WorkflowAgentAppPanel } from "@/features/workflows/components/WorkflowAgentAppPanel"
@@ -99,10 +99,20 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
 
   function addEdge(edge: WorkflowEdge) {
     if (builder.workflow.edges.some((current) => current.source === edge.source && current.target === edge.target && current.kind === edge.kind)) return
-    mutate((workflow) => ({ ...workflow, edges: [...workflow.edges, edge] }))
+    mutate((workflow) => {
+      const source = workflow.nodes.find((node) => node.id === edge.source)
+      const target = workflow.nodes.find((node) => node.id === edge.target)
+      const syncedCommand = source && target ? syncCommandForAgent(source, target) : null
+      return {
+        ...workflow,
+        nodes: syncedCommand ? workflow.nodes.map((node) => node.id === syncedCommand.id ? syncedCommand : node) : workflow.nodes,
+        edges: [...workflow.edges, edge],
+      }
+    })
     setSelectedEdgeID(edge.id)
     setSelectedNodeID(null)
     setRightTab("inspector")
+    if (edge.targetHandle === "agent") showAgentSyncNotice()
   }
 
   function moveNodes(positions: Array<{ id: string; position: WorkflowPosition }>) {
@@ -134,9 +144,11 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         ...workflow.edges.filter((current) => !(current.kind === "capability" && current.source === command.id && current.targetHandle === "agent")),
         edge,
       ],
+      nodes: workflow.nodes.map((node) => node.id === command.id ? syncCommandForAgent(node, agent) ?? node : node),
     }))
     setSelectedNodeID(agent.id)
     setSelectedEdgeID(null)
+    showAgentSyncNotice()
   }
 
   function addCapability(capabilityNodeID: string) {
@@ -172,12 +184,39 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
       toastManager.add({ id: `workflow-node-id-${Date.now()}`, title: "Node ID 已存在", description: "請使用 workflow 內唯一的 Node ID。", type: "error" })
       return
     }
-    mutate((workflow) => ({
-      ...workflow,
-      nodes: workflow.nodes.map((node) => node.id === previousID ? nextNode : node),
-      edges: workflow.edges.map((edge) => ({ ...edge, source: edge.source === previousID ? nextNode.id : edge.source, target: edge.target === previousID ? nextNode.id : edge.target })),
-    }))
+    mutate((workflow) => {
+      const edges = workflow.edges.map((edge) => ({ ...edge, source: edge.source === previousID ? nextNode.id : edge.source, target: edge.target === previousID ? nextNode.id : edge.target }))
+      let nodes = workflow.nodes.map((node) => node.id === previousID ? nextNode : node)
+      const updatedNode = nodes.find((node) => node.id === nextNode.id)
+      if (updatedNode?.type === "resource.agent") {
+        const command = nodes.find((node) => node.type === "resource.command")
+        const connected = command && edges.some((edge) => edge.kind === "capability" && edge.source === command.id && edge.target === updatedNode.id && edge.targetHandle === "agent")
+        if (command && connected) {
+          const syncedCommand = syncCommandForAgent(command, updatedNode)
+          if (syncedCommand) nodes = nodes.map((node) => node.id === syncedCommand.id ? syncedCommand : node)
+        }
+      }
+      if (updatedNode?.type === "resource.command") {
+        const agentEdge = edges.find((edge) => edge.kind === "capability" && edge.source === updatedNode.id && edge.targetHandle === "agent")
+        const agent = agentEdge ? nodes.find((node) => node.id === agentEdge.target && node.type === "resource.agent") : undefined
+        if (agent) {
+          const syncedCommand = syncCommandForAgent(updatedNode, agent)
+          if (syncedCommand) nodes = nodes.map((node) => node.id === syncedCommand.id ? syncedCommand : node)
+        }
+      }
+      return { ...workflow, nodes, edges }
+    })
     setSelectedNodeID(nextNode.id)
+  }
+
+  function syncCommandForAgent(command: WorkflowNode, agent: WorkflowNode) {
+    const agentData = agent.type === "resource.agent" ? agent.data as ResourceNodeData : null
+    const catalogAgent = agentData ? builder.catalog?.resources.agents.find((resource) => resource.name === agentData.name && (resource.scope === agentData.scope || !resource.scope)) : undefined
+    return syncCommandNodeToAgent(command, agent, catalogAgent?.model)
+  }
+
+  function showAgentSyncNotice() {
+    toastManager.add({ id: `workflow-agent-sync-${Date.now()}`, title: "Agent 設定已同步", description: "Command 的 Agent 與 Model 已從目前連接的 Agent 帶入。", type: "success" })
   }
 
   function updateEdge(nextEdge: WorkflowEdge) {
@@ -185,6 +224,17 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   }
 
   function openNodeDetails(nodeID: string) {
+    const node = builder.workflow.nodes.find((candidate) => candidate.id === nodeID)
+    if (node?.type === "resource.command") {
+      const agentEdge = builder.workflow.edges.find((edge) => edge.kind === "capability" && edge.source === node.id && edge.targetHandle === "agent")
+      const agent = agentEdge ? builder.workflow.nodes.find((candidate) => candidate.id === agentEdge.target && candidate.type === "resource.agent") : undefined
+      const syncedCommand = agent ? syncCommandForAgent(node, agent) : null
+      const syncedData = syncedCommand?.data as ResourceNodeData | undefined
+      const nodeData = node.data as ResourceNodeData
+      if (syncedCommand && syncedData?.content !== nodeData.content) {
+        mutate((workflow) => ({ ...workflow, nodes: workflow.nodes.map((candidate) => candidate.id === syncedCommand.id ? syncedCommand : candidate) }))
+      }
+    }
     setSelectedNodeID(nodeID)
     setSelectedEdgeID(null)
     setNodeDetailOpen(true)

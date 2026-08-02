@@ -637,6 +637,7 @@ export function CommandConfigPanel({
   onCommandDocumentChange,
   onCommandFormChange,
   onSubmitCommandConfig,
+  workflowAgentLinked = false,
 }: {
   commandConfigMode: "interface" | "document";
   commandDocument: string;
@@ -649,6 +650,7 @@ export function CommandConfigPanel({
   onCommandDocumentChange: (content: string) => void;
   onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
   onSubmitCommandConfig: () => void;
+  workflowAgentLinked?: boolean;
 }) {
   const resolvedAvailableModels = modelOptions === undefined ? availableModels : buildAgentModelKeys(modelOptions)
   const resolvedVariantOptions = modelOptions === undefined
@@ -751,21 +753,23 @@ export function CommandConfigPanel({
           </label>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-2 text-muted-foreground text-sm">
-              Agent（可選）
-              <Input
-                aria-label="Command agent"
-                onChange={(event) => onCommandFormChange((current) => ({ ...current, agent: event.target.value }))}
-                placeholder="build"
-                value={commandForm.agent}
-              />
-            </label>
-            <label className="grid gap-2 text-muted-foreground text-sm">
-              Model（可選）
-              {resolvedAvailableModels.length > 0 ? (
-                <select
-                  aria-label="Command model"
-                  className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-                  onChange={(event) => updateCommandModel(event.target.value)}
+               {workflowAgentLinked ? "Agent（由連接的 Agent 帶入）" : "Agent（可選）"}
+               <Input
+                 aria-label="Command agent"
+                 readOnly={workflowAgentLinked}
+                 onChange={(event) => onCommandFormChange((current) => ({ ...current, agent: event.target.value }))}
+                 placeholder="build"
+                 value={commandForm.agent}
+               />
+             </label>
+             <label className="grid gap-2 text-muted-foreground text-sm">
+               {workflowAgentLinked ? "Model（由 Agent 帶入）" : "Model（可選）"}
+               {resolvedAvailableModels.length > 0 ? (
+                 <select
+                   aria-label="Command model"
+                   className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                   disabled={workflowAgentLinked}
+                   onChange={(event) => updateCommandModel(event.target.value)}
                   value={commandForm.model}
                 >
                   <option value="">未指定</option>
@@ -774,14 +778,16 @@ export function CommandConfigPanel({
                 </select>
               ) : (
                 <Input
-                  aria-label="Command model"
-                  onChange={(event) => updateCommandModel(event.target.value)}
+                 aria-label="Command model"
+                 readOnly={workflowAgentLinked}
+                 onChange={(event) => updateCommandModel(event.target.value)}
                   placeholder="anthropic/claude-sonnet-4-5"
                   value={commandForm.model}
                 />
-              )}
-            </label>
-          </div>
+               )}
+             </label>
+           </div>
+           {workflowAgentLinked && <p className="text-muted-foreground text-xs">已連接的 Agent 是 Workflow 的來源；修改 Agent 名稱或模型後，這裡會自動同步。</p>}
           {resolvedVariantOptions && (
             <label className="grid gap-2 text-muted-foreground text-sm">
               變體
