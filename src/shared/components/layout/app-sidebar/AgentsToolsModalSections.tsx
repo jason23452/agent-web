@@ -970,6 +970,7 @@ export function ToolConfigPanel({
   toolEditMode,
   toolForm,
   toolTestResult,
+  requireTestSuccess = true,
 }: {
   onRunToolCallTest: () => Promise<void> | void;
   onSubmitToolConfig: () => void;
@@ -979,6 +980,7 @@ export function ToolConfigPanel({
   toolEditMode: ToolEditMode;
   toolForm: ToolForm;
   toolTestResult: InstallResult | null;
+  requireTestSuccess?: boolean;
 }) {
   return (
     <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto px-6 pb-6">
@@ -1152,7 +1154,7 @@ export function ToolConfigPanel({
             請以 JS/TS 環境執行工具呼叫測試，以驗證後端回應。
           </p>
         <Button
-          disabled={toolCallTestLoading || !toolForm.name.trim() || toolTestResult?.status !== "success"}
+          disabled={toolCallTestLoading || !toolForm.name.trim() || (requireTestSuccess && toolTestResult?.status !== "success")}
           onClick={onSubmitToolConfig}
         >
           {toolEditMode === "add" ? "新增工具" : "更新工具"}

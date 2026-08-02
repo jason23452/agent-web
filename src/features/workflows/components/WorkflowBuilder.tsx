@@ -16,6 +16,7 @@ import { WorkflowJsonPanel } from "@/features/workflows/components/WorkflowJsonP
 import { WorkflowPalette } from "@/features/workflows/components/WorkflowPalette"
 import { WorkflowProductNav } from "@/features/workflows/components/WorkflowProductNav"
 import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowPublishReport"
+import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
 import { WorkflowTopbar } from "@/features/workflows/components/WorkflowTopbar"
 
@@ -45,6 +46,7 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
   const selectedNode = builder.workflow.nodes.find((node) => node.id === selectedNodeID) ?? null
   const selectedEdge = builder.workflow.edges.find((edge) => edge.id === selectedEdgeID) ?? null
   const selectedAgentNode = isWorkflowAgentNode(selectedNode) ? selectedNode : null
+  const selectedResourceNode = selectedNode?.type.startsWith("resource.") ? selectedNode : null
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
 
   useEffect(() => {
@@ -241,12 +243,14 @@ export function WorkflowBuilder({ onBack, project }: { onBack: () => void; proje
        <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
          <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>
            <DialogHeader>
-             <DialogTitle>{selectedNode?.type === "resource.agent" ? "Agent 設定" : "節點詳細配置"}</DialogTitle>
+             <DialogTitle>{selectedNode?.type.startsWith("resource.") ? `${getWorkflowNodeTitle(selectedNode)} 設定` : "節點詳細配置"}</DialogTitle>
              <DialogDescription>{selectedNode ? getWorkflowNodeTitle(selectedNode) : "選取的 Agent App resource"}</DialogDescription>
            </DialogHeader>
            <DialogPanel className="min-h-0 overflow-hidden p-0">
              {selectedAgentNode ? (
-               <WorkflowAgentConfigPanel nodes={builder.workflow.nodes} node={selectedAgentNode} onUpdateNode={updateNode} />
+               <WorkflowAgentConfigPanel key={selectedAgentNode.id} nodes={builder.workflow.nodes} node={selectedAgentNode} onUpdateNode={updateNode} />
+             ) : selectedResourceNode ? (
+               <WorkflowResourceConfigPanel key={selectedResourceNode.id} node={selectedResourceNode} onClose={() => setNodeDetailOpen(false)} onUpdateNode={updateNode} project={project} />
                ) : (
                  <div className="max-h-[68vh] overflow-y-auto">
                    <WorkflowInspector cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />

@@ -194,7 +194,7 @@ function McpServerList({ configLoading, onDeleteServer, onEditServer, onToggleSe
   );
 }
 
-function McpEditor({ configDocument, configLoading, configMode, currentProjectName, form, onCancel, onChange, onConfigModeChange, onDocumentChange, onRefresh, onScopeChange, onSubmit, onTestConnection, scope, testLoading, testResult, view }: {
+export function McpEditor({ configDocument, configLoading, configMode, currentProjectName, form, onCancel, onChange, onConfigModeChange, onDocumentChange, onRefresh, onScopeChange, onSubmit, onTestConnection, scope, testLoading, testResult, view }: {
   configDocument: string;
   configLoading: boolean;
   configMode: McpConfigMode;
