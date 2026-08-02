@@ -32,7 +32,14 @@ export const WORKFLOW_NODE_META: Record<WorkflowNodeType, { label: string; categ
   "flow.merge": { label: "合併流程", category: "流程", description: "合併多個分支（未來支援）" },
 }
 
-const STATIC_PALETTE_TYPES: Array<{ type: WorkflowNodeType; disabled?: boolean }> = []
+const STATIC_PALETTE_TYPES: Array<{ type: Extract<WorkflowNodeType, `resource.${string}`>; disabled?: boolean }> = [
+  { type: "resource.command" },
+  { type: "resource.agent" },
+  { type: "resource.skill" },
+  { type: "resource.tool" },
+  { type: "resource.mcp" },
+  { type: "resource.plugin" },
+]
 
 const RESOURCE_TYPE_BY_KIND = {
   agents: "resource.agent",
@@ -92,12 +99,13 @@ export function touchWorkflow(workflow: WorkflowV1, changes: Partial<WorkflowV1>
 
 export function buildPaletteItems(resources?: Record<string, WorkflowResource[]>): WorkflowPaletteItem[] {
   const staticItems = STATIC_PALETTE_TYPES.map(({ type, disabled }) => ({
-    key: type,
+    key: `create:${type}`,
     type,
-    label: WORKFLOW_NODE_META[type].label,
-    description: WORKFLOW_NODE_META[type].description,
+    label: `新增 ${WORKFLOW_NODE_META[type].label}`,
+    description: `建立 managed ${WORKFLOW_NODE_META[type].label} draft，完成設定後才會在 Publish 時同步。`,
     category: WORKFLOW_NODE_META[type].category,
     disabled,
+    resourceMode: "managed" as const,
   }))
   const resourceItems = Object.entries(RESOURCE_TYPE_BY_KIND).flatMap(([kind, type]) =>
     (resources?.[kind] ?? []).map((resource) => ({
@@ -179,12 +187,54 @@ export function resolveConnectionKind(
   targetHandle?: string | null,
 ): WorkflowEdgeKind | null {
   if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return null
-  if (sourceHandle === "capability-output" && sourceNode.type.startsWith("resource.") && targetNode.type.startsWith("resource.") && targetHandle === capabilityTargetHandle(targetNode.type)) {
+  if (sourceHandle === "capability" && sourceNode.type.startsWith("resource.") && targetNode.type.startsWith("resource.") && targetHandle === capabilityTargetHandle(targetNode.type)) {
     if (sourceNode.type === "resource.command" && targetNode.type === "resource.agent") return "capability"
     if (sourceNode.type === "resource.agent" && ["resource.skill", "resource.tool", "resource.mcp", "resource.plugin"].includes(targetNode.type)) return "capability"
     return null
   }
   return null
+}
+
+export function capabilityTargetHandle(type: WorkflowNodeType): string | null {
+  const handles: Partial<Record<WorkflowNodeType, string>> = {
+    "resource.agent": "agent",
+    "resource.skill": "skill",
+    "resource.tool": "tool",
+    "resource.mcp": "mcp",
+    "resource.plugin": "plugin",
+  }
+  return handles[type] ?? null
+}
+
+export function createCapabilityEdge(source: WorkflowNode, target: WorkflowNode, id = `edge-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`): WorkflowEdge | null {
+  const kind = resolveConnectionKind(source, target, "capability", capabilityTargetHandle(target.type))
+  if (!kind) return null
+  return {
+    id,
+    source: source.id,
+    target: target.id,
+    kind,
+    sourceHandle: "capability",
+    targetHandle: capabilityTargetHandle(target.type) ?? undefined,
+  }
+}
+
+export function getWorkflowAppReadiness(workflow: WorkflowV1) {
+  const commands = workflow.nodes.filter((node) => node.type === "resource.command")
+  const agents = workflow.nodes.filter((node) => node.type === "resource.agent")
+  const errors: string[] = []
+  if (commands.length !== 1) errors.push(commands.length === 0 ? "請建立一個 Command。" : "V1 Agent App 只能有一個 Command。")
+  if (agents.length !== 1) errors.push(agents.length === 0 ? "請建立一個 Agent。" : "V1 Agent App 只能有一個 Agent。")
+  const command = commands[0]
+  const agent = agents[0]
+  const commandAgentEdges = workflow.edges.filter((edge) => edge.kind === "capability" && edge.source === command?.id && edge.target === agent?.id && edge.sourceHandle === "capability" && edge.targetHandle === "agent")
+  if (command && agent && commandAgentEdges.length !== 1) errors.push("請將 Command 連到唯一的 Agent。")
+  return {
+    ready: errors.length === 0,
+    errors,
+    commandNodeID: command?.id,
+    agentNodeID: agent?.id,
+  }
 }
 
 export function wouldCreateControlCycle(edges: WorkflowEdge[], source: string, target: string) {
@@ -257,17 +307,6 @@ export function projectWorkflowRelationships(workflow: WorkflowV1): WorkflowRela
       source: "workflow" as const,
     })),
   }
-}
-
-function capabilityTargetHandle(type: WorkflowNodeType): string | null {
-  const handles: Partial<Record<WorkflowNodeType, string>> = {
-    "resource.agent": "agent",
-    "resource.skill": "skill",
-    "resource.tool": "tool",
-    "resource.mcp": "mcp",
-    "resource.plugin": "plugin",
-  }
-  return handles[type] ?? null
 }
 
 function capabilityKindForNode(type: WorkflowNodeType) {

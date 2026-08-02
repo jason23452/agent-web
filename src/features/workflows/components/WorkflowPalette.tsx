@@ -40,7 +40,7 @@ const TYPE_ICONS = {
   "flow.merge": GitBranchIcon,
 } as const
 
-const CATEGORY_ORDER = ["觸發器", "動作", "Agent", "Command", "Skill", "Tool", "MCP", "Plugin", "流程"]
+const CATEGORY_ORDER = ["Command", "Agent", "Skill", "Tool", "MCP", "Plugin"]
 
 type WorkflowPaletteProps = {
   catalog: WorkflowResourceCatalog | null
@@ -75,11 +75,11 @@ export function WorkflowPalette({ catalog, error, loading, onAdd }: WorkflowPale
       <div className="grid gap-3 border-border border-b p-4">
         <div>
           <h2 className="font-semibold text-sm" id="workflow-palette-title">新增節點</h2>
-          <p className="mt-0.5 text-muted-foreground text-xs">點選加入畫布，或拖曳到指定位置。</p>
+          <p className="mt-0.5 text-muted-foreground text-xs">選取既有資源，或建立 managed draft 後在畫布配置。</p>
         </div>
         <div className="relative">
           <SearchIcon aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input aria-label="搜尋節點與資源" className="pl-7" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 agent、tool、動作..." type="search" value={query} />
+          <Input aria-label="搜尋節點與資源" className="pl-7" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 command、agent、tool..." type="search" value={query} />
         </div>
         <label className="grid gap-1 text-xs text-muted-foreground">
           資源範圍
@@ -124,6 +124,7 @@ export function WorkflowPalette({ catalog, error, loading, onAdd }: WorkflowPale
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
                           <strong className="truncate font-medium text-xs">{item.label}</strong>
+                          {!item.resource && item.resourceMode === "managed" && <Badge size="sm" variant="outline">建立</Badge>}
                           {item.disabled && <Badge size="sm" variant="secondary">未來</Badge>}
                           {item.resource?.inherited && <Badge size="sm" variant="info">繼承</Badge>}
                         </span>

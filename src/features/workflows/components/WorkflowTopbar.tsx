@@ -4,7 +4,7 @@ import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
 import type { WorkflowV1 } from "@/features/workflows/types"
 import type { WorkflowRequestedAction } from "@/features/workflows/components/WorkflowConfirmDialog"
-import { scopeLabel } from "@/features/workflows/workflowUtils"
+import { getWorkflowAppReadiness, scopeLabel } from "@/features/workflows/workflowUtils"
 
 export function WorkflowTopbar({
   busy,
@@ -27,9 +27,9 @@ export function WorkflowTopbar({
   persisted: boolean
   workflow: WorkflowV1
 }) {
-  const hasExecutableAction = workflow.nodes.some((node) => node.type.startsWith("action."))
-  const publishDisabled = busy || dirty || !persisted || !hasExecutableAction
-  const blockedReason = !hasExecutableAction ? "請先加入至少一個動作節點" : dirty || !persisted ? "請先儲存有效的 Workflow JSON" : undefined
+  const readiness = getWorkflowAppReadiness(workflow)
+  const publishDisabled = busy || dirty || !persisted || !readiness.ready
+  const blockedReason = !readiness.ready ? readiness.errors.join(" ") : dirty || !persisted ? "請先儲存有效的 Workflow JSON" : undefined
   return (
     <header className="workflow-topbar">
       <div className="flex min-w-0 items-center gap-2.5">

@@ -2,7 +2,10 @@ import { useState, type SetStateAction } from "react"
 import { getApiErrorMessage } from "@/shared/api"
 import { testOpenCodeMcpConnection, type OpenCodeMcpTestResult } from "@/shared/api/opencodeMcpTest"
 import { testToolScript } from "@/shared/api/opencodeRegistry"
+import { Badge } from "@/shared/components/ui/badge"
 import { AddPluginForm, AddSkillForm } from "@/shared/components/layout/app-sidebar/PluginSkillModalSections"
+import { Button } from "@/shared/components/ui/button"
+import { Input } from "@/shared/components/ui/input"
 import { emptyCommandForm, emptyMcpForm, emptyPluginForm, emptySkillForm, emptyToolForm } from "@/shared/components/layout/app-sidebar/config"
 import { CommandConfigPanel, ToolConfigPanel } from "@/shared/components/layout/app-sidebar/AgentsToolsModalSections"
 import { McpEditor } from "@/shared/components/layout/app-sidebar/McpServersDialog"
@@ -20,6 +23,7 @@ import type {
 import type { ResourceNodeData, WorkflowNode } from "@/features/workflows/types"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
+import { WorkflowAgentConfigPanel } from "@/features/workflows/components/WorkflowAgentConfigPanel"
 
 type WorkflowResourceConfigPanelProps = {
   availableModels?: string[]
@@ -27,11 +31,15 @@ type WorkflowResourceConfigPanelProps = {
   node: WorkflowNode
   onClose: () => void
   onUpdateNode: (node: WorkflowNode) => void
+  nodes?: WorkflowNode[]
   project?: string
 }
 
-export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, onClose, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
+export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], onClose, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
+  if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel node={node} onClose={onClose} />
   switch (node.type) {
+    case "resource.agent":
+      return <WorkflowAgentConfigPanel modelOptions={modelOptions} nodes={nodes} node={node as WorkflowAgentNode} onUpdateNode={onUpdateNode} />
     case "resource.tool":
       return <WorkflowToolConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} project={project} />
     case "resource.command":
@@ -45,6 +53,27 @@ export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions
     default:
       return null
   }
+}
+
+type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }
+
+function ReferenceResourcePanel({ node, onClose }: { node: WorkflowNode; onClose: () => void }) {
+  const data = node.data as ResourceNodeData
+  return (
+    <div className="grid gap-4 p-5">
+      <div className="grid gap-1">
+        <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Reference resource</p>
+        <h3 className="font-semibold text-base">{data.name}</h3>
+        <p className="text-muted-foreground text-xs leading-5">這個節點只引用 target runtime 已存在的 OpenCode resource。若要在 Workflow 內編輯內容，請從節點面板建立 managed draft。</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="secondary">{node.type.replace("resource.", "")}</Badge>
+        <Badge variant="outline">{data.scope === "global" ? "Global" : "Project"}</Badge>
+        <Badge variant="info">Publish 時驗證</Badge>
+      </div>
+      <div className="flex justify-end"><Button onClick={onClose} variant="outline">關閉</Button></div>
+    </div>
+  )
 }
 
 function WorkflowToolConfigPanel({ node, onUpdateNode, project }: Pick<WorkflowResourceConfigPanelProps, "node" | "onUpdateNode" | "project">) {
@@ -232,12 +261,17 @@ function WorkflowPluginConfigPanel({ node, onClose, onUpdateNode, project }: Pic
 
 function WorkflowSkillConfigPanel({ node, onClose, onUpdateNode, project }: Pick<WorkflowResourceConfigPanelProps, "node" | "onClose" | "onUpdateNode" | "project">) {
   const data = resourceData(node)
+  const [skillName, setSkillName] = useState(data.name)
   const [skillForm, setSkillForm] = useState<SkillForm>(() => skillFormFromNode(data))
   const [installResult, setInstallResult] = useState<InstallResult | null>(null)
 
   function submit() {
+    const name = skillName.trim() || data.name.trim() || "new-skill"
+    const description = skillForm.description.trim() || `Managed workflow skill: ${name}`
     updateResourceNode(node, onUpdateNode, {
+      name,
       scope: skillForm.installTarget,
+      content: data.content?.trim() || `---\nname: ${name}\ndescription: ${description}\n---\n\n# Instructions\n\nDescribe the skill instructions here.\n`,
       config: {
         ...data.config,
         method: skillForm.method,
@@ -253,15 +287,21 @@ function WorkflowSkillConfigPanel({ node, onClose, onUpdateNode, project }: Pick
   }
 
   return (
-    <AddSkillForm
-      currentProjectName={project}
-      form={skillForm}
-      installResult={installResult}
-      onCancel={onClose}
-      onFormChange={setSkillForm}
-      onInstallResultChange={setInstallResult}
-      onSubmit={submit}
-    />
+    <div className="grid gap-4">
+      <label className="grid gap-1.5 px-5 pt-5 text-xs text-muted-foreground">
+        Skill 名稱
+        <Input aria-label="Skill 名稱" onChange={(event) => setSkillName(event.target.value)} value={skillName} />
+      </label>
+      <AddSkillForm
+        currentProjectName={project}
+        form={skillForm}
+        installResult={installResult}
+        onCancel={onClose}
+        onFormChange={setSkillForm}
+        onInstallResultChange={setInstallResult}
+        onSubmit={submit}
+      />
+    </div>
   )
 }
 

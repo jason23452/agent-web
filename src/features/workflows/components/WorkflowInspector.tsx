@@ -50,7 +50,7 @@ export function WorkflowInspector(props: WorkflowInspectorProps) {
       <span className="grid size-11 place-items-center rounded-2xl border border-border bg-muted"><Link2Icon aria-hidden="true" className="size-5" /></span>
       <div>
         <h2 className="font-semibold text-sm">選取節點或連線</h2>
-        <p className="mt-1 max-w-56 text-muted-foreground text-xs leading-5">在畫布上選取項目後，可編輯資料、binding、lock 與執行設定。</p>
+        <p className="mt-1 max-w-56 text-muted-foreground text-xs leading-5">在畫布上選取 resource 或 capability relationship 後，可編輯設定與 scope。</p>
       </div>
     </section>
   )

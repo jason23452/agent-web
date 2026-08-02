@@ -58,7 +58,7 @@ export function WorkflowRunPanel({ nodes, polling, run }: WorkflowRunPanelProps)
       <div className="grid gap-4 p-4">
         {run.error && <ErrorCard error={run.error} />}
         <section aria-labelledby="workflow-run-steps-title">
-          <h3 className="mb-2 font-semibold text-xs" id="workflow-run-steps-title">Node steps</h3>
+          <h3 className="mb-2 font-semibold text-xs" id="workflow-run-steps-title">Agent App invocation</h3>
           <ol className="grid gap-2">
             {run.steps.map((step, index) => {
               const node = nodes.find((item) => item.id === step.nodeID)
@@ -68,7 +68,18 @@ export function WorkflowRunPanel({ nodes, polling, run }: WorkflowRunPanelProps)
           {!run.steps.length && <p className="rounded-lg bg-muted px-3 py-4 text-center text-muted-foreground text-xs">Runner 尚未回傳 step。</p>}
         </section>
 
-        {run.artifacts.length > 0 && (
+        {run.steps[0]?.execution && (
+          <section className="grid gap-2" aria-labelledby="workflow-run-resolution-title">
+            <h3 className="font-semibold text-xs" id="workflow-run-resolution-title">Resolved resources</h3>
+            <div className="grid gap-1.5 rounded-xl border border-border bg-muted/40 p-3 text-xs">
+              <p><span className="text-muted-foreground">Command：</span><strong>{run.steps[0].execution.command ?? "-"}</strong></p>
+              <p><span className="text-muted-foreground">Agent：</span><strong>{run.steps[0].execution.agent ?? "-"}</strong></p>
+              <p><span className="text-muted-foreground">Capabilities：</span><span className="text-muted-foreground">{run.steps[0].execution.capabilities.length ? run.steps[0].execution.capabilities.map(({ kind, name }) => `${kind}: ${name}`).join("、") : "未配置"}</span></p>
+            </div>
+          </section>
+        )}
+
+         {run.artifacts.length > 0 && (
           <section>
             <h3 className="mb-2 font-semibold text-xs">Artifacts</h3>
             <ul className="grid gap-1.5">{run.artifacts.map((artifact, index) => <li className="flex items-center gap-2 rounded-lg border border-border p-2.5 text-xs" key={`${artifact.nodeID}-${artifact.sessionID}-${index}`}><BoxIcon aria-hidden="true" className="size-3.5" /><span className="min-w-0 flex-1 truncate">Session {artifact.sessionID}</span><code className="text-[10px] text-muted-foreground">{artifact.nodeID}</code></li>)}</ul>

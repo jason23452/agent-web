@@ -4,13 +4,12 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
-import { createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, touchWorkflow } from "@/features/workflows/workflowUtils"
+import { createCapabilityEdge, createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, touchWorkflow } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
 import { WorkflowAgentAppPanel } from "@/features/workflows/components/WorkflowAgentAppPanel"
 import { WorkflowCanvas } from "@/features/workflows/components/WorkflowCanvas"
 import { WorkflowConfirmDialog, type WorkflowRequestedAction } from "@/features/workflows/components/WorkflowConfirmDialog"
-import { WorkflowAgentConfigPanel } from "@/features/workflows/components/WorkflowAgentConfigPanel"
 import { WorkflowInspector } from "@/features/workflows/components/WorkflowInspector"
 import { WorkflowJsonPanel } from "@/features/workflows/components/WorkflowJsonPanel"
 import { WorkflowPalette } from "@/features/workflows/components/WorkflowPalette"
@@ -34,7 +33,6 @@ const RIGHT_TABS = [
 
 export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelOptions?: ModelOption[]; onBack: () => void; project?: string }) {
   const builder = useWorkflowBuilder(project)
-  const loadCache = builder.loadCache
   const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null)
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null)
   const [rightTab, setRightTab] = useState<RightTab>("palette")
@@ -47,18 +45,10 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const busy = Boolean(builder.busyAction)
   const selectedNode = builder.workflow.nodes.find((node) => node.id === selectedNodeID) ?? null
   const selectedEdge = builder.workflow.edges.find((edge) => edge.id === selectedEdgeID) ?? null
-  const selectedAgentNode = isWorkflowAgentNode(selectedNode) ? selectedNode : null
   const selectedResourceNode = selectedNode?.type.startsWith("resource.") ? selectedNode : null
   const availableModels = buildAgentModelKeys(modelOptions)
   const activeModelOptions = modelOptions.length > 0 ? modelOptions : undefined
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
-
-  useEffect(() => {
-    if (!selectedNode || !selectedNode.type.startsWith("action.")) return
-    const controller = new AbortController()
-    void loadCache(selectedNode.id, cacheTarget, controller.signal)
-    return () => controller.abort()
-  }, [cacheTarget, loadCache, selectedNode])
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -74,7 +64,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         event.preventDefault()
         duplicateNode(selectedNodeID)
       }
-      if (event.key.toLowerCase() === "l" && selectedNodeID) lockNode(selectedNodeID)
       if ((event.key === "Delete" || event.key === "Backspace") && (selectedNodeID || selectedEdgeID)) {
         if (selectedNodeID) deleteNodes([selectedNodeID])
         if (selectedEdgeID) deleteEdges([selectedEdgeID])
@@ -91,15 +80,25 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
 
   function addNode(item: WorkflowPaletteItem, position?: WorkflowPosition) {
     if (item.disabled) return
+    if ((item.type === "resource.command" || item.type === "resource.agent") && builder.workflow.nodes.some((node) => node.type === item.type)) {
+      toastManager.add({ id: `workflow-single-${Date.now()}`, title: "V1 Agent App 已有此資源", description: `${item.type === "resource.command" ? "Command" : "Agent"} 只能有一個，請直接編輯目前節點。`, type: "warning" })
+      return
+    }
+    if (item.resource && builder.workflow.nodes.some((node) => node.type === item.type && (node.data as ResourceNodeData).name === item.resource?.name)) {
+      toastManager.add({ id: `workflow-resource-${Date.now()}`, title: "資源已在畫布", description: `${item.resource.name} 已經加入目前 workflow。`, type: "info" })
+      return
+    }
     const fallbackPosition = { x: 310 + (builder.workflow.nodes.length % 3) * 38, y: (builder.workflow.nodes.length % 5 - 2) * 130 }
     const node = createNodeFromPalette(item, position ?? fallbackPosition, builder.workflow.nodes, builder.workflow.scope)
     mutate((workflow) => ({ ...workflow, nodes: [...workflow.nodes, node] }))
     setSelectedNodeID(node.id)
     setSelectedEdgeID(null)
     setRightTab("inspector")
+    if ((node.data as ResourceNodeData).mode === "managed") setNodeDetailOpen(true)
   }
 
   function addEdge(edge: WorkflowEdge) {
+    if (builder.workflow.edges.some((current) => current.source === edge.source && current.target === edge.target && current.kind === edge.kind)) return
     mutate((workflow) => ({ ...workflow, edges: [...workflow.edges, edge] }))
     setSelectedEdgeID(edge.id)
     setSelectedNodeID(null)
@@ -121,6 +120,37 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     const removed = new Set(edgeIDs)
     mutate((workflow) => ({ ...workflow, edges: workflow.edges.filter((edge) => !removed.has(edge.id)) }))
     if (selectedEdgeID && removed.has(selectedEdgeID)) setSelectedEdgeID(null)
+  }
+
+  function setCommandAgent(agentNodeID: string) {
+    const command = builder.workflow.nodes.find((node) => node.type === "resource.command")
+    const agent = builder.workflow.nodes.find((node) => node.id === agentNodeID && node.type === "resource.agent")
+    if (!command || !agent) return
+    const edge = createCapabilityEdge(command, agent)
+    if (!edge) return
+    mutate((workflow) => ({
+      ...workflow,
+      edges: [
+        ...workflow.edges.filter((current) => !(current.kind === "capability" && current.source === command.id && current.targetHandle === "agent")),
+        edge,
+      ],
+    }))
+    setSelectedNodeID(agent.id)
+    setSelectedEdgeID(null)
+  }
+
+  function addCapability(capabilityNodeID: string) {
+    const agent = builder.workflow.nodes.find((node) => node.type === "resource.agent")
+    const capability = builder.workflow.nodes.find((node) => node.id === capabilityNodeID)
+    if (!agent || !capability) return
+    const edge = createCapabilityEdge(agent, capability)
+    if (!edge || builder.workflow.edges.some((current) => current.source === edge.source && current.target === edge.target && current.kind === "capability")) return
+    mutate((workflow) => ({ ...workflow, edges: [...workflow.edges, edge] }))
+  }
+
+  function openPalette() {
+    setRightTab("palette")
+    setRightPanelOpen(true)
   }
 
   function duplicateNode(nodeID: string) {
@@ -230,7 +260,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         </div>
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
            {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} onAdd={(item) => addNode(item)} />}
-           {rightTab === "apps" && <WorkflowAgentAppPanel onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} workflow={builder.workflow} />}
+           {rightTab === "apps" && <WorkflowAgentAppPanel onAddCapability={addCapability} onOpenPalette={openPalette} onRemoveEdge={(edgeID) => deleteEdges([edgeID])} onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} onSetCommandAgent={setCommandAgent} workflow={builder.workflow} />}
           {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
           {rightTab === "json" && <WorkflowJsonPanel onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} workflow={builder.workflow} />}
@@ -238,7 +268,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
       </aside>
       {rightPanelOpen && <button aria-label="關閉 Workflow 工具面板" className="workflow-panel-backdrop" onClick={() => setRightPanelOpen(false)} type="button" />}
 
-      <div className="workflow-shortcuts" aria-hidden="true"><ListTreeIcon className="size-3" />Ctrl S 儲存 · Ctrl D 複製 · L 鎖定</div>
+      <div className="workflow-shortcuts" aria-hidden="true"><ListTreeIcon className="size-3" />Ctrl S 儲存 · Ctrl D 複製 · Delete 移除</div>
       <Button aria-label={rightPanelOpen ? "關閉工具面板" : "開啟工具面板"} className="workflow-panel-toggle" onClick={() => setRightPanelOpen((current) => !current)} size="icon" variant="outline"><PanelRightCloseIcon aria-hidden="true" /></Button>
 
       <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} open={browserOpen} project={project} workflows={builder.workflows} />
@@ -251,10 +281,8 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
              <DialogDescription>{selectedNode ? getWorkflowNodeTitle(selectedNode) : "選取的 Agent App resource"}</DialogDescription>
            </DialogHeader>
            <DialogPanel className="min-h-0 overflow-hidden p-0">
-             {selectedAgentNode ? (
-              <WorkflowAgentConfigPanel key={selectedAgentNode.id} modelOptions={activeModelOptions} nodes={builder.workflow.nodes} node={selectedAgentNode} onUpdateNode={updateNode} />
-             ) : selectedResourceNode ? (
-               <WorkflowResourceConfigPanel availableModels={availableModels} key={selectedResourceNode.id} modelOptions={activeModelOptions} node={selectedResourceNode} onClose={() => setNodeDetailOpen(false)} onUpdateNode={updateNode} project={project} />
+              {selectedResourceNode ? (
+                <WorkflowResourceConfigPanel availableModels={availableModels} key={selectedResourceNode.id} modelOptions={activeModelOptions} node={selectedResourceNode} nodes={builder.workflow.nodes} onClose={() => setNodeDetailOpen(false)} onUpdateNode={updateNode} project={project} />
                ) : (
                  <div className="max-h-[68vh] overflow-y-auto">
                    <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
@@ -268,8 +296,4 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
       </Dialog>
     </main>
   )
-}
-
-function isWorkflowAgentNode(node: WorkflowNode | null): node is WorkflowNode & { type: "resource.agent"; data: ResourceNodeData } {
-  return node?.type === "resource.agent"
 }
