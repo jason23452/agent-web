@@ -20,6 +20,7 @@ export type AppSidebarProps = {
   onOpenCodeDisabledModelsChange?: (disabledModelKeys: string[]) => void;
   onRefreshProjects: () => Promise<void>;
   onRestartOpenCode: (reason: string) => Promise<void>;
+  onWorkflowOpen: () => void;
   open: boolean;
   onClose: () => void;
   onSelectSession: (sessionId: string) => void;

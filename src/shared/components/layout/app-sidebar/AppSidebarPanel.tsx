@@ -1,5 +1,6 @@
 import {
   HatGlasses,
+  GitBranchIcon,
   HistoryIcon,
   PanelLeftCloseIcon,
   PlugZapIcon,
@@ -32,6 +33,7 @@ const navItems = [
   { icon: ServerIcon, key: "mcp", label: "MCP Server" },
   { icon: PlugZapIcon, key: "plugins", label: "外掛/技能" },
   { icon: HatGlasses, key: "agents", label: "智能體/工具/Commands" },
+  { icon: GitBranchIcon, key: "workflows", label: "Workflow" },
 ];
 
 type AppSidebarPanelProps = {
@@ -49,6 +51,7 @@ type AppSidebarPanelProps = {
   onProjectOpen: () => void;
   onSelectSession: (sessionId: string) => void;
   onUserSettingsOpen: () => void;
+  onWorkflowOpen: () => void;
   open: boolean;
   sessionsError?: string | null;
   sessionsLoading?: boolean;
@@ -69,6 +72,7 @@ export function AppSidebarPanel({
   onProjectOpen,
   onSelectSession,
   onUserSettingsOpen,
+  onWorkflowOpen,
   open,
   sessionsError,
   sessionsLoading = false,
@@ -106,6 +110,7 @@ export function AppSidebarPanel({
                     if (item.key === "mcp") onMcpOpen();
                     if (item.key === "plugins") onPluginSkillOpen();
                     if (item.key === "agents") onAgentsOpen();
+                    if (item.key === "workflows") onWorkflowOpen();
                   }}
                   type="button"
                 >

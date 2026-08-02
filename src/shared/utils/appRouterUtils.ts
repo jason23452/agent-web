@@ -2,6 +2,7 @@ import { ApiError } from "@/shared/api"
 import { WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[name]"
 import { HOME_ROUTE_PATH } from "@/features/home/router"
 import { WORKSPACE_ROUTE_PATH } from "@/features/workspace/router"
+import { WORKFLOWS_ROUTE_PATH } from "@/features/workflows/constants"
 import { getFileTypeByName, listProjectFiles } from "@/features/workspace/api/files"
 import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus } from "@/shared/api/opencodeRuntime"
 import type { OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
@@ -12,12 +13,18 @@ export type AppRoute =
   | { name: "home" }
   | { name: "workspace" }
   | { name: "workspaceProject"; projectName: string }
+  | { name: "workflows"; projectName?: string }
 
 export const OPENCODE_RESTART_WAIT_TIMEOUT_MS = 70_000
 export const OPENCODE_RESTART_POLL_MS = 1_000
 
 export function readBrowserRoute(): AppRoute {
   const pathname = window.location.pathname.replace(/\/+$/, "") || HOME_ROUTE_PATH
+
+  if (pathname === WORKFLOWS_ROUTE_PATH) {
+    const projectName = new URLSearchParams(window.location.search).get("project")?.trim()
+    return projectName ? { name: "workflows", projectName } : { name: "workflows" }
+  }
 
   if (pathname === WORKSPACE_ROUTE_PATH) {
     return { name: "workspace" }
@@ -40,6 +47,9 @@ export function readBrowserRoute(): AppRoute {
 export function getRoutePath(route: AppRoute) {
   if (route.name === "workspace") return WORKSPACE_ROUTE_PATH
   if (route.name === "workspaceProject") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}`
+  if (route.name === "workflows") {
+    return route.projectName ? `${WORKFLOWS_ROUTE_PATH}?project=${encodeURIComponent(route.projectName)}` : WORKFLOWS_ROUTE_PATH
+  }
 
   return HOME_ROUTE_PATH
 }

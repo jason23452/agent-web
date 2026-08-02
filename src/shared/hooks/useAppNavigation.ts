@@ -14,7 +14,7 @@ export function useAppNavigation() {
       const nextRoute = readBrowserRoute()
       const nextPath = getRoutePath(nextRoute)
       setRoute(nextRoute)
-      if (window.location.pathname !== nextPath) window.history.replaceState(null, "", nextPath)
+      if (`${window.location.pathname}${window.location.search}` !== nextPath) window.history.replaceState(null, "", nextPath)
     }
 
     syncRouteFromBrowser()
@@ -25,7 +25,7 @@ export function useAppNavigation() {
   const navigateToRoute = useCallback((nextRoute: AppRoute, options?: { replace?: boolean }) => {
     const nextPath = getRoutePath(nextRoute)
     setRoute(nextRoute)
-    if (window.location.pathname === nextPath) return
+    if (`${window.location.pathname}${window.location.search}` === nextPath) return
     if (options?.replace) window.history.replaceState(null, "", nextPath)
     else window.history.pushState(null, "", nextPath)
   }, [])
@@ -38,5 +38,9 @@ export function useAppNavigation() {
     navigateToWorkspaceProject(getProjectRouteName(projectPath))
   }, [navigateToWorkspaceProject])
 
-  return { changeProject, navigateToRoute, navigateToWorkspaceProject, route }
+  const navigateToWorkflows = useCallback((projectName?: string, options?: { replace?: boolean }) => {
+    navigateToRoute({ name: "workflows", ...(projectName ? { projectName } : {}) }, options)
+  }, [navigateToRoute])
+
+  return { changeProject, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route }
 }

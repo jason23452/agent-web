@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { HomeRoute } from "@/features/home/router"
 import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
@@ -22,8 +22,10 @@ import {
   getPreferredModelKey,
 } from "@/shared/utils/openCodeModelUtils"
 
+const WorkflowsRoute = lazy(() => import("@/features/workflows/router").then((module) => ({ default: module.WorkflowsRoute })))
+
 export function AppRouter() {
-  const { changeProject, navigateToRoute, navigateToWorkspaceProject, route } = useAppNavigation()
+  const { changeProject, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route } = useAppNavigation()
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [disabledOpenCodeModelKeys, setDisabledOpenCodeModelKeys] = useState<string[]>([])
@@ -125,6 +127,17 @@ export function AppRouter() {
     setPreviewFile(null)
   }
 
+  if (route.name === "workflows") {
+    return (
+      <Suspense fallback={<div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground" role="status">正在載入 Workflow Builder...</div>}>
+        <WorkflowsRoute
+          onBack={() => route.projectName ? navigateToWorkspaceProject(route.projectName) : navigateToRoute({ name: "workspace" })}
+          project={route.projectName}
+        />
+      </Suspense>
+    )
+  }
+
   const mainRoute =
     route.name === "workspace" ? (
       <WorkspaceRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
@@ -194,6 +207,7 @@ export function AppRouter() {
           onProjectChange={changeProject}
           onRefreshProjects={refreshProjects}
            onRestartOpenCode={workspaceData.restartOpenCodeServer}
+          onWorkflowOpen={() => navigateToWorkflows(checkedProjectName ?? (activeProjectPath ? getProjectRouteName(activeProjectPath) : undefined))}
           onSelectSession={selectSession}
           open={sidebarOpen}
           projects={projects}

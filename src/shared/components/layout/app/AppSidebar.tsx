@@ -839,6 +839,7 @@ export function AppSidebar({
   onProjectChange,
   onRefreshProjects,
   onRestartOpenCode,
+  onWorkflowOpen,
   open,
   onClose,
   onSelectSession,
@@ -4272,6 +4273,7 @@ export function AppSidebar({
           setSelectedProviderAuthMethod(null);
           setUserSettingsOpen(true);
         }}
+        onWorkflowOpen={onWorkflowOpen}
         open={open}
         sessionsError={sessionsError}
         sessionsLoading={sessionsLoading}
