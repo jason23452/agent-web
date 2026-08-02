@@ -2,13 +2,14 @@ import { useState, type SetStateAction } from "react"
 import { AgentConfigPanel } from "@/shared/components/layout/app-sidebar/AgentsToolsModalSections"
 import { emptyAgentForm } from "@/shared/components/layout/app-sidebar/config"
 import type {
+  AgentDefinition,
   AgentConfigMode,
   AgentForm,
   PermissionAction,
   ToolDefinition,
 } from "@/shared/types/app-sidebar"
 import { agentToYaml } from "@/shared/utils/app-sidebar"
-import type { ResourceNodeData, WorkflowNode } from "@/features/workflows/types"
+import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/workflows/types"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentModelKeys, buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
 
@@ -24,14 +25,43 @@ type WorkflowAgentConfigPanelProps = {
   modelOptions?: ModelOption[]
   node: WorkflowAgentNode
   nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  onAddDelegation?: (sourceAgentID: string, targetAgentID: string) => void
+  onRemoveDelegation?: (edgeID: string) => void
   onUpdateNode: (node: WorkflowNode) => void
 }
 
 type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }
 
-export function WorkflowAgentConfigPanel({ modelOptions = [], node, nodes, onUpdateNode }: WorkflowAgentConfigPanelProps) {
+export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes, onAddDelegation, onRemoveDelegation, onUpdateNode }: WorkflowAgentConfigPanelProps) {
   const data = node.data as ResourceNodeData
-  const initialForm = agentFormFromContent(data.content ?? "", data.name, data.scope)
+  const workflowAgents = nodes.filter((item): item is WorkflowAgentNode => item.type === "resource.agent")
+  const delegatedAgentNodes = edges
+    .filter((edge) => edge.kind === "delegation" && edge.source === node.id)
+    .flatMap((edge) => workflowAgents.filter((candidate) => candidate.id === edge.target))
+  const command = nodes.find((item) => item.type === "resource.command")
+  const primaryID = command && edges.find((edge) => edge.kind === "capability" && edge.source === command.id && edge.targetHandle === "agent")?.target
+  const initialForm = {
+    ...agentFormFromContent(data.content ?? "", data.name, data.scope),
+    subagents: delegatedAgentNodes.map((candidate) => (candidate.data as ResourceNodeData).name),
+  }
+  const workflowAgentDefinitions = workflowAgents.map((candidate): AgentDefinition => {
+    const candidateData = candidate.data as ResourceNodeData
+    return {
+      id: candidate.id,
+      name: candidateData.name,
+      description: "Workflow Agent",
+      scope: "custom",
+      installTarget: candidateData.scope,
+      mode: candidate.id === primaryID ? "primary" : "subagent",
+      model: readFrontmatterValue(candidateData.content ?? "", "model") ?? "",
+      tools: [],
+      skills: [],
+      subagents: [],
+      permission: {},
+      systemPrompt: "",
+    }
+  })
   const availableSkillNames = nodes
     .filter((item) => item.type === "resource.skill")
     .map((item) => (item.data as ResourceNodeData).name)
@@ -98,13 +128,19 @@ export function WorkflowAgentConfigPanel({ modelOptions = [], node, nodes, onUpd
 
   function addSubagent() {
     if (!subagentToAdd) return
-    setAgentForm((current) => current.subagents.includes(subagentToAdd)
+    const target = workflowAgents.find((candidate) => candidate.id === subagentToAdd || (candidate.data as ResourceNodeData).name === subagentToAdd)
+    const targetName = target ? (target.data as ResourceNodeData).name : subagentToAdd
+    if (target) onAddDelegation?.(node.id, target.id)
+    setAgentForm((current) => current.subagents.includes(targetName)
       ? current
-      : { ...current, subagents: [...current.subagents, subagentToAdd] },
+      : { ...current, subagents: [...current.subagents, targetName] },
     )
   }
 
   function removeSubagent(subagentID: string) {
+    const target = workflowAgents.find((candidate) => candidate.id === subagentID || (candidate.data as ResourceNodeData).name === subagentID)
+    const edge = target && edges.find((candidate) => candidate.kind === "delegation" && candidate.source === node.id && candidate.target === target.id)
+    if (edge) onRemoveDelegation?.(edge.id)
     setAgentForm((current) => ({
       ...current,
       subagents: current.subagents.filter((item) => item !== subagentID),
@@ -130,7 +166,7 @@ export function WorkflowAgentConfigPanel({ modelOptions = [], node, nodes, onUpd
       agentEditMode="edit"
       agentForm={agentForm}
       agentYaml={agentYaml}
-      agents={[]}
+       agents={workflowAgentDefinitions}
       availableModels={availableModels}
       modelOptions={modelOptions}
       availableSkillNames={availableSkillNames}
@@ -143,7 +179,7 @@ export function WorkflowAgentConfigPanel({ modelOptions = [], node, nodes, onUpd
       onAgentConfigModeChange={changeConfigMode}
       onAgentFormChange={updateAgentForm}
       onAgentYamlChange={setAgentYaml}
-      onGetCallableSubagentOptions={() => []}
+       onGetCallableSubagentOptions={(_agentID, assignedSubagents) => workflowAgentDefinitions.filter((candidate) => candidate.id !== node.id && !assignedSubagents.includes(candidate.name))}
       onGuidanceSkillChange={setGuidanceSkill}
       onGuidanceSubagentChange={setGuidanceSubagent}
       onGuidanceToolChange={setGuidanceTool}
@@ -182,6 +218,7 @@ function agentFormFromContent(content: string, fallbackName: string, scope: Reso
     ...DEFAULT_PERMISSION,
     ...readPermission(metadata.frontmatter),
   }
+  const subagents = readTaskAgents(metadata.frontmatter)
   const promptFile = metadata.values.prompt?.match(/^\{file:(.+)\}$/)?.[1]?.trim() ?? ""
   const mode = metadata.values.mode === "primary" || metadata.values.mode === "all" ? metadata.values.mode : "subagent"
 
@@ -207,7 +244,7 @@ function agentFormFromContent(content: string, fallbackName: string, scope: Reso
     systemPrompt: metadata.body,
     toolGuidance: {},
     skillGuidance: {},
-    subagents: [],
+    subagents,
     subagentGuidance: {},
   }
 }
@@ -252,6 +289,12 @@ function readPermission(frontmatter: string): Record<string, PermissionAction> {
       .filter((match): match is RegExpMatchArray => Boolean(match))
       .map((match) => [unquote(match[1].trim()), match[2] as PermissionAction]),
   )
+}
+
+function readTaskAgents(frontmatter: string): string[] {
+  return readSection(frontmatter, "permission")
+    .map((line) => line.match(/^\s{4}["']?([^:"']+)["']?:\s*allow\s*$/)?.[1]?.trim())
+    .filter((value): value is string => Boolean(value && value !== "*" && value !== "task"))
 }
 
 function readSection(frontmatter: string, sectionName: string) {

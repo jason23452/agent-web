@@ -92,6 +92,8 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
 
       {isResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
       {isResource && CAPABILITY_TARGETS[node.type] && <Handle className="workflow-handle workflow-handle--capability" id={CAPABILITY_TARGETS[node.type]} position={Position.Left} style={{ top: 38 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" position={Position.Right} style={{ top: 68 }} type="source" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="subagent" position={Position.Left} style={{ top: 68 }} type="target" />}
     </article>
   )
 }

@@ -20,7 +20,7 @@ import type {
   SkillForm,
   ToolForm,
 } from "@/shared/types/app-sidebar"
-import type { ResourceNodeData, WorkflowNode } from "@/features/workflows/types"
+import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/workflows/types"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
 import { WorkflowAgentConfigPanel } from "@/features/workflows/components/WorkflowAgentConfigPanel"
@@ -30,16 +30,19 @@ type WorkflowResourceConfigPanelProps = {
   modelOptions?: ModelOption[]
   node: WorkflowNode
   onClose: () => void
+  onAddDelegation?: (sourceAgentID: string, targetAgentID: string) => void
+  onRemoveDelegation?: (edgeID: string) => void
   onUpdateNode: (node: WorkflowNode) => void
+  edges?: WorkflowEdge[]
   nodes?: WorkflowNode[]
   project?: string
 }
 
-export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], onClose, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
+export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
   if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel node={node} onClose={onClose} />
   switch (node.type) {
     case "resource.agent":
-      return <WorkflowAgentConfigPanel modelOptions={modelOptions} nodes={nodes} node={node as WorkflowAgentNode} onUpdateNode={onUpdateNode} />
+       return <WorkflowAgentConfigPanel edges={edges} modelOptions={modelOptions} nodes={nodes} node={node as WorkflowAgentNode} onAddDelegation={onAddDelegation} onRemoveDelegation={onRemoveDelegation} onUpdateNode={onUpdateNode} />
     case "resource.tool":
       return <WorkflowToolConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} project={project} />
     case "resource.command":

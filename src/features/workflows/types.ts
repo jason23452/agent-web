@@ -1,11 +1,12 @@
 export const WORKFLOW_SCHEMA_VERSION = "agent-system.workflow.v1" as const
+export const WORKFLOW_V2_SCHEMA_VERSION = "agent-system.workflow.v2" as const
 
-export type WorkflowSchemaVersion = typeof WORKFLOW_SCHEMA_VERSION
+export type WorkflowSchemaVersion = typeof WORKFLOW_SCHEMA_VERSION | typeof WORKFLOW_V2_SCHEMA_VERSION
 export type WorkflowScope = "project" | "global"
 export type WorkflowTarget = "workflow-test" | "main"
 export type WorkflowSessionMode = "create" | "reuse-or-create"
 export type WorkflowResourceMode = "reference" | "managed"
-export type WorkflowEdgeKind = "control" | "binding" | "capability" | "data" | "condition.true" | "condition.false"
+export type WorkflowEdgeKind = "control" | "binding" | "capability" | "delegation" | "data" | "condition.true" | "condition.false"
 export type WorkflowCapabilityKind = "skill" | "tool" | "mcp" | "plugin"
 export type WorkflowNodeType =
   | "trigger.manual"
@@ -147,6 +148,14 @@ export type WorkflowCommandAgentRelationship = {
   source: "workflow" | "command-frontmatter" | "registry-metadata"
 }
 
+export type WorkflowAgentDelegationRelationship = {
+  parent: string
+  child: string
+  parentNodeID?: string
+  childNodeID?: string
+  source: "workflow"
+}
+
 export type WorkflowAgentCapabilityRelationship = {
   agent: string
   kind: WorkflowCapabilityKind
@@ -163,12 +172,14 @@ export type WorkflowAgentAppSummary = {
   commandNodeID?: string
   agentNodeID?: string
   capabilities: Record<WorkflowCapabilityKind, string[]>
+  delegatedAgents: string[]
   source: "workflow"
 }
 
 export type WorkflowRelationshipProjection = {
   commandAgents: WorkflowCommandAgentRelationship[]
   agentCapabilities: WorkflowAgentCapabilityRelationship[]
+  agentDelegations: WorkflowAgentDelegationRelationship[]
   agentApps: WorkflowAgentAppSummary[]
 }
 
@@ -240,6 +251,7 @@ export type WorkflowPublishReport = {
     mcp: string[]
     plugins: string[]
     agentCapabilities: WorkflowAgentCapabilityRelationship[]
+    agentDelegations: WorkflowAgentDelegationRelationship[]
     agentApps: WorkflowAgentAppSummary[]
     missing: Array<{ nodeID?: string; type: string; name: string }>
     deferred?: boolean

@@ -4,7 +4,7 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
-import { createCapabilityEdge, createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, syncCommandNodeToAgent, touchWorkflow } from "@/features/workflows/workflowUtils"
+import { createCapabilityEdge, createDelegationEdge, createNodeFromPalette, duplicateWorkflowNode, getWorkflowNodeTitle, normalizeWorkflowSchemaVersion, syncCommandNodeToAgent, syncWorkflowAgentConfigs, touchWorkflow, wouldCreateDelegationCycle } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
 import { WorkflowAgentAppPanel } from "@/features/workflows/components/WorkflowAgentAppPanel"
@@ -75,13 +75,13 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   })
 
   function mutate(updater: (workflow: WorkflowV1) => WorkflowV1) {
-    builder.updateDraft(updater)
+    builder.updateDraft((workflow) => syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(updater(workflow))))
   }
 
   function addNode(item: WorkflowPaletteItem, position?: WorkflowPosition) {
     if (item.disabled) return
-    if ((item.type === "resource.command" || item.type === "resource.agent") && builder.workflow.nodes.some((node) => node.type === item.type)) {
-      toastManager.add({ id: `workflow-single-${Date.now()}`, title: "V1 Agent App 已有此資源", description: `${item.type === "resource.command" ? "Command" : "Agent"} 只能有一個，請直接編輯目前節點。`, type: "warning" })
+    if (item.type === "resource.command" && builder.workflow.nodes.some((node) => node.type === item.type)) {
+      toastManager.add({ id: `workflow-single-command-${Date.now()}`, title: "Agent App 只能有一個 Command", description: "請直接編輯目前畫布上的 Command。", type: "warning" })
       return
     }
     if (item.resource && builder.workflow.nodes.some((node) => node.type === item.type && (node.data as ResourceNodeData).name === item.resource?.name)) {
@@ -113,6 +113,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     setSelectedNodeID(null)
     setRightTab("inspector")
     if (edge.targetHandle === "agent") showAgentSyncNotice()
+    if (edge.kind === "delegation") showDelegationSyncNotice()
   }
 
   function moveNodes(positions: Array<{ id: string; position: WorkflowPosition }>) {
@@ -130,6 +131,25 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     const removed = new Set(edgeIDs)
     mutate((workflow) => ({ ...workflow, edges: workflow.edges.filter((edge) => !removed.has(edge.id)) }))
     if (selectedEdgeID && removed.has(selectedEdgeID)) setSelectedEdgeID(null)
+  }
+
+  function addDelegation(sourceAgentID: string, targetAgentID: string) {
+    const source = builder.workflow.nodes.find((node) => node.id === sourceAgentID && node.type === "resource.agent")
+    const target = builder.workflow.nodes.find((node) => node.id === targetAgentID && node.type === "resource.agent")
+    if (!source || !target) return
+    const command = builder.workflow.nodes.find((node) => node.type === "resource.command")
+    const primaryID = command && builder.workflow.edges.find((edge) => edge.kind === "capability" && edge.source === command.id && edge.targetHandle === "agent")?.target
+    if (target.id === primaryID) {
+      toastManager.add({ id: `workflow-primary-subagent-${Date.now()}`, title: "無法建立 delegation", description: "primary Agent 不能同時作為 delegated subagent。", type: "warning" })
+      return
+    }
+    const edge = createDelegationEdge(source, target)
+    if (!edge || builder.workflow.edges.some((current) => current.kind === "delegation" && current.source === edge.source && current.target === edge.target)) return
+    if (wouldCreateDelegationCycle(builder.workflow.edges, source.id, target.id)) {
+      toastManager.add({ id: `workflow-delegation-cycle-${Date.now()}`, title: "無法建立 delegation", description: "這條連線會形成 Agent delegation cycle。", type: "warning" })
+      return
+    }
+    addEdge(edge)
   }
 
   function setCommandAgent(agentNodeID: string) {
@@ -151,8 +171,8 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     showAgentSyncNotice()
   }
 
-  function addCapability(capabilityNodeID: string) {
-    const agent = builder.workflow.nodes.find((node) => node.type === "resource.agent")
+  function addAgentCapability(agentNodeID: string, capabilityNodeID: string) {
+    const agent = builder.workflow.nodes.find((node) => node.id === agentNodeID && node.type === "resource.agent")
     const capability = builder.workflow.nodes.find((node) => node.id === capabilityNodeID)
     if (!agent || !capability) return
     const edge = createCapabilityEdge(agent, capability)
@@ -219,6 +239,10 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     toastManager.add({ id: `workflow-agent-sync-${Date.now()}`, title: "Agent 設定已同步", description: "Command 的 Agent 與 Model 已從目前連接的 Agent 帶入。", type: "success" })
   }
 
+  function showDelegationSyncNotice() {
+    toastManager.add({ id: `workflow-delegation-sync-${Date.now()}`, title: "Delegation 已同步", description: "primary Agent 的 OpenCode permission.task 已更新。", type: "success" })
+  }
+
   function updateEdge(nextEdge: WorkflowEdge) {
     mutate((workflow) => ({ ...workflow, edges: workflow.edges.map((edge) => edge.id === nextEdge.id ? nextEdge : edge) }))
   }
@@ -241,7 +265,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   }
 
   function importDraft(workflow: WorkflowV1) {
-    builder.replaceDraft(touchWorkflow(workflow, {}))
+    builder.replaceDraft(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(touchWorkflow(workflow, {}))))
     setSelectedNodeID(workflow.nodes[0]?.id ?? null)
     setSelectedEdgeID(null)
     setRightTab("inspector")
@@ -310,7 +334,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         </div>
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
            {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} onAdd={(item) => addNode(item)} />}
-           {rightTab === "apps" && <WorkflowAgentAppPanel onAddCapability={addCapability} onOpenPalette={openPalette} onRemoveEdge={(edgeID) => deleteEdges([edgeID])} onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} onSetCommandAgent={setCommandAgent} workflow={builder.workflow} />}
+           {rightTab === "apps" && <WorkflowAgentAppPanel onAddCapability={addAgentCapability} onAddDelegation={addDelegation} onOpenPalette={openPalette} onRemoveEdge={(edgeID) => deleteEdges([edgeID])} onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} onSetCommandAgent={setCommandAgent} workflow={builder.workflow} />}
           {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
           {rightTab === "json" && <WorkflowJsonPanel onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} workflow={builder.workflow} />}
@@ -332,7 +356,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
            </DialogHeader>
            <DialogPanel className="min-h-0 overflow-hidden p-0">
               {selectedResourceNode ? (
-                <WorkflowResourceConfigPanel availableModels={availableModels} key={selectedResourceNode.id} modelOptions={activeModelOptions} node={selectedResourceNode} nodes={builder.workflow.nodes} onClose={() => setNodeDetailOpen(false)} onUpdateNode={updateNode} project={project} />
+                 <WorkflowResourceConfigPanel availableModels={availableModels} edges={builder.workflow.edges} key={`${selectedResourceNode.id}:${builder.workflow.edges.map((edge) => edge.id).join("|")}`} modelOptions={activeModelOptions} node={selectedResourceNode} nodes={builder.workflow.nodes} onAddDelegation={addDelegation} onClose={() => setNodeDetailOpen(false)} onRemoveDelegation={(edgeID) => deleteEdges([edgeID])} onUpdateNode={updateNode} project={project} />
                ) : (
                  <div className="max-h-[68vh] overflow-y-auto">
                    <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />

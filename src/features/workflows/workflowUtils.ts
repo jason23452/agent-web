@@ -11,7 +11,7 @@ import type {
   WorkflowScope,
   WorkflowV1,
 } from "@/features/workflows/types"
-import { WORKFLOW_SCHEMA_VERSION } from "@/features/workflows/types"
+import { WORKFLOW_SCHEMA_VERSION, WORKFLOW_V2_SCHEMA_VERSION } from "@/features/workflows/types"
 
 export const WORKFLOW_NODE_META: Record<WorkflowNodeType, { label: string; category: string; description: string }> = {
   "trigger.manual": { label: "手動啟動", category: "觸發器", description: "由使用者手動開始 workflow" },
@@ -192,6 +192,9 @@ export function resolveConnectionKind(
   targetHandle?: string | null,
 ): WorkflowEdgeKind | null {
   if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) return null
+  if (sourceHandle === "delegation" && sourceNode.type === "resource.agent" && targetNode.type === "resource.agent" && targetHandle === "subagent") {
+    return "delegation"
+  }
   if (sourceHandle === "capability" && sourceNode.type.startsWith("resource.") && targetNode.type.startsWith("resource.") && targetHandle === capabilityTargetHandle(targetNode.type)) {
     if (sourceNode.type === "resource.command" && targetNode.type === "resource.agent") return "capability"
     if (sourceNode.type === "resource.agent" && ["resource.skill", "resource.tool", "resource.mcp", "resource.plugin"].includes(targetNode.type)) return "capability"
@@ -221,6 +224,18 @@ export function createCapabilityEdge(source: WorkflowNode, target: WorkflowNode,
     kind,
     sourceHandle: "capability",
     targetHandle: capabilityTargetHandle(target.type) ?? undefined,
+  }
+}
+
+export function createDelegationEdge(source: WorkflowNode, target: WorkflowNode, id = `edge-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`): WorkflowEdge | null {
+  if (source.type !== "resource.agent" || target.type !== "resource.agent" || source.id === target.id) return null
+  return {
+    id,
+    source: source.id,
+    target: target.id,
+    kind: "delegation",
+    sourceHandle: "delegation",
+    targetHandle: "subagent",
   }
 }
 
@@ -256,22 +271,84 @@ export function syncCommandNodeToAgent(command: WorkflowNode, agent: WorkflowNod
   }
 }
 
+export function syncAgentContentWithDelegations(content: string | undefined, mode: "primary" | "subagent", delegatedAgents: string[]): string {
+  const source = content ?? ""
+  const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
+  const frontmatter = match?.[1]?.split(/\r?\n/) ?? []
+  const body = match ? source.slice(match[0].length) : source
+  setFrontmatterValue(frontmatter, "mode", mode)
+  setPermissionTask(frontmatter, delegatedAgents)
+  return `---\n${frontmatter.filter(Boolean).join("\n")}\n---\n${body}`
+}
+
+export function syncWorkflowAgentConfigs(workflow: WorkflowV1): WorkflowV1 {
+  const command = workflow.nodes.find((node) => node.type === "resource.command")
+  const primaryEdge = command && workflow.edges.find((edge) => edge.kind === "capability" && edge.source === command.id && edge.targetHandle === "agent")
+  const primaryID = primaryEdge?.target
+  const delegatedByAgent = new Map<string, string[]>()
+  for (const edge of workflow.edges) {
+    if (edge.kind !== "delegation") continue
+    const target = workflow.nodes.find((node) => node.id === edge.target && node.type === "resource.agent")
+    if (!target) continue
+    delegatedByAgent.set(edge.source, [...(delegatedByAgent.get(edge.source) ?? []), (target.data as ResourceNodeData).name])
+  }
+  return {
+    ...workflow,
+    nodes: workflow.nodes.map((node) => {
+      if (node.type !== "resource.agent") return node
+      const data = node.data as ResourceNodeData
+      if (data.mode !== "managed") return node
+      const mode = node.id === primaryID ? "primary" : "subagent"
+      return { ...node, data: { ...data, content: syncAgentContentWithDelegations(data.content, mode, delegatedByAgent.get(node.id) ?? []) } }
+    }),
+  }
+}
+
+export function workflowUsesV2(workflow: WorkflowV1): boolean {
+  return workflow.schemaVersion === WORKFLOW_V2_SCHEMA_VERSION
+    || workflow.nodes.filter((node) => node.type === "resource.agent").length > 1
+    || workflow.edges.some((edge) => edge.kind === "delegation")
+}
+
+export function normalizeWorkflowSchemaVersion(workflow: WorkflowV1): WorkflowV1 {
+  return workflowUsesV2(workflow) ? { ...workflow, schemaVersion: WORKFLOW_V2_SCHEMA_VERSION } : workflow
+}
+
 export function getWorkflowAppReadiness(workflow: WorkflowV1) {
   const commands = workflow.nodes.filter((node) => node.type === "resource.command")
   const agents = workflow.nodes.filter((node) => node.type === "resource.agent")
   const errors: string[] = []
-  if (commands.length !== 1) errors.push(commands.length === 0 ? "請建立一個 Command。" : "V1 Agent App 只能有一個 Command。")
-  if (agents.length !== 1) errors.push(agents.length === 0 ? "請建立一個 Agent。" : "V1 Agent App 只能有一個 Agent。")
+  if (commands.length !== 1) errors.push(commands.length === 0 ? "請建立一個 Command。" : "Agent App 只能有一個 Command。")
+  if (agents.length === 0) errors.push("請建立一個 Agent。")
   const command = commands[0]
-  const agent = agents[0]
-  const commandAgentEdges = workflow.edges.filter((edge) => edge.kind === "capability" && edge.source === command?.id && edge.target === agent?.id && edge.sourceHandle === "capability" && edge.targetHandle === "agent")
-  if (command && agent && commandAgentEdges.length !== 1) errors.push("請將 Command 連到唯一的 Agent。")
+  const commandAgentEdges = workflow.edges.filter((edge) => edge.kind === "capability" && edge.source === command?.id && edge.sourceHandle === "capability" && edge.targetHandle === "agent" && agents.some((agent) => agent.id === edge.target))
+  if (command && commandAgentEdges.length !== 1) errors.push("請將 Command 連到唯一的 primary Agent。")
   return {
     ready: errors.length === 0,
     errors,
     commandNodeID: command?.id,
-    agentNodeID: agent?.id,
+    agentNodeID: commandAgentEdges[0]?.target,
   }
+}
+
+export function wouldCreateDelegationCycle(edges: WorkflowEdge[], source: string, target: string) {
+  const adjacency = new Map<string, string[]>()
+  for (const edge of edges) {
+    if (edge.kind !== "delegation") continue
+    adjacency.set(edge.source, [...(adjacency.get(edge.source) ?? []), edge.target])
+  }
+  adjacency.set(source, [...(adjacency.get(source) ?? []), target])
+  const visited = new Set<string>()
+  const stack = [target]
+  while (stack.length) {
+    const current = stack.pop()
+    if (!current) continue
+    if (current === source) return true
+    if (visited.has(current)) continue
+    visited.add(current)
+    stack.push(...(adjacency.get(current) ?? []))
+  }
+  return false
 }
 
 export function wouldCreateControlCycle(edges: WorkflowEdge[], source: string, target: string) {
@@ -299,6 +376,7 @@ export function getEdgeLabel(kind: WorkflowEdgeKind) {
     control: "控制",
     binding: "綁定",
     capability: "能力",
+    delegation: "委派",
     data: "資料",
     "condition.true": "成立",
     "condition.false": "不成立",
@@ -310,16 +388,23 @@ export function projectWorkflowRelationships(workflow: WorkflowV1): WorkflowRela
   const nodes = new Map(workflow.nodes.map((node) => [node.id, node]))
   const commandAgents: WorkflowRelationshipProjection["commandAgents"] = []
   const agentCapabilities: WorkflowRelationshipProjection["agentCapabilities"] = []
+  const agentDelegations: WorkflowRelationshipProjection["agentDelegations"] = []
   const capabilitiesByAgent = new Map<string, WorkflowRelationshipProjection["agentApps"][number]["capabilities"]>()
+  const delegationsByAgent = new Map<string, string[]>()
 
-  for (const edge of workflow.edges.filter((item) => item.kind === "capability")) {
+  for (const edge of workflow.edges.filter((item) => item.kind === "capability" || item.kind === "delegation")) {
     const source = nodes.get(edge.source)
     const target = nodes.get(edge.target)
     if (!source?.type.startsWith("resource.") || !target?.type.startsWith("resource.")) continue
     const sourceData = source.data as ResourceNodeData
     const targetData = target.data as ResourceNodeData
-    if (source.type === "resource.command" && target.type === "resource.agent") {
+    if (edge.kind === "capability" && source.type === "resource.command" && target.type === "resource.agent") {
       commandAgents.push({ command: sourceData.name, agent: targetData.name, commandNodeID: source.id, agentNodeID: target.id, source: "workflow" })
+      continue
+    }
+    if (edge.kind === "delegation" && source.type === "resource.agent" && target.type === "resource.agent") {
+      agentDelegations.push({ parent: sourceData.name, child: targetData.name, parentNodeID: source.id, childNodeID: target.id, source: "workflow" })
+      delegationsByAgent.set(source.id, [...(delegationsByAgent.get(source.id) ?? []), targetData.name])
       continue
     }
     if (source.type !== "resource.agent") continue
@@ -334,6 +419,7 @@ export function projectWorkflowRelationships(workflow: WorkflowV1): WorkflowRela
   return {
     commandAgents,
     agentCapabilities,
+    agentDelegations,
     agentApps: commandAgents.map((relationship) => ({
       id: `${relationship.commandNodeID}->${relationship.agentNodeID}`,
       command: relationship.command,
@@ -341,6 +427,7 @@ export function projectWorkflowRelationships(workflow: WorkflowV1): WorkflowRela
       commandNodeID: relationship.commandNodeID,
       agentNodeID: relationship.agentNodeID,
       capabilities: capabilitiesByAgent.get(relationship.agentNodeID ?? "") ?? emptyCapabilityMap(),
+      delegatedAgents: delegationsByAgent.get(relationship.agentNodeID ?? "") ?? [],
       source: "workflow" as const,
     })),
   }
@@ -365,6 +452,30 @@ function setFrontmatterValue(lines: string[], key: string, value?: string) {
   const next = `${key}: ${value}`
   if (index >= 0) lines[index] = next
   else lines.push(next)
+}
+
+function setPermissionTask(lines: string[], delegatedAgents: string[]) {
+  const permissionIndex = lines.findIndex((line) => line.trim() === "permission:")
+  const taskLines = ["  task:", ...(delegatedAgents.length > 0 ? ["    \"*\": deny", ...delegatedAgents.map((name) => `    ${JSON.stringify(name)}: allow`)] : ["    \"*\": deny"])]
+  if (permissionIndex < 0) {
+    lines.push("permission:", ...taskLines)
+    return
+  }
+  let end = permissionIndex + 1
+  while (end < lines.length && (lines[end]?.startsWith(" ") || !lines[end]?.trim())) end += 1
+  const permissionLines = lines.slice(permissionIndex + 1, end)
+  const filtered: string[] = []
+  for (let index = 0; index < permissionLines.length; index += 1) {
+    const line = permissionLines[index] ?? ""
+    if (line.trim() !== "task:") {
+      filtered.push(line)
+      continue
+    }
+    index += 1
+    while (index < permissionLines.length && (permissionLines[index]?.startsWith(" ") || !permissionLines[index]?.trim())) index += 1
+    index -= 1
+  }
+  lines.splice(permissionIndex + 1, end - permissionIndex - 1, ...filtered.filter(Boolean), ...taskLines)
 }
 
 function emptyCapabilityMap(): WorkflowRelationshipProjection["agentApps"][number]["capabilities"] {
@@ -398,7 +509,8 @@ function createManagedResourceData(
     return { mode: "managed", name, scope, content: `---\nname: ${name}\ndescription: Managed workflow skill\n---\n\n# Instructions\n\nDescribe the skill here.\n` }
   }
   if (type === "resource.agent" || type === "resource.command") {
-    return { mode: "managed", name, scope, content: `---\ndescription: Managed workflow ${type.split(".")[1]}\n---\n\nDescribe the instructions here.\n` }
+    const mode = type === "resource.agent" ? "mode: primary\n" : ""
+    return { mode: "managed", name, scope, content: `---\ndescription: Managed workflow ${type.split(".")[1]}\n${mode}---\n\nDescribe the instructions here.\n` }
   }
   return { mode: "managed", name, scope, content: "export default {}\n" }
 }

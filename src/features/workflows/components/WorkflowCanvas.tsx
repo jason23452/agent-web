@@ -16,7 +16,7 @@ import {
 import "@xyflow/react/dist/style.css"
 import { AlertTriangleIcon, MousePointer2Icon } from "lucide-react"
 import type { WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition } from "@/features/workflows/types"
-import { getEdgeLabel, resolveConnectionKind, wouldCreateControlCycle } from "@/features/workflows/workflowUtils"
+import { getEdgeLabel, resolveConnectionKind, wouldCreateControlCycle, wouldCreateDelegationCycle } from "@/features/workflows/workflowUtils"
 import { WorkflowNodeCard, type WorkflowCanvasNode, type WorkflowCanvasNodeData } from "@/features/workflows/components/WorkflowNodeCard"
 
 type WorkflowCanvasEdge = Edge<{ kind: WorkflowEdge["kind"] }>
@@ -108,6 +108,11 @@ function WorkflowCanvasInner({
     const kind = resolveConnectionKind(sourceNode, targetNode, connection.sourceHandle, connection.targetHandle)
     if (!kind) return false
     if (kind === "control" && connection.source && connection.target && wouldCreateControlCycle(edges, connection.source, connection.target)) return false
+    if (kind === "delegation" && connection.source && connection.target) {
+      const command = nodes.find((node) => node.type === "resource.command")
+      const primaryID = command && edges.find((edge) => edge.kind === "capability" && edge.source === command.id && edge.targetHandle === "agent")?.target
+      if (connection.target === primaryID || wouldCreateDelegationCycle(edges, connection.source, connection.target)) return false
+    }
     return !edges.some(
       (edge) =>
         edge.source === connection.source &&
