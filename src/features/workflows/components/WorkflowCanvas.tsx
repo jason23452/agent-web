@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState, type DragEvent } from "react"
+import { startTransition, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import {
+  applyEdgeChanges,
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   Controls,
@@ -22,6 +24,68 @@ import { WorkflowNodeCard, type WorkflowCanvasNode, type WorkflowCanvasNodeData 
 type WorkflowCanvasEdge = Edge<{ kind: WorkflowEdge["kind"] }>
 
 const nodeTypes = { "workflow-node": WorkflowNodeCard }
+
+type CanvasCallbacks = {
+  onDelete: (nodeID: string) => void
+  onDuplicate: (nodeID: string) => void
+  onLockToggle: (nodeID: string) => void
+}
+
+function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, callbacks: CanvasCallbacks): WorkflowCanvasNode[] {
+  return nodes.map((node) => ({
+    id: node.id,
+    type: "workflow-node",
+    position: node.position,
+    selected: node.id === selectedNodeID,
+    data: {
+      workflowNode: node,
+      onDelete: callbacks.onDelete,
+      onDuplicate: callbacks.onDuplicate,
+      onLockToggle: callbacks.onLockToggle,
+    } satisfies WorkflowCanvasNodeData,
+  }))
+}
+
+function mergeCanvasNodes(current: WorkflowCanvasNode[], next: WorkflowCanvasNode[]): WorkflowCanvasNode[] {
+  const currentByID = new Map(current.map((node) => [node.id, node]))
+  return next.map((node) => {
+    const previous = currentByID.get(node.id)
+    if (!previous) return node
+    if (previous.data.workflowNode === node.data.workflowNode && previous.data.onDelete === node.data.onDelete && previous.data.onDuplicate === node.data.onDuplicate && previous.data.onLockToggle === node.data.onLockToggle && previous.selected === node.selected && previous.position.x === node.position.x && previous.position.y === node.position.y) return previous
+    return {
+      ...node,
+      width: previous.width,
+      height: previous.height,
+      measured: previous.measured,
+    }
+  })
+}
+
+function buildCanvasEdges(edges: WorkflowEdge[], selectedEdgeID: string | null): WorkflowCanvasEdge[] {
+  return edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+    selected: edge.id === selectedEdgeID,
+    type: "smoothstep",
+    label: getEdgeLabel(edge.kind),
+    className: `workflow-edge workflow-edge--${edge.kind.replace(".", "-")}`,
+    markerEnd: { type: MarkerType.ArrowClosed },
+    data: { kind: edge.kind },
+  }))
+}
+
+function mergeCanvasEdges(current: WorkflowCanvasEdge[], next: WorkflowCanvasEdge[]): WorkflowCanvasEdge[] {
+  const currentByID = new Map(current.map((edge) => [edge.id, edge]))
+  return next.map((edge) => {
+    const previous = currentByID.get(edge.id)
+    if (!previous) return edge
+    if (previous.source === edge.source && previous.target === edge.target && previous.sourceHandle === edge.sourceHandle && previous.targetHandle === edge.targetHandle && previous.selected === edge.selected) return previous
+    return { ...previous, ...edge }
+  })
+}
 
 type WorkflowCanvasProps = {
   edges: WorkflowEdge[]
@@ -67,40 +131,24 @@ function WorkflowCanvasInner({
   const [instance, setInstance] = useState<ReactFlowInstance<WorkflowCanvasNode, WorkflowCanvasEdge> | null>(null)
   const [connectionFeedback, setConnectionFeedback] = useState("")
   const connectionCommittedRef = useRef(false)
+  const canvasCallbacks = useMemo<CanvasCallbacks>(() => ({
+    onDelete: (nodeID) => onDeleteNodes([nodeID]),
+    onDuplicate: onDuplicateNode,
+    onLockToggle: onLockNode,
+  }), [onDeleteNodes, onDuplicateNode, onLockNode])
 
-  const canvasNodes = useMemo<WorkflowCanvasNode[]>(
-    () =>
-      nodes.map((node) => ({
-        id: node.id,
-        type: "workflow-node",
-        position: node.position,
-        selected: node.id === selectedNodeID,
-        data: {
-          workflowNode: node,
-          onDelete: (nodeID: string) => onDeleteNodes([nodeID]),
-          onDuplicate: onDuplicateNode,
-          onLockToggle: onLockNode,
-        } satisfies WorkflowCanvasNodeData,
-      })),
-    [nodes, onDeleteNodes, onDuplicateNode, onLockNode, selectedNodeID],
-  )
-  const canvasEdges = useMemo<WorkflowCanvasEdge[]>(
-    () =>
-      edges.map((edge) => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle,
-        selected: edge.id === selectedEdgeID,
-        type: "smoothstep",
-        label: getEdgeLabel(edge.kind),
-        className: `workflow-edge workflow-edge--${edge.kind.replace(".", "-")}`,
-        markerEnd: { type: MarkerType.ArrowClosed },
-        data: { kind: edge.kind },
-      })),
-    [edges, selectedEdgeID],
-  )
+  const [canvasNodes, setCanvasNodes] = useState<WorkflowCanvasNode[]>(() => buildCanvasNodes(nodes, selectedNodeID, canvasCallbacks))
+  const [canvasEdges, setCanvasEdges] = useState<WorkflowCanvasEdge[]>(() => buildCanvasEdges(edges, selectedEdgeID))
+
+  useEffect(() => {
+    const nextNodes = buildCanvasNodes(nodes, selectedNodeID, canvasCallbacks)
+    startTransition(() => setCanvasNodes((current) => mergeCanvasNodes(current, nextNodes)))
+  }, [canvasCallbacks, nodes, selectedNodeID])
+
+  useEffect(() => {
+    const nextEdges = buildCanvasEdges(edges, selectedEdgeID)
+    startTransition(() => setCanvasEdges((current) => mergeCanvasEdges(current, nextEdges)))
+  }, [edges, selectedEdgeID])
 
   function validateConnection(connection: Connection | WorkflowCanvasEdge) {
     const sourceNode = nodes.find((node) => node.id === connection.source)
@@ -141,6 +189,7 @@ function WorkflowCanvasInner({
   }
 
   function handleNodeChanges(changes: NodeChange<WorkflowCanvasNode>[]) {
+    setCanvasNodes((current) => applyNodeChanges(changes, current))
     const removed = changes.filter((change) => change.type === "remove").map((change) => change.id)
     if (removed.length) onDeleteNodes(removed)
     const moved = changes.flatMap((change) =>
@@ -150,6 +199,7 @@ function WorkflowCanvasInner({
   }
 
   function handleEdgeChanges(changes: EdgeChange<WorkflowCanvasEdge>[]) {
+    setCanvasEdges((current) => applyEdgeChanges(changes, current))
     const removed = changes.filter((change) => change.type === "remove").map((change) => change.id)
     if (removed.length) onDeleteEdges(removed)
   }
