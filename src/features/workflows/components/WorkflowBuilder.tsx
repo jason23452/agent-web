@@ -35,7 +35,7 @@ const RIGHT_TABS = [
   { id: "json", label: "JSON", icon: BracesIcon },
 ] satisfies Array<{ id: RightTab; label: string; icon: typeof PlusIcon }>
 
-export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelOptions?: ModelOption[]; onBack: () => void; project?: string }) {
+export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelOptions?: ModelOption[]; onBack: () => void; project: string }) {
   const builder = useWorkflowBuilder(project)
   const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null)
   const [selectedEdgeID, setSelectedEdgeID] = useState<string | null>(null)

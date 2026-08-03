@@ -21,6 +21,7 @@ export type AppSidebarProps = {
   onRefreshProjects: () => Promise<void>;
   onRestartOpenCode: (reason: string) => Promise<void>;
   onWorkflowOpen: () => void;
+  workspaceActive: boolean;
   modelOptions?: ModelOption[];
   open: boolean;
   onClose: () => void;

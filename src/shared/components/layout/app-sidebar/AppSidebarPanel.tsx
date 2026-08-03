@@ -55,6 +55,7 @@ type AppSidebarPanelProps = {
   open: boolean;
   sessionsError?: string | null;
   sessionsLoading?: boolean;
+  workspaceActive: boolean;
 };
 
 export function AppSidebarPanel({
@@ -76,6 +77,7 @@ export function AppSidebarPanel({
   open,
   sessionsError,
   sessionsLoading = false,
+  workspaceActive,
 }: AppSidebarPanelProps) {
   return (
     <Sidebar
@@ -103,7 +105,7 @@ export function AppSidebarPanel({
               <li key={item.label}>
                 <button
                   className={`flex min-h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${item.key === "new" ? "bg-accent text-accent-foreground" : "text-foreground"}`}
-                  disabled={item.key === "new" && sessionsLoading}
+                  disabled={(item.key === "new" && sessionsLoading) || (item.key === "workflows" && !workspaceActive)}
                   onClick={() => {
                     if (item.key === "new") onCreateSession();
                     if (item.key === "projects") onProjectOpen();
@@ -112,6 +114,7 @@ export function AppSidebarPanel({
                     if (item.key === "agents") onAgentsOpen();
                     if (item.key === "workflows") onWorkflowOpen();
                   }}
+                  title={item.key === "workflows" && !workspaceActive ? "請先開啟一個 workspace" : undefined}
                   type="button"
                 >
                   <Icon aria-hidden="true" className="size-4" />

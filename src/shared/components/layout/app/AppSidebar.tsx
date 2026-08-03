@@ -872,6 +872,7 @@ export function AppSidebar({
   sessions,
   sessionsError,
   sessionsLoading = false,
+  workspaceActive,
 }: AppSidebarProps) {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectDialogView, setProjectDialogView] =
@@ -4408,6 +4409,7 @@ export function AppSidebar({
         open={open}
         sessionsError={sessionsError}
         sessionsLoading={sessionsLoading}
+        workspaceActive={workspaceActive}
       />
 
       <ProjectDialog

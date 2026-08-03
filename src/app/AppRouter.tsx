@@ -33,7 +33,8 @@ export function AppRouter() {
   const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const checkedProjectName = route.name === "workspaceProject" ? route.projectName : null
+  const workflowProjectName = route.name === "workflows" ? route.projectName : undefined
+  const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" ? route.projectName ?? null : null
   const workspaceData = useWorkspaceData({ checkedProjectName, navigateToRoute })
   const {
     activeAgent, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId,
@@ -104,6 +105,11 @@ export function AppRouter() {
     return () => window.clearTimeout(timeoutId)
   }, [selectedThinkingVariantIsAvailable, thinkingVariantKeys])
 
+  useEffect(() => {
+    if (route.name !== "workflows" || workflowProjectName) return
+    navigateToRoute({ name: "workspace" }, { replace: true })
+  }, [navigateToRoute, route.name, workflowProjectName])
+
   const deleteProject = useCallback((project: Parameters<typeof deleteWorkspaceProject>[0]) => {
     return deleteWorkspaceProject(project, getProjectRouteName(project.path), route)
   }, [deleteWorkspaceProject, route])
@@ -127,7 +133,11 @@ export function AppRouter() {
     setPreviewFile(null)
   }
 
-  if (route.name === "workflows") {
+  if (route.name === "workflows" && !route.projectName) {
+    return <div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground" role="status">正在返回 Workspace...</div>
+  }
+
+  if (route.name === "workflows" && route.projectName) {
     return (
       <Suspense fallback={<div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground" role="status">正在載入 Workflow Builder...</div>}>
         <WorkflowsRoute
@@ -209,16 +219,23 @@ export function AppRouter() {
            onProjectChange={changeProject}
           onRefreshProjects={refreshProjects}
            onRestartOpenCode={workspaceData.restartOpenCodeServer}
-          onWorkflowOpen={() => navigateToWorkflows(checkedProjectName ?? (activeProjectPath ? getProjectRouteName(activeProjectPath) : undefined))}
+           onWorkflowOpen={() => {
+             if (!activeProjectPath) {
+               navigateToRoute({ name: "workspace" })
+               return
+             }
+             navigateToWorkflows(getProjectRouteName(activeProjectPath))
+           }}
           onSelectSession={selectSession}
           open={sidebarOpen}
           projects={projects}
           projectsError={projectsError}
           projectsLoading={projectsLoading}
           sessions={projectSessions}
-          sessionsError={sessionsError}
-          sessionsLoading={sessionsLoading}
-        />
+           sessionsError={sessionsError}
+           sessionsLoading={sessionsLoading}
+           workspaceActive={Boolean(activeProjectPath)}
+         />
       }
       sidebarOpen={sidebarOpen}
       topNav={

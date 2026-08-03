@@ -5,6 +5,6 @@ import "@/features/workflows/workflow.css"
 
 export { WORKFLOWS_ROUTE_PATH }
 
-export function WorkflowsRoute({ modelOptions = [], onBack, project }: { modelOptions?: ModelOption[]; onBack: () => void; project?: string }) {
+export function WorkflowsRoute({ modelOptions = [], onBack, project }: { modelOptions?: ModelOption[]; onBack: () => void; project: string }) {
   return <WorkflowBuilder key={project ?? "global"} modelOptions={modelOptions} onBack={onBack} project={project} />
 }
