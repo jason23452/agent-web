@@ -18,7 +18,7 @@ import {
 import "@xyflow/react/dist/style.css"
 import { AlertTriangleIcon, MousePointer2Icon } from "lucide-react"
 import type { WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition } from "@/features/workflows/types"
-import { getEdgeLabel, resolveConnectionKind, wouldCreateControlCycle, wouldCreateDelegationCycle } from "@/features/workflows/workflowUtils"
+import { getEdgeLabel, resolveConnectionKind, validateWorkflowAgentEdge, wouldCreateControlCycle } from "@/features/workflows/workflowUtils"
 import { WorkflowNodeCard, type WorkflowCanvasNode, type WorkflowCanvasNodeData } from "@/features/workflows/components/WorkflowNodeCard"
 
 type WorkflowCanvasEdge = Edge<{ kind: WorkflowEdge["kind"] }>
@@ -31,7 +31,7 @@ type CanvasCallbacks = {
   onLockToggle: (nodeID: string) => void
 }
 
-function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, callbacks: CanvasCallbacks): WorkflowCanvasNode[] {
+function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, currentAgentID: string | null, callbacks: CanvasCallbacks): WorkflowCanvasNode[] {
   return nodes.map((node) => ({
     id: node.id,
     type: "workflow-node",
@@ -39,6 +39,7 @@ function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, 
     selected: node.id === selectedNodeID,
     data: {
       workflowNode: node,
+      currentAgentID,
       onDelete: callbacks.onDelete,
       onDuplicate: callbacks.onDuplicate,
       onLockToggle: callbacks.onLockToggle,
@@ -51,7 +52,7 @@ function mergeCanvasNodes(current: WorkflowCanvasNode[], next: WorkflowCanvasNod
   return next.map((node) => {
     const previous = currentByID.get(node.id)
     if (!previous) return node
-    if (previous.data.workflowNode === node.data.workflowNode && previous.data.onDelete === node.data.onDelete && previous.data.onDuplicate === node.data.onDuplicate && previous.data.onLockToggle === node.data.onLockToggle && previous.selected === node.selected && previous.position.x === node.position.x && previous.position.y === node.position.y) return previous
+    if (previous.data.workflowNode === node.data.workflowNode && previous.data.currentAgentID === node.data.currentAgentID && previous.data.onDelete === node.data.onDelete && previous.data.onDuplicate === node.data.onDuplicate && previous.data.onLockToggle === node.data.onLockToggle && previous.selected === node.selected && previous.position.x === node.position.x && previous.position.y === node.position.y) return previous
     return {
       ...node,
       width: previous.width,
@@ -61,7 +62,7 @@ function mergeCanvasNodes(current: WorkflowCanvasNode[], next: WorkflowCanvasNod
   })
 }
 
-function buildCanvasEdges(edges: WorkflowEdge[], selectedEdgeID: string | null): WorkflowCanvasEdge[] {
+function buildCanvasEdges(edges: WorkflowEdge[], nodes: WorkflowNode[], currentAgentID: string | null, selectedEdgeID: string | null): WorkflowCanvasEdge[] {
   return edges.map((edge) => ({
     id: edge.id,
     source: edge.source,
@@ -71,10 +72,22 @@ function buildCanvasEdges(edges: WorkflowEdge[], selectedEdgeID: string | null):
     selected: edge.id === selectedEdgeID,
     type: "smoothstep",
     label: getEdgeLabel(edge.kind),
-    className: `workflow-edge workflow-edge--${edge.kind.replace(".", "-")}`,
+    className: `workflow-edge workflow-edge--${edgePresentation(edge, nodes, currentAgentID)}`,
     markerEnd: { type: MarkerType.ArrowClosed },
     data: { kind: edge.kind },
   }))
+}
+
+function edgePresentation(edge: WorkflowEdge, nodes: WorkflowNode[], currentAgentID: string | null) {
+  if (edge.kind === "primary-link") return "primary-link"
+  if (edge.kind === "delegation") return "delegation"
+  if (edge.kind === "capability") {
+    const source = nodes.find((node) => node.id === edge.source)
+    const target = nodes.find((node) => node.id === edge.target)
+    if (source?.type === "resource.command" && target?.type === "resource.agent") return "entry"
+    if (source?.type === "resource.agent") return source.id === currentAgentID ? "current-capability" : "capability-muted"
+  }
+  return edge.kind.replace(".", "-")
 }
 
 function mergeCanvasEdges(current: WorkflowCanvasEdge[], next: WorkflowCanvasEdge[]): WorkflowCanvasEdge[] {
@@ -82,7 +95,7 @@ function mergeCanvasEdges(current: WorkflowCanvasEdge[], next: WorkflowCanvasEdg
   return next.map((edge) => {
     const previous = currentByID.get(edge.id)
     if (!previous) return edge
-    if (previous.source === edge.source && previous.target === edge.target && previous.sourceHandle === edge.sourceHandle && previous.targetHandle === edge.targetHandle && previous.selected === edge.selected) return previous
+    if (previous.source === edge.source && previous.target === edge.target && previous.sourceHandle === edge.sourceHandle && previous.targetHandle === edge.targetHandle && previous.selected === edge.selected && previous.className === edge.className && previous.label === edge.label) return previous
     return { ...previous, ...edge }
   })
 }
@@ -102,6 +115,7 @@ type WorkflowCanvasProps = {
   onOpenNodeDetails: (nodeID: string) => void
   onSelectEdge: (edgeID: string | null) => void
   onSelectNode: (nodeID: string | null) => void
+  currentAgentID: string | null
 }
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
@@ -127,6 +141,7 @@ function WorkflowCanvasInner({
   onOpenNodeDetails,
   onSelectEdge,
   onSelectNode,
+  currentAgentID,
 }: WorkflowCanvasProps) {
   const [instance, setInstance] = useState<ReactFlowInstance<WorkflowCanvasNode, WorkflowCanvasEdge> | null>(null)
   const [connectionFeedback, setConnectionFeedback] = useState("")
@@ -137,18 +152,18 @@ function WorkflowCanvasInner({
     onLockToggle: onLockNode,
   }), [onDeleteNodes, onDuplicateNode, onLockNode])
 
-  const [canvasNodes, setCanvasNodes] = useState<WorkflowCanvasNode[]>(() => buildCanvasNodes(nodes, selectedNodeID, canvasCallbacks))
-  const [canvasEdges, setCanvasEdges] = useState<WorkflowCanvasEdge[]>(() => buildCanvasEdges(edges, selectedEdgeID))
+  const [canvasNodes, setCanvasNodes] = useState<WorkflowCanvasNode[]>(() => buildCanvasNodes(nodes, selectedNodeID, currentAgentID, canvasCallbacks))
+  const [canvasEdges, setCanvasEdges] = useState<WorkflowCanvasEdge[]>(() => buildCanvasEdges(edges, nodes, currentAgentID, selectedEdgeID))
 
   useEffect(() => {
-    const nextNodes = buildCanvasNodes(nodes, selectedNodeID, canvasCallbacks)
+    const nextNodes = buildCanvasNodes(nodes, selectedNodeID, currentAgentID, canvasCallbacks)
     startTransition(() => setCanvasNodes((current) => mergeCanvasNodes(current, nextNodes)))
-  }, [canvasCallbacks, nodes, selectedNodeID])
+  }, [canvasCallbacks, currentAgentID, nodes, selectedNodeID])
 
   useEffect(() => {
-    const nextEdges = buildCanvasEdges(edges, selectedEdgeID)
+    const nextEdges = buildCanvasEdges(edges, nodes, currentAgentID, selectedEdgeID)
     startTransition(() => setCanvasEdges((current) => mergeCanvasEdges(current, nextEdges)))
-  }, [edges, selectedEdgeID])
+  }, [currentAgentID, edges, nodes, selectedEdgeID])
 
   function validateConnection(connection: Connection | WorkflowCanvasEdge) {
     const sourceNode = nodes.find((node) => node.id === connection.source)
@@ -156,10 +171,16 @@ function WorkflowCanvasInner({
     const kind = resolveConnectionKind(sourceNode, targetNode, connection.sourceHandle, connection.targetHandle)
     if (!kind) return false
     if (kind === "control" && connection.source && connection.target && wouldCreateControlCycle(edges, connection.source, connection.target)) return false
-    if (kind === "delegation" && connection.source && connection.target) {
-      const command = nodes.find((node) => node.type === "resource.command")
-      const primaryID = command && edges.find((edge) => edge.kind === "capability" && edge.source === command.id && edge.targetHandle === "agent")?.target
-      if (connection.target === primaryID || wouldCreateDelegationCycle(edges, connection.source, connection.target)) return false
+    if ((kind === "delegation" || kind === "primary-link") && connection.source && connection.target) {
+      const error = validateWorkflowAgentEdge({ nodes, edges }, {
+        id: "connection-preview",
+        source: connection.source,
+        target: connection.target,
+        kind,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+      })
+      if (error) return false
     }
     return !edges.some(
       (edge) =>
@@ -176,6 +197,20 @@ function WorkflowCanvasInner({
     const targetNode = nodes.find((node) => node.id === connection.target)
     const kind = resolveConnectionKind(sourceNode, targetNode, connection.sourceHandle, connection.targetHandle)
     if (!kind) return
+    if ((kind === "delegation" || kind === "primary-link") && connection.source && connection.target) {
+      const error = validateWorkflowAgentEdge({ nodes, edges }, {
+        id: "connection-preview",
+        source: connection.source,
+        target: connection.target,
+        kind,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+      })
+      if (error) {
+        setConnectionFeedback(error)
+        return
+      }
+    }
     connectionCommittedRef.current = true
     setConnectionFeedback("")
     onAddEdge({
@@ -266,7 +301,12 @@ function WorkflowCanvasInner({
       >
         <Background color="var(--border)" gap={22} size={1.2} variant={BackgroundVariant.Dots} />
         <Controls aria-label="畫布縮放與檢視控制" position="bottom-left" />
-        <MiniMap ariaLabel="Workflow 縮圖" maskColor="color-mix(in srgb, var(--background) 72%, transparent)" nodeColor="var(--muted-foreground)" pannable zoomable />
+         <MiniMap ariaLabel="Workflow 縮圖" maskColor="color-mix(in srgb, var(--background) 72%, transparent)" nodeColor="var(--muted-foreground)" pannable zoomable />
+         <div aria-label="Workflow 連線圖例" className="pointer-events-none absolute right-4 top-4 z-10 grid gap-1.5 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm">
+           <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--green" />Agent-to-Agent</span>
+           <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--yellow" />目前 Agent capabilities</span>
+           <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--blue" />Command entry</span>
+         </div>
         <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-muted-foreground text-xs shadow-sm backdrop-blur-sm">
           <MousePointer2Icon aria-hidden="true" className="size-3.5" />
            單擊選取 · 雙擊開啟詳細配置 · 拉動 handle 建立連線

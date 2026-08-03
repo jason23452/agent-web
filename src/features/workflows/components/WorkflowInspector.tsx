@@ -294,7 +294,7 @@ function ResourceInspector({
 function CapabilitySummary({ edges, node, nodes }: { edges: WorkflowEdge[]; node: WorkflowNode; nodes: WorkflowNode[] }) {
   if (!node.type.startsWith("resource.")) return null
   const related = edges
-    .filter((edge) => (edge.kind === "capability" || edge.kind === "delegation") && (edge.source === node.id || edge.target === node.id))
+    .filter((edge) => (edge.kind === "capability" || edge.kind === "primary-link" || edge.kind === "delegation") && (edge.source === node.id || edge.target === node.id))
     .map((edge) => {
       const otherID = edge.source === node.id ? edge.target : edge.source
       const other = nodes.find((candidate) => candidate.id === otherID)
@@ -304,7 +304,7 @@ function CapabilitySummary({ edges, node, nodes }: { edges: WorkflowEdge[]; node
     <InspectorGroup title="Agent relationships">
       {related.length ? (
         <ul className="grid gap-1.5">
-          {related.map(({ edge, other }) => <li className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-2 text-xs" key={edge.id}><span className="text-muted-foreground">{edge.kind === "delegation" ? "委派" : edge.source === node.id ? "使用" : "被使用"}</span><strong className="truncate">{other ? getWorkflowNodeTitle(other) : edge.source === node.id ? edge.target : edge.source}</strong></li>)}
+           {related.map(({ edge, other }) => <li className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-2 text-xs" key={edge.id}><span className="text-muted-foreground">{edge.kind === "delegation" ? "委派" : edge.kind === "primary-link" ? "Primary 連線" : edge.source === node.id ? "使用" : "被使用"}</span><strong className="truncate">{other ? getWorkflowNodeTitle(other) : edge.source === node.id ? edge.target : edge.source}</strong></li>)}
         </ul>
       ) : <p className="rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs">尚未建立 relationship。</p>}
       <p className="text-[11px] text-muted-foreground">Capability 是 declarative dependency；delegation 會投影為 OpenCode permission.task，兩者都不代表 runtime hard isolation。</p>
@@ -353,6 +353,7 @@ function EdgeInspector({ edge, nodes, onDeleteEdge, onUpdateEdge }: WorkflowInsp
           <InspectorField label="Kind">
             <select className="workflow-select" onChange={(event) => onUpdateEdge({ ...edge, kind: event.target.value as WorkflowEdge["kind"] })} value={edge.kind}>
                <option value="capability">capability</option>
+               <option value="primary-link">primary-link</option>
                <option value="delegation">delegation</option>
             </select>
           </InspectorField>

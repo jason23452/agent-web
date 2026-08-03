@@ -21,6 +21,7 @@ import { getWorkflowNodeSummary, getWorkflowNodeTitle, WORKFLOW_NODE_META } from
 
 export type WorkflowCanvasNodeData = Record<string, unknown> & {
   workflowNode: WorkflowNode
+  currentAgentID: string | null
   onDelete: (nodeID: string) => void
   onDuplicate: (nodeID: string) => void
   onLockToggle: (nodeID: string) => void
@@ -59,12 +60,19 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
   const node = data.workflowNode
   const Icon = TYPE_ICONS[node.type]
   const isResource = node.type.startsWith("resource.")
+  const isCurrentAgent = node.type === "resource.agent" && node.id === data.currentAgentID
+  const capabilitySourceClass = node.type === "resource.command"
+    ? "workflow-handle--entry"
+    : isCurrentAgent
+      ? "workflow-handle--current-capability"
+      : "workflow-handle--capability-muted"
 
   return (
     <article
       aria-label={`${getWorkflowNodeTitle(node)} 節點`}
       className={`workflow-node-card ${selected ? "workflow-node-card--selected" : ""}`}
       data-node-category={node.type.split(".")[0]}
+      data-current-agent={isCurrentAgent ? "true" : undefined}
     >
       <div className="flex items-start gap-3 p-3.5 pb-2.5">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-muted text-foreground">
@@ -90,10 +98,11 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
         </div>
       </footer>
 
-      {isResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
+      {isResource && <Handle className={`workflow-handle ${capabilitySourceClass}`} id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
       {isResource && CAPABILITY_TARGETS[node.type] && <Handle className="workflow-handle workflow-handle--capability" id={CAPABILITY_TARGETS[node.type]} position={Position.Left} style={{ top: 38 }} type="target" />}
       {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" position={Position.Right} style={{ top: 68 }} type="source" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="subagent" position={Position.Left} style={{ top: 68 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="primary" position={Position.Left} style={{ top: 68 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="subagent" position={Position.Left} style={{ top: 92 }} type="target" />}
     </article>
   )
 }

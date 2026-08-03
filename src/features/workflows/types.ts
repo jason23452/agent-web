@@ -1,12 +1,13 @@
 export const WORKFLOW_SCHEMA_VERSION = "agent-system.workflow.v1" as const
 export const WORKFLOW_V2_SCHEMA_VERSION = "agent-system.workflow.v2" as const
+export const WORKFLOW_V3_SCHEMA_VERSION = "agent-system.workflow.v3" as const
 
-export type WorkflowSchemaVersion = typeof WORKFLOW_SCHEMA_VERSION | typeof WORKFLOW_V2_SCHEMA_VERSION
+export type WorkflowSchemaVersion = typeof WORKFLOW_SCHEMA_VERSION | typeof WORKFLOW_V2_SCHEMA_VERSION | typeof WORKFLOW_V3_SCHEMA_VERSION
 export type WorkflowScope = "project" | "global"
 export type WorkflowTarget = "workflow-test" | "main"
 export type WorkflowSessionMode = "create" | "reuse-or-create"
 export type WorkflowResourceMode = "reference" | "managed"
-export type WorkflowEdgeKind = "control" | "binding" | "capability" | "delegation" | "data" | "condition.true" | "condition.false"
+export type WorkflowEdgeKind = "control" | "binding" | "capability" | "primary-link" | "delegation" | "data" | "condition.true" | "condition.false"
 export type WorkflowCapabilityKind = "skill" | "tool" | "mcp" | "plugin"
 export type WorkflowNodeType =
   | "trigger.manual"
@@ -163,6 +164,14 @@ export type WorkflowAgentDelegationRelationship = {
   source: "workflow"
 }
 
+export type WorkflowAgentPrimaryLinkRelationship = {
+  primary: string
+  linkedPrimary: string
+  primaryNodeID?: string
+  linkedPrimaryNodeID?: string
+  source: "workflow"
+}
+
 export type WorkflowAgentCapabilityRelationship = {
   agent: string
   kind: WorkflowCapabilityKind
@@ -186,6 +195,7 @@ export type WorkflowAgentAppSummary = {
 export type WorkflowRelationshipProjection = {
   commandAgents: WorkflowCommandAgentRelationship[]
   agentCapabilities: WorkflowAgentCapabilityRelationship[]
+  agentPrimaryLinks: WorkflowAgentPrimaryLinkRelationship[]
   agentDelegations: WorkflowAgentDelegationRelationship[]
   agentApps: WorkflowAgentAppSummary[]
 }
@@ -203,6 +213,7 @@ export type WorkflowValidationIssue =
 export type WorkflowValidationResult = {
   valid: boolean
   workflow?: WorkflowV1
+  relationships?: WorkflowRelationshipProjection
   errors: WorkflowValidationIssue[]
   warnings: WorkflowValidationIssue[]
 }
@@ -258,6 +269,7 @@ export type WorkflowPublishReport = {
     mcp: string[]
     plugins: string[]
     agentCapabilities: WorkflowAgentCapabilityRelationship[]
+    agentPrimaryLinks: WorkflowAgentPrimaryLinkRelationship[]
     agentDelegations: WorkflowAgentDelegationRelationship[]
     agentApps: WorkflowAgentAppSummary[]
     missing: Array<{ nodeID?: string; type: string; name: string }>

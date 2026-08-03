@@ -18,7 +18,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/shared/components/ui/badge"
 import { Input } from "@/shared/components/ui/input"
-import type { WorkflowPaletteItem, WorkflowResourceCatalog } from "@/features/workflows/types"
+import type { WorkflowNode, WorkflowPaletteItem, WorkflowResourceCatalog } from "@/features/workflows/types"
 import { buildPaletteItems, scopeLabel } from "@/features/workflows/workflowUtils"
 
 const TYPE_ICONS = {
@@ -47,13 +47,17 @@ type WorkflowPaletteProps = {
   error: string | null
   loading: boolean
   onAdd: (item: WorkflowPaletteItem) => void
+  nodes: WorkflowNode[]
   protectedWorkflow: boolean
 }
 
-export function WorkflowPalette({ catalog, error, loading, onAdd, protectedWorkflow }: WorkflowPaletteProps) {
+export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, protectedWorkflow }: WorkflowPaletteProps) {
   const [query, setQuery] = useState("")
   const [scope, setScope] = useState<"all" | "project" | "global">("all")
-  const items = catalog ? buildPaletteItems(catalog.resources) : []
+  const firstNodeIsCommand = nodes[0]?.type === "resource.command"
+  const items = catalog
+    ? buildPaletteItems(catalog.resources).map((item) => ({ ...item, disabled: item.disabled || (!firstNodeIsCommand && item.type !== "resource.command") }))
+    : []
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-Hant")
   const filteredItems = items.filter((item) => {
     const matchesQuery =
@@ -76,7 +80,7 @@ export function WorkflowPalette({ catalog, error, loading, onAdd, protectedWorkf
       <div className="grid gap-3 border-border border-b p-4">
         <div>
           <h2 className="font-semibold text-sm" id="workflow-palette-title">新增節點</h2>
-          <p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "預設 Workflow 可以編輯節點與資源，但不能刪除整個 Workflow。" : "選取既有資源，或建立 managed draft 後在畫布配置。"}</p>
+          <p className="mt-0.5 text-muted-foreground text-xs">{!firstNodeIsCommand ? "請先建立 Command；它必須是 workflow.nodes[0]。" : protectedWorkflow ? "預設 Workflow 可以編輯節點與資源，但不能刪除整個 Workflow。" : "選取既有資源，或建立 managed draft 後在畫布配置。"}</p>
         </div>
         <div className="relative">
           <SearchIcon aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />

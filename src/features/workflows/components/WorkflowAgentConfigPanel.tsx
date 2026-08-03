@@ -12,6 +12,7 @@ import { agentToYaml } from "@/shared/utils/app-sidebar"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/workflows/types"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentModelKeys, buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
+import { resolveWorkflowAgentRoles } from "@/features/workflows/workflowUtils"
 
 const DEFAULT_PERMISSION: Record<string, PermissionAction> = {
   edit: "allow",
@@ -36,11 +37,10 @@ type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: Resource
 export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes, onAddDelegation, onRemoveDelegation, onUpdateNode }: WorkflowAgentConfigPanelProps) {
   const data = node.data as ResourceNodeData
   const workflowAgents = nodes.filter((item): item is WorkflowAgentNode => item.type === "resource.agent")
+  const roles = resolveWorkflowAgentRoles({ nodes, edges })
   const delegatedAgentNodes = edges
     .filter((edge) => edge.kind === "delegation" && edge.source === node.id)
     .flatMap((edge) => workflowAgents.filter((candidate) => candidate.id === edge.target))
-  const command = nodes.find((item) => item.type === "resource.command")
-  const primaryID = command && edges.find((edge) => edge.kind === "capability" && edge.source === command.id && edge.targetHandle === "agent")?.target
   const initialForm = {
     ...agentFormFromContent(data.content ?? "", data.name, data.scope),
     subagents: delegatedAgentNodes.map((candidate) => (candidate.data as ResourceNodeData).name),
@@ -53,7 +53,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
       description: "Workflow Agent",
       scope: "custom",
       installTarget: candidateData.scope,
-      mode: candidate.id === primaryID ? "primary" : "subagent",
+      mode: roles.primaryIDs.has(candidate.id) ? "primary" : "subagent",
       model: readFrontmatterValue(candidateData.content ?? "", "model") ?? "",
       tools: [],
       skills: [],
