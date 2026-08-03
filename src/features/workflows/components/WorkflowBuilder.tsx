@@ -63,6 +63,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const activeModelOptions = modelOptions.length > 0 ? modelOptions : undefined
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
   const testChatDisabled = busy || builder.dirty || !builder.persisted || !builder.testPublished
+  const workflowProject = builder.workflow.project ?? project
   const workflowRoles = resolveWorkflowAgentRoles(builder.workflow)
   const currentAgentID = selectedNode?.type === "resource.agent"
     ? selectedNode.id
@@ -616,7 +617,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
           <WorkflowSkillImportDialog defaultScope={builder.workflow.scope} key={`${builder.workflow.scope}:${skillImportOpen ? "open" : "closed"}`} onImported={addImportedSkills} onOpenChange={setSkillImportOpen} open={skillImportOpen} workspace={project} />
           <WorkflowResourcePlannerDialog key={`${builder.workflow.id}:${resourcePlannerTargetID ?? "none"}`} onApplyResource={applyResourcePlan} onOpenChange={(open) => { if (!open) setResourcePlannerTargetID(null) }} open={Boolean(resourcePlannerTarget)} targetNode={resourcePlannerTarget} workflow={builder.workflow} workspace={project} />
           <WorkflowPromptWriterDialog key={`${builder.workflow.id}:${promptWriterTargetID ?? "none"}`} onApplyPrompt={applyPromptWriterPrompt} onOpenChange={closePromptWriter} open={Boolean(promptWriterTarget)} targetNode={promptWriterTarget} workflow={builder.workflow} workspace={project} />
-        <WorkflowGeneratorDialog onCreateWorkflow={builder.createGenerated} onOpenChange={setWorkflowGeneratorOpen} open={workflowGeneratorOpen} project={project} />
+         <WorkflowGeneratorDialog onCreateWorkflow={builder.createGenerated} onOpenChange={setWorkflowGeneratorOpen} open={workflowGeneratorOpen} project={workflowProject} />
          <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
           <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>
             <DialogHeader>

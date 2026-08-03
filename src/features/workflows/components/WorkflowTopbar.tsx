@@ -50,7 +50,7 @@ export function WorkflowTopbar({
       </div>
 
        <div className="workflow-topbar-actions" role="group" aria-label="Workflow 建立、儲存、發布與執行">
-         <Button onClick={onOpenGenerator} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />新增 Workflow</Button>
+         <Button aria-label="在目前專案新增 Workflow" onClick={onOpenGenerator} size="sm" title="使用提示詞在目前專案建立新的 Workflow" variant="secondary"><SparklesIcon aria-hidden="true" />新增專案 Workflow</Button>
          <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-border" />
          <Button loading={busy} onClick={() => void onSave()} size="sm"><SaveIcon aria-hidden="true" />儲存</Button>
          <Button disabled={publishDisabled} onClick={() => onRequestAction({ kind: "publish", target: "workflow-test" })} size="sm" title={blockedReason} variant="outline"><FlaskConicalIcon aria-hidden="true" />測試發布</Button>
