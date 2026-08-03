@@ -50,6 +50,8 @@ export function WorkflowBrowser({
   const [description, setDescription] = useState("")
   const [scope, setScope] = useState<WorkflowScope>(project ? "project" : "global")
   const [deleteTarget, setDeleteTarget] = useState<WorkflowSummary | null>(null)
+  const systemWorkflows = workflows.filter((workflow) => workflow.protected)
+  const customWorkflows = workflows.filter((workflow) => !workflow.protected)
 
   async function submitCreate() {
     const normalizedName = name.trim()
@@ -59,6 +61,28 @@ export function WorkflowBrowser({
     setName("")
     setDescription("")
     onOpenChange(false)
+  }
+
+  function renderWorkflowGroup(title: string, description: string, items: WorkflowSummary[], emptyMessage: string) {
+    return (
+      <section aria-labelledby={`workflow-group-${title}`} className="grid gap-2">
+        <div className="flex items-end justify-between gap-3 px-1">
+          <div className="min-w-0"><h3 className="font-semibold text-sm" id={`workflow-group-${title}`}>{title}</h3><p className="mt-0.5 truncate text-muted-foreground text-xs">{description}</p></div>
+          <Badge size="sm" variant="secondary">{items.length}</Badge>
+        </div>
+        <ul className="grid w-full max-w-full min-w-0 gap-2">
+          {items.map((workflow) => (
+            <li className={`flex w-full max-w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl border p-3 ${workflow.id === activeWorkflowID ? "border-foreground/25 bg-accent" : "border-border"}`} key={`${workflow.scope}-${workflow.project ?? "global"}-${workflow.id}`}>
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted"><GitBranchIcon aria-hidden="true" className="size-4" /></span>
+              <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><strong className="truncate text-sm">{workflow.name}</strong><Badge size="sm" variant={workflow.scope === "global" ? "warning" : "secondary"}>{scopeLabel(workflow.scope)}</Badge><Badge size="sm" variant={workflow.protected ? "info" : "secondary"}>{workflow.protected ? "系統預設" : "非系統預設"}</Badge></div><p className="mt-0.5 truncate text-muted-foreground text-xs">{workflow.description || workflow.id}</p>{workflow.protected && <p className="mt-0.5 text-info-foreground text-[11px]">系統預設，可編輯但不可刪除</p>}<p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-muted-foreground"><Clock3Icon aria-hidden="true" className="size-3" />{formatDate(workflow.updatedAt)}</p></div>
+              <Button aria-label={`載入 ${workflow.name}`} loading={busy} onClick={() => void onLoad(workflow)} size="icon" variant="outline"><FolderOpenIcon aria-hidden="true" /></Button>
+              <Button aria-label={workflow.protected ? `${workflow.name} 不可刪除` : `刪除 ${workflow.name}`} disabled={busy || workflow.protected} onClick={() => setDeleteTarget(workflow)} size="icon" title={workflow.protected ? "預設 Workflow 不可刪除，但可以編輯" : undefined} variant="ghost"><Trash2Icon aria-hidden="true" /></Button>
+            </li>
+          ))}
+          {!items.length && <li className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-muted-foreground text-xs">{emptyMessage}</li>}
+        </ul>
+      </section>
+    )
   }
 
   return (
@@ -86,19 +110,7 @@ export function WorkflowBrowser({
             ) : (
               <>
                 {error && <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{error}</p>}
-                {loading ? <p aria-live="polite" className="py-12 text-center text-muted-foreground text-sm">正在讀取 workflow...</p> : (
-                  <ul className="grid w-full max-w-full min-w-0 gap-2">
-                    {workflows.map((workflow) => (
-                      <li className={`flex w-full max-w-full min-w-0 items-center gap-3 overflow-hidden rounded-xl border p-3 ${workflow.id === activeWorkflowID ? "border-foreground/25 bg-accent" : "border-border"}`} key={`${workflow.scope}-${workflow.project ?? "global"}-${workflow.id}`}>
-                        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted"><GitBranchIcon aria-hidden="true" className="size-4" /></span>
-                        <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><strong className="truncate text-sm">{workflow.name}</strong><Badge size="sm" variant={workflow.scope === "global" ? "warning" : "secondary"}>{scopeLabel(workflow.scope)}</Badge>{workflow.protected && <Badge size="sm" variant="info">預設</Badge>}</div><p className="mt-0.5 truncate text-muted-foreground text-xs">{workflow.description || workflow.id}</p>{workflow.protected && <p className="mt-0.5 text-info-foreground text-[11px]">系統預設，可編輯但不可刪除</p>}<p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-muted-foreground"><Clock3Icon aria-hidden="true" className="size-3" />{formatDate(workflow.updatedAt)}</p></div>
-                        <Button aria-label={`載入 ${workflow.name}`} loading={busy} onClick={() => void onLoad(workflow)} size="icon" variant="outline"><FolderOpenIcon aria-hidden="true" /></Button>
-                        <Button aria-label={workflow.protected ? `${workflow.name} 不可刪除` : `刪除 ${workflow.name}`} disabled={busy || workflow.protected} onClick={() => setDeleteTarget(workflow)} size="icon" title={workflow.protected ? "預設 Workflow 不可刪除，但可以編輯" : undefined} variant="ghost"><Trash2Icon aria-hidden="true" /></Button>
-                      </li>
-                    ))}
-                    {!workflows.length && <li className="grid place-items-center gap-2 rounded-xl border border-dashed border-border py-14 text-center"><GitBranchIcon aria-hidden="true" className="size-5 text-muted-foreground" /><p className="font-medium text-sm">尚無已保存的 Workflow</p><p className="text-muted-foreground text-xs">建立第一個 workflow，開始組合自動化寫 code 流程。</p></li>}
-                  </ul>
-                )}
+                {loading ? <p aria-live="polite" className="py-12 text-center text-muted-foreground text-sm">正在讀取 workflow...</p> : <div className="grid gap-5">{renderWorkflowGroup("系統預設", "由 Agent System 提供，僅可編輯不可刪除。", systemWorkflows, "目前沒有系統預設 Workflow。")}{renderWorkflowGroup("非系統預設", "目前 workspace 建立或生成的自訂 Workflow。", customWorkflows, "尚無自訂 Workflow，可建立第一個。")}</div>}
               </>
             )}
           </DialogPanel>
