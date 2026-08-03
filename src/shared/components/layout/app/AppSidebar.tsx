@@ -1280,7 +1280,7 @@ export function AppSidebar({
             markModelProviderConnected(providerId);
             toastManager.add({
               id: `provider-auth-connected-${providerId}-${Date.now()}`,
-              description: "OAuth 驗證已成功，模型商狀態已更新。",
+              description: "OAuth 驗證已成功，main 與 workflow-test OpenCode 已同步。",
               title: "已連接模型商",
               type: "success",
             });
@@ -1294,7 +1294,7 @@ export function AppSidebar({
           markModelProviderConnected(providerId);
           toastManager.add({
             id: `provider-auth-connected-${providerId}-${Date.now()}`,
-            description: "模型商已成功連接，列表狀態已更新。",
+              description: "模型商已成功連接，main 與 workflow-test OpenCode 已同步。",
             title: "已連接模型商",
             type: "success",
           });
@@ -1329,7 +1329,7 @@ export function AppSidebar({
           markModelProviderConnected(providerId);
           toastManager.add({
             id: `provider-headless-auth-completed-${providerId}-${Date.now()}`,
-            description: "Headless 授權已成功，模型商狀態已更新。",
+            description: "Headless 授權已成功，main 與 workflow-test OpenCode 已同步。",
             title: "已連接模型商",
             type: "success",
           });
@@ -2331,7 +2331,7 @@ export function AppSidebar({
       applyModelEnabledStates(next);
       toastManager.add({
         id: `model-settings-updated-${Date.now()}`,
-        description: "模型開關狀態已更新到 OpenCode volume JSON。",
+        description: "模型開關狀態已同步到 main 與 workflow-test OpenCode。",
         title: "模型設定已更新",
         type: "success",
       });
@@ -2380,7 +2380,7 @@ export function AppSidebar({
       await loadModelProviders();
       toastManager.add({
         id: `provider-disconnected-${providerId}-${Date.now()}`,
-        description: `${provider?.name ?? providerId} 已從 OpenCode 移除授權。`,
+        description: `${provider?.name ?? providerId} 已從 main 與 workflow-test OpenCode 移除授權。`,
         title: "已斷開連接",
         type: "success",
       });
@@ -2412,7 +2412,7 @@ export function AppSidebar({
       setSelectedModelProviderId(null);
       toastManager.add({
         id: `provider-api-key-connected-${providerId}-${Date.now()}`,
-        description: `${provider?.name ?? providerId} 已使用 API key 連接。`,
+        description: `${provider?.name ?? providerId} 已使用 API key 同步連接兩個 OpenCode。`,
         title: "已連接模型商",
         type: "success",
       });
