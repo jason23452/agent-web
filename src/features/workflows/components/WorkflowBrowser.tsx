@@ -64,22 +64,22 @@ export function WorkflowBrowser({
   return (
     <>
       <Dialog onOpenChange={onOpenChange} open={open}>
-        <DialogPopup className="max-w-3xl" closeProps={{ "aria-label": "關閉 Workflow 瀏覽器" }}>
+        <DialogPopup className="max-h-[calc(100dvh-2rem)] max-w-3xl" closeProps={{ "aria-label": "關閉 Workflow 瀏覽器" }}>
           <DialogHeader>
             <div className="flex items-start justify-between gap-4 pr-8">
               <div><DialogTitle>Workflow</DialogTitle><DialogDescription className="mt-1">瀏覽、載入或建立 {project ? `${project} 專案與全域` : "全域"} workflow。</DialogDescription></div>
               <div className="flex gap-2"><Button onClick={onOpenGenerator} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />需求生成</Button><Button onClick={() => setCreateMode((current) => !current)} size="sm"><FilePlus2Icon aria-hidden="true" />新增</Button></div>
             </div>
           </DialogHeader>
-          <DialogPanel className="grid gap-4">
+          <DialogPanel className="min-h-0 flex-1 grid gap-4 overflow-y-auto">
             {createMode && (
-              <form className="grid gap-3 rounded-xl border border-border bg-muted/30 p-4" onSubmit={(event) => { event.preventDefault(); void submitCreate() }}>
-                <div><h3 className="font-semibold text-sm">建立 Workflow</h3><p className="mt-0.5 text-muted-foreground text-xs">建立時只保存 workflow JSON，不會發布到 OpenCode。</p></div>
-                <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">名稱</span><Input autoFocus onChange={(event) => setName(event.target.value)} placeholder="例如 PR 自動檢查" value={name} /></label>
-                <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">說明</span><Input onChange={(event) => setDescription(event.target.value)} placeholder="這個 workflow 會完成什麼工作" value={description} /></label>
-                <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">範圍</span><select className="workflow-select" onChange={(event) => setScope(event.target.value as WorkflowScope)} value={scope}>{project && <option value="project">專案 · {project}</option>}<option value="global">全域</option></select></label>
-                {scope === "global" && <p className="rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">全域 workflow 可發布到影響所有 Project 的環境，正式發布前會再次確認。</p>}
-                <div className="flex justify-end gap-2"><Button onClick={() => setCreateMode(false)} type="button" variant="outline">取消</Button><Button disabled={!name.trim()} loading={busy} type="submit">建立並儲存</Button></div>
+              <form className="grid gap-2.5 rounded-xl border border-border bg-muted/30 p-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(10rem,0.6fr)]" onSubmit={(event) => { event.preventDefault(); void submitCreate() }}>
+                <div className="sm:col-span-2"><h3 className="font-semibold text-sm">建立 Workflow</h3><p className="mt-0.5 text-muted-foreground text-xs">只保存 workflow JSON，不會立即發布到 OpenCode。</p></div>
+                <label className="grid gap-1 text-xs"><span className="font-medium text-muted-foreground">名稱</span><Input autoFocus onChange={(event) => setName(event.target.value)} placeholder="例如 PR 自動檢查" value={name} /></label>
+                <label className="grid gap-1 text-xs"><span className="font-medium text-muted-foreground">範圍</span><select className="workflow-select" onChange={(event) => setScope(event.target.value as WorkflowScope)} value={scope}>{project && <option value="project">專案 · {project}</option>}<option value="global">全域</option></select></label>
+                <label className="grid gap-1 text-xs sm:col-span-2"><span className="font-medium text-muted-foreground">說明</span><Input onChange={(event) => setDescription(event.target.value)} placeholder="這個 workflow 會完成什麼工作" value={description} /></label>
+                {scope === "global" && <p className="rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs sm:col-span-2">全域 workflow 可發布到影響所有 Project 的環境，正式發布前會再次確認。</p>}
+                <div className="flex justify-end gap-2 sm:col-span-2"><Button onClick={() => setCreateMode(false)} type="button" variant="outline">取消</Button><Button disabled={!name.trim()} loading={busy} type="submit">建立並儲存</Button></div>
               </form>
             )}
 
