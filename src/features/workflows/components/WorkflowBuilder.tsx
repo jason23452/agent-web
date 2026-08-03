@@ -4,7 +4,7 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
-import { createCapabilityEdge, createDelegationEdge, createNodeFromPalette, createPrimaryLinkEdge, duplicateWorkflowNode, getWorkflowNodeTitle, isProtectedWorkflow, normalizeWorkflowSchemaVersion, resolveConnectionKind, resolveWorkflowAgentRoles, syncCommandContentForAgents, syncCommandNodeToAgent, syncWorkflowAgentConfigs, touchWorkflow, validateWorkflowAgentEdge, workflowFrontmatterValue } from "@/features/workflows/workflowUtils"
+import { createCapabilityEdge, createDelegationEdge, createNodeFromPalette, createPrimaryLinkEdge, duplicateWorkflowNode, getWorkflowNodeTitle, isPromptEditableWorkflowNode, isProtectedWorkflow, normalizeWorkflowSchemaVersion, resolveConnectionKind, resolveWorkflowAgentRoles, syncCommandContentForAgents, syncCommandNodeToAgent, syncWorkflowAgentConfigs, touchWorkflow, validateWorkflowAgentEdge, workflowFrontmatterValue } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
 import { WorkflowAgentAppPanel } from "@/features/workflows/components/WorkflowAgentAppPanel"
@@ -15,6 +15,7 @@ import { WorkflowJsonPanel } from "@/features/workflows/components/WorkflowJsonP
 import { WorkflowPalette } from "@/features/workflows/components/WorkflowPalette"
 import { WorkflowProductNav } from "@/features/workflows/components/WorkflowProductNav"
 import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowPublishReport"
+import { WorkflowPromptWriterDialog } from "@/features/workflows/components/WorkflowPromptWriterDialog"
 import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
 import { WorkflowTestChatDialog } from "@/features/workflows/components/WorkflowTestChatDialog"
@@ -42,6 +43,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const [requestedAction, setRequestedAction] = useState<WorkflowRequestedAction | null>(null)
   const [publishReportOpen, setPublishReportOpen] = useState(false)
   const [testChatOpen, setTestChatOpen] = useState(false)
+  const [promptWriterTargetID, setPromptWriterTargetID] = useState<string | null>(null)
   const [nodeDetailOpen, setNodeDetailOpen] = useState(false)
   const [cacheTarget, setCacheTarget] = useState<WorkflowTarget>("workflow-test")
   const busy = Boolean(builder.busyAction)
@@ -49,6 +51,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const selectedNode = builder.workflow.nodes.find((node) => node.id === selectedNodeID) ?? null
   const selectedEdge = builder.workflow.edges.find((edge) => edge.id === selectedEdgeID) ?? null
   const selectedResourceNode = selectedNode?.type.startsWith("resource.") ? selectedNode : null
+  const promptWriterTarget = builder.workflow.nodes.find((node) => node.id === promptWriterTargetID) ?? null
   const availableModels = buildAgentModelKeys(modelOptions)
   const activeModelOptions = modelOptions.length > 0 ? modelOptions : undefined
   const polling = builder.run?.status === "queued" || builder.run?.status === "running"
@@ -281,6 +284,32 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     setRightPanelOpen(true)
   }
 
+  function openPromptWriter(nodeID: string) {
+    const node = builder.workflow.nodes.find((candidate) => candidate.id === nodeID)
+    if (!isPromptEditableWorkflowNode(node)) return
+    setNodeDetailOpen(false)
+    setPromptWriterTargetID(nodeID)
+  }
+
+  function applyPromptWriterPrompt(content: string) {
+    const node = promptWriterTargetID ? builder.workflow.nodes.find((candidate) => candidate.id === promptWriterTargetID) : null
+    if (!isPromptEditableWorkflowNode(node)) return
+    updateNode({ ...node, data: { ...node.data, content } })
+    setSelectedNodeID(node.id)
+    setSelectedEdgeID(null)
+    toastManager.add({ id: `workflow-prompt-writer-applied-${Date.now()}`, title: "Prompt 已套用", description: `已更新 ${getWorkflowNodeTitle(node)}；請儲存並重新測試發布 Workflow。`, type: "success" })
+  }
+
+  function closePromptWriter(open: boolean) {
+    if (open) return
+    const targetNode = promptWriterTargetID ? builder.workflow.nodes.find((node) => node.id === promptWriterTargetID) : null
+    setPromptWriterTargetID(null)
+    if (!targetNode) return
+    setSelectedNodeID(targetNode.id)
+    setSelectedEdgeID(null)
+    setNodeDetailOpen(true)
+  }
+
   function duplicateNode(nodeID: string) {
     const source = builder.workflow.nodes.find((node) => node.id === nodeID)
     if (!source) return
@@ -485,7 +514,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
             {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} nodes={builder.workflow.nodes} onAdd={(item) => addNode(item)} protectedWorkflow={protectedWorkflow} />}
             {rightTab === "apps" && <WorkflowAgentAppPanel onAddCapability={addAgentCapability} onAddPrimaryLink={addPrimaryLink} onAddDelegation={addDelegation} onOpenPalette={openPalette} onRemoveEdge={(edgeID) => deleteEdges([edgeID])} onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} onSetCommandAgent={setCommandAgent} protectedWorkflow={protectedWorkflow} workflow={builder.workflow} />}
-           {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
+            {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onOpenPromptWriter={openPromptWriter} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
            {rightTab === "json" && <WorkflowJsonPanel onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} protectedWorkflow={protectedWorkflow} workflow={builder.workflow} />}
         </div>
@@ -497,9 +526,10 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
 
       <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} open={browserOpen} project={project} workflows={builder.workflows} />
       <WorkflowConfirmDialog action={requestedAction} busy={busy} name={builder.workflow.name} onConfirm={confirmAction} onOpenChange={(open) => { if (!open && !busy) setRequestedAction(null) }} scope={builder.workflow.scope} />
-      <WorkflowPublishReport onOpenChange={setPublishReportOpen} open={publishReportOpen} report={builder.publishReport} />
-      <WorkflowTestChatDialog catalog={builder.catalog} key={`${builder.workflow.id}:${testChatOpen ? "open" : "closed"}`} modelOptions={modelOptions} onOpenChange={setTestChatOpen} open={testChatOpen} published={builder.testPublished && !builder.dirty} workflow={builder.workflow} />
-        <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
+       <WorkflowPublishReport onOpenChange={setPublishReportOpen} open={publishReportOpen} report={builder.publishReport} />
+       <WorkflowTestChatDialog catalog={builder.catalog} key={`${builder.workflow.id}:${testChatOpen ? "open" : "closed"}`} modelOptions={modelOptions} onOpenChange={setTestChatOpen} open={testChatOpen} published={builder.testPublished && !builder.dirty} workflow={builder.workflow} />
+       <WorkflowPromptWriterDialog key={`${builder.workflow.id}:${promptWriterTargetID ?? "none"}`} onApplyPrompt={applyPromptWriterPrompt} onOpenChange={closePromptWriter} open={Boolean(promptWriterTarget)} targetNode={promptWriterTarget} workflow={builder.workflow} />
+         <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
          <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>
            <DialogHeader>
              <DialogTitle>{selectedNode?.type.startsWith("resource.") ? `${getWorkflowNodeTitle(selectedNode)} 設定` : "節點詳細配置"}</DialogTitle>
@@ -507,10 +537,10 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
            </DialogHeader>
            <DialogPanel className="min-h-0 overflow-hidden p-0">
               {selectedResourceNode ? (
-                 <WorkflowResourceConfigPanel availableModels={availableModels} edges={builder.workflow.edges} key={`${selectedResourceNode.id}:${builder.workflow.edges.map((edge) => edge.id).join("|")}`} modelOptions={activeModelOptions} node={selectedResourceNode} nodes={builder.workflow.nodes} onAddDelegation={addDelegation} onClose={() => setNodeDetailOpen(false)} onRemoveDelegation={(edgeID) => deleteEdges([edgeID])} onUpdateNode={updateNode} project={project} />
+                  <WorkflowResourceConfigPanel availableModels={availableModels} edges={builder.workflow.edges} key={`${selectedResourceNode.id}:${builder.workflow.edges.map((edge) => edge.id).join("|")}`} modelOptions={activeModelOptions} node={selectedResourceNode} nodes={builder.workflow.nodes} onAddDelegation={addDelegation} onClose={() => setNodeDetailOpen(false)} onOpenPromptWriter={openPromptWriter} onRemoveDelegation={(edgeID) => deleteEdges([edgeID])} onUpdateNode={updateNode} project={project} />
                ) : (
                  <div className="max-h-[68vh] overflow-y-auto">
-                   <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
+                    <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onOpenPromptWriter={openPromptWriter} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
                  </div>
              )}
            </DialogPanel>

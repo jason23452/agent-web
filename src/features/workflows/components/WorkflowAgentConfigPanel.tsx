@@ -29,12 +29,13 @@ type WorkflowAgentConfigPanelProps = {
   edges: WorkflowEdge[]
   onAddDelegation?: (sourceAgentID: string, targetAgentID: string) => void
   onRemoveDelegation?: (edgeID: string) => void
+  onOpenPromptWriter?: () => void
   onUpdateNode: (node: WorkflowNode) => void
 }
 
 type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }
 
-export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes, onAddDelegation, onRemoveDelegation, onUpdateNode }: WorkflowAgentConfigPanelProps) {
+export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes, onAddDelegation, onRemoveDelegation, onOpenPromptWriter, onUpdateNode }: WorkflowAgentConfigPanelProps) {
   const data = node.data as ResourceNodeData
   const workflowAgents = nodes.filter((item): item is WorkflowAgentNode => item.type === "resource.agent")
   const roles = resolveWorkflowAgentRoles({ nodes, edges })
@@ -181,6 +182,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
       agentModeOverride={derivedMode}
       agentModeReadOnly
       agentModeReadOnlyReason="Workflow graph 會決定 primary / subagent；請使用 Command、primary-link 或 delegation 來調整角色。"
+      onOpenPromptWriter={onOpenPromptWriter}
       agentConfigMode={agentConfigMode}
       agentEditMode="edit"
       agentForm={agentForm}

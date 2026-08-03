@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react"
-import { CopyIcon, Link2Icon, LockIcon, Trash2Icon, UnlinkIcon } from "lucide-react"
+import { CopyIcon, Link2Icon, LockIcon, SparklesIcon, Trash2Icon, UnlinkIcon } from "lucide-react"
 import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
@@ -17,6 +17,7 @@ import type {
 import {
   getEdgeLabel,
   getWorkflowNodeTitle,
+  isPromptEditableWorkflowNode,
   resolveConnectionKind,
   scopeLabel,
   WORKFLOW_NODE_META,
@@ -39,6 +40,7 @@ type WorkflowInspectorProps = {
   onTargetChange: (target: WorkflowTarget) => void
   onUpdateEdge: (edge: WorkflowEdge) => void
   onUpdateNode: (node: WorkflowNode) => void
+  onOpenPromptWriter: (nodeID: string) => void
 }
 
 export function WorkflowInspector(props: WorkflowInspectorProps) {
@@ -70,6 +72,7 @@ function NodeInspector({
   onDuplicateNode,
   onTargetChange,
   onUpdateNode,
+  onOpenPromptWriter,
 }: WorkflowInspectorProps & { node: WorkflowNode }) {
   const [clearing, setClearing] = useState(false)
   const cachedStep = run?.steps.find((step) => step.nodeID === node.id && step.status === "cached")
@@ -100,6 +103,7 @@ function NodeInspector({
             <h2 className="mt-1 truncate font-semibold text-sm" id="node-inspector-title">{getWorkflowNodeTitle(node)}</h2>
           </div>
           <div className="flex gap-1">
+            {isPromptEditableWorkflowNode(node) && <Button aria-label="用 Prompt Writer 建立提示詞" onClick={() => onOpenPromptWriter(node.id)} size="icon-sm" title="用 Prompt Writer 建立提示詞" variant="ghost"><SparklesIcon aria-hidden="true" /></Button>}
             <Button aria-label="複製節點" onClick={() => onDuplicateNode(node.id)} size="icon-sm" variant="ghost"><CopyIcon aria-hidden="true" /></Button>
             <Button aria-label="刪除節點" onClick={() => onDeleteNode(node.id)} size="icon-sm" variant="ghost"><Trash2Icon aria-hidden="true" /></Button>
           </div>

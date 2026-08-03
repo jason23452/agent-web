@@ -32,29 +32,37 @@ type WorkflowResourceConfigPanelProps = {
   onAddDelegation?: (sourceAgentID: string, targetAgentID: string) => void
   onRemoveDelegation?: (edgeID: string) => void
   onUpdateNode: (node: WorkflowNode) => void
+  onOpenPromptWriter?: (nodeID: string) => void
   edges?: WorkflowEdge[]
   nodes?: WorkflowNode[]
   project?: string
 }
 
-export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
+export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onOpenPromptWriter, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
   if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel edges={edges} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
-  switch (node.type) {
-    case "resource.agent":
-       return <WorkflowAgentConfigPanel edges={edges} modelOptions={modelOptions} nodes={nodes} node={node as WorkflowAgentNode} onAddDelegation={onAddDelegation} onRemoveDelegation={onRemoveDelegation} onUpdateNode={onUpdateNode} />
-    case "resource.tool":
-      return <WorkflowToolConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} project={project} />
-    case "resource.command":
-      return <WorkflowCommandConfigPanel availableModels={availableModels} key={node.id} modelOptions={modelOptions} node={node} onUpdateNode={onUpdateNode} />
-    case "resource.plugin":
-      return <WorkflowPluginConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
-    case "resource.skill":
-      return <WorkflowSkillConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
-    case "resource.mcp":
-      return <WorkflowMcpConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
-    default:
-      return null
-  }
+  const content = (() => {
+    switch (node.type) {
+      case "resource.agent":
+        return <WorkflowAgentConfigPanel edges={edges} modelOptions={modelOptions} nodes={nodes} node={node as WorkflowAgentNode} onAddDelegation={onAddDelegation} onOpenPromptWriter={onOpenPromptWriter ? () => onOpenPromptWriter(node.id) : undefined} onRemoveDelegation={onRemoveDelegation} onUpdateNode={onUpdateNode} />
+      case "resource.tool":
+        return <WorkflowToolConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} project={project} />
+      case "resource.command":
+        return <WorkflowCommandConfigPanel availableModels={availableModels} key={node.id} modelOptions={modelOptions} node={node} onUpdateNode={onUpdateNode} />
+      case "resource.plugin":
+        return <WorkflowPluginConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
+      case "resource.skill":
+        return <WorkflowSkillConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
+      case "resource.mcp":
+        return <WorkflowMcpConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
+      default:
+        return null
+    }
+  })()
+  return (
+    <div className="grid min-h-0">
+      {content}
+    </div>
+  )
 }
 
 type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }

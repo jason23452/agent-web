@@ -107,6 +107,11 @@ export function isProtectedWorkflow(workflow: Pick<WorkflowV1, "id" | "metadata"
     || (workflow.metadata?.system === true && workflow.metadata?.deletable === false)
 }
 
+export function isPromptEditableWorkflowNode(node: WorkflowNode | null | undefined): node is WorkflowNode & { type: "resource.agent" | "resource.command" | "resource.skill"; data: ResourceNodeData } {
+  if (!node || !["resource.agent", "resource.command", "resource.skill"].includes(node.type)) return false
+  return (node.data as ResourceNodeData).mode === "managed"
+}
+
 export function slugifyWorkflowID(value: string) {
   const slug = value
     .normalize("NFKD")

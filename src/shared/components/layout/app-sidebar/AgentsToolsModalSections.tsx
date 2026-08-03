@@ -1,5 +1,5 @@
 ﻿import type { Dispatch, SetStateAction } from "react";
-import { MoreHorizontalIcon, PlusIcon, XIcon } from "lucide-react";
+import { MoreHorizontalIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -1557,6 +1557,7 @@ export function AgentConfigPanel({
   agentModeOverride,
   agentModeReadOnly = false,
   agentModeReadOnlyReason,
+  onOpenPromptWriter,
   agentConfigMode,
   agentEditMode,
   agentForm,
@@ -1597,6 +1598,7 @@ export function AgentConfigPanel({
   agentModeOverride?: AgentDefinition["mode"];
   agentModeReadOnly?: boolean;
   agentModeReadOnlyReason?: string;
+  onOpenPromptWriter?: () => void;
   agentConfigMode: AgentConfigMode;
   agentEditMode: AgentEditMode;
   agentForm: AgentForm;
@@ -1970,9 +1972,9 @@ export function AgentConfigPanel({
                </label>
              </div>
            </section>
-          {agentForm.promptSource === "inline" && (
-            <label className="grid gap-2 text-muted-foreground text-sm">
-               系統提示詞
+           {agentForm.promptSource === "inline" && (
+             <label className="grid gap-2 text-muted-foreground text-sm ">
+                <span className="flex items-center justify-between gap-1.5">系統提示詞 {onOpenPromptWriter && <Button  aria-label="用 Prompt Writer 建立系統提示詞" onClick={onOpenPromptWriter} size="icon-xs" title="用 Prompt Writer 建立系統提示詞" type="button" variant="ghost"><SparklesIcon aria-hidden="true" /></Button>}</span>
               <Textarea
                aria-label="智能體系統提示詞"
                 onChange={(event) =>
