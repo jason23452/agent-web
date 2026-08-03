@@ -1,5 +1,5 @@
-import type { Dispatch, SetStateAction } from "react"
-import { MoreHorizontalIcon } from "lucide-react"
+import { useState, type Dispatch, type SetStateAction } from "react"
+import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon, MoreHorizontalIcon } from "lucide-react"
 import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
@@ -180,12 +180,136 @@ export function SkillsList({
   )
 }
 
-export function SkillEditorForm({ content, name, scope, onCancel, onChange, onScopeChange, onSubmit }: { content: string; name: string; scope: "project" | "global"; onCancel: () => void; onChange: (value: string) => void; onScopeChange: (scope: "project" | "global") => void; onSubmit: () => void }) {
+type SkillEditorFormProps = {
+  files: Record<string, string>
+  name: string
+  onCancel: () => void
+  onFileChange: (file: string, content: string) => void
+  onScopeChange: (scope: "project" | "global") => void
+  onSelectedFileChange: (file: string) => void
+  onSubmit: () => void
+  scope: "project" | "global"
+  selectedFile: string
+}
+
+type SkillFileTreeNode = {
+  children?: SkillFileTreeNode[]
+  kind: "file" | "folder"
+  name: string
+  path: string
+}
+
+function buildSkillFileTree(files: Record<string, string>, name: string): SkillFileTreeNode[] {
+  const roots: SkillFileTreeNode[] = []
+
+  for (const file of Object.keys(files)) {
+    const relativeFile = file.startsWith(`${name}/`) ? file.slice(name.length + 1) : file
+    const segments = relativeFile.split("/").filter(Boolean)
+    let nodes = roots
+    let parentPath = ""
+
+    segments.forEach((segment, index) => {
+      const isFile = index === segments.length - 1
+      const relativePath = parentPath ? `${parentPath}/${segment}` : segment
+      const nodePath = isFile ? file : relativePath
+      let node = nodes.find((item) => item.path === nodePath)
+
+      if (!node) {
+        node = {
+          children: isFile ? undefined : [],
+          kind: isFile ? "file" : "folder",
+          name: segment,
+          path: nodePath,
+        }
+        nodes.push(node)
+      }
+
+      if (!isFile) nodes = node.children ?? []
+      parentPath = relativePath
+    })
+  }
+
+  return sortSkillFileTree(roots)
+}
+
+function sortSkillFileTree(nodes: SkillFileTreeNode[]): SkillFileTreeNode[] {
+  return [...nodes]
+    .sort((left, right) => {
+      if (left.kind === "file" && left.name === "SKILL.md") return -1
+      if (right.kind === "file" && right.name === "SKILL.md") return 1
+      if (left.kind !== right.kind) return left.kind === "folder" ? -1 : 1
+      return left.name.localeCompare(right.name)
+    })
+    .map((node) => node.children ? { ...node, children: sortSkillFileTree(node.children) } : node)
+}
+
+function collectSkillFolderPaths(nodes: SkillFileTreeNode[]): string[] {
+  return nodes.flatMap((node) => node.kind === "folder" ? [node.path, ...collectSkillFolderPaths(node.children ?? [])] : [])
+}
+
+export function SkillEditorForm({ files, name, onCancel, onFileChange, onScopeChange, onSelectedFileChange, onSubmit, scope, selectedFile }: SkillEditorFormProps) {
+  const fileEntries = Object.entries(files).sort(([left], [right]) => {
+    const leftIsSkillDocument = left === `${name}/SKILL.md`
+    const rightIsSkillDocument = right === `${name}/SKILL.md`
+    if (leftIsSkillDocument !== rightIsSkillDocument) return leftIsSkillDocument ? -1 : 1
+    return left.localeCompare(right)
+  })
+  const activeFile = fileEntries.some(([file]) => file === selectedFile) ? selectedFile : fileEntries[0]?.[0] ?? ""
+  const activeContent = activeFile ? files[activeFile] ?? "" : ""
+  const fileTree = buildSkillFileTree(files, name)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set(collectSkillFolderPaths(fileTree)))
+
+  function toggleFolder(path: string) {
+    setExpandedFolders((current) => {
+      const next = new Set(current)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  function renderFileTree(nodes: SkillFileTreeNode[], depth = 0) {
+    return nodes.map((node) => {
+      const isFolder = node.kind === "folder"
+      const isExpanded = isFolder && expandedFolders.has(node.path)
+      const isSelected = !isFolder && node.path === activeFile
+      return (
+        <li className="grid" key={`${node.kind}:${node.path}`}>
+          {isFolder ? (
+            <button
+              aria-expanded={isExpanded}
+              className="flex min-h-8 w-full items-center gap-1.5 rounded-md text-left text-muted-foreground text-xs transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => toggleFolder(node.path)}
+              style={{ paddingLeft: `${depth * 14 + 6}px` }}
+              type="button"
+            >
+              <ChevronRightIcon aria-hidden="true" className={`size-3 shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+              {isExpanded ? <FolderOpenIcon aria-hidden="true" className="size-4 shrink-0 text-warning" /> : <FolderIcon aria-hidden="true" className="size-4 shrink-0 text-warning" />}
+              <span className="min-w-0 truncate">{node.name}</span>
+            </button>
+          ) : (
+            <button
+              aria-current={isSelected || undefined}
+              className={`flex min-h-8 w-full items-center gap-1.5 rounded-md text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSelected ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+              onClick={() => onSelectedFileChange(node.path)}
+              style={{ paddingLeft: `${depth * 14 + 21}px` }}
+              type="button"
+            >
+              <FileIcon aria-hidden="true" className="size-4 shrink-0" />
+              <span className="min-w-0 truncate">{node.name}</span>
+            </button>
+          )}
+          {isFolder && isExpanded && <ul className="grid">{renderFileTree(node.children ?? [], depth + 1)}</ul>}
+        </li>
+      )
+    })
+  }
+
   return (
     <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
       <div>
         <h3 className="font-semibold text-sm">編輯 Skill：{name}</h3>
-        <p className="mt-1 text-muted-foreground text-xs">只能編輯 OpenCode 的 Project 或 Global SKILL.md。</p>
+        <p className="mt-1 text-muted-foreground text-xs">可編輯 Skill 目錄內的所有文字檔案，儲存時會保留整個目錄。</p>
       </div>
       <label className="grid gap-1 text-muted-foreground text-xs">編輯 scope
         <select className="h-9 rounded-lg border border-input bg-background px-2 text-sm" onChange={(event) => onScopeChange(event.target.value as "project" | "global")} value={scope}>
@@ -193,8 +317,29 @@ export function SkillEditorForm({ content, name, scope, onCancel, onChange, onSc
           <option value="global">Global</option>
         </select>
       </label>
-      <label className="grid gap-1 text-muted-foreground text-xs" htmlFor="skill-document">SKILL.md</label>
-      <Textarea className="min-h-[min(56dvh,480px)] font-mono text-xs" id="skill-document" onChange={(event) => onChange(event.target.value)} value={content} />
+      <div className="grid min-w-0 gap-3 md:grid-cols-[minmax(10rem,14rem)_minmax(0,1fr)]">
+        <div className="grid min-w-0 content-start gap-2">
+          <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
+            <span>Skill 檔案</span>
+            <span>{fileEntries.length}</span>
+          </div>
+          <nav aria-label="Skill folder structure" className="max-h-[min(56dvh,420px)] overflow-y-auto rounded-lg border border-input bg-background p-1">
+            {fileEntries.length > 0 ? <ul className="grid gap-0.5">{renderFileTree(fileTree)}</ul> : (
+              <p className="px-2 py-3 text-muted-foreground text-xs">找不到 Skill 檔案。</p>
+            )}
+          </nav>
+        </div>
+        <div className="grid min-w-0 gap-1">
+          <label className="text-muted-foreground text-xs" htmlFor="skill-document">{activeFile ? (activeFile.startsWith(`${name}/`) ? activeFile.slice(name.length + 1) : activeFile) : "檔案內容"}</label>
+          {activeFile ? (
+            <Textarea className="min-h-0 font-mono text-xs [&>textarea]:!min-h-0 [&>textarea]:!resize-none [&>textarea]:!overflow-y-auto" id="skill-document" onChange={(event) => onFileChange(activeFile, event.target.value)} style={{ height: "min(56dvh, 420px)", maxHeight: "min(56dvh, 420px)" }} value={activeContent} />
+          ) : (
+            <div className="grid min-h-40 place-items-center rounded-lg border border-dashed border-input bg-background px-3 text-center text-muted-foreground text-xs">
+              此 Skill 沒有可編輯的檔案。
+            </div>
+          )}
+        </div>
+      </div>
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel} size="sm" variant="outline">取消</Button>
         <Button onClick={onSubmit} size="sm">儲存編輯</Button>

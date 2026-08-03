@@ -59,11 +59,13 @@ type PluginSkillModalProps = {
   onDeleteSkill?: (skill: SkillDefinition) => void
   onEditSkill?: (skill: SkillDefinition) => void
   onToggleGlobalSkill?: (skill: SkillDefinition, enabled: boolean) => void
-  skillDocument: string
+  skillFiles: Record<string, string>
   skillEditingName: string
   skillEditingScope: "project" | "global"
   onSkillEditingScopeChange: (scope: "project" | "global") => void
-  onSkillDocumentChange: (content: string) => void
+  skillSelectedFile: string
+  onSkillFileChange: (file: string, content: string) => void
+  onSkillSelectedFileChange: (file: string) => void
   onSaveSkill: () => void
   onViewChange: Dispatch<SetStateAction<PluginSkillDialogView>>
   open: boolean
@@ -118,11 +120,13 @@ export function PluginSkillModal({
   onDeleteSkill,
   onEditSkill,
   onToggleGlobalSkill,
-  skillDocument,
+  skillFiles,
   skillEditingName,
   skillEditingScope,
   onSkillEditingScopeChange,
-  onSkillDocumentChange,
+  skillSelectedFile,
+  onSkillFileChange,
+  onSkillSelectedFileChange,
   onSaveSkill,
   onViewChange,
   open,
@@ -339,7 +343,7 @@ export function PluginSkillModal({
              )}
            </>
         ) : view === "edit-skill" ? (
-          <SkillEditorForm content={skillDocument} name={skillEditingName} onCancel={() => onViewChange("list")} onChange={onSkillDocumentChange} onScopeChange={onSkillEditingScopeChange} onSubmit={onSaveSkill} scope={skillEditingScope} />
+           <SkillEditorForm files={skillFiles} name={skillEditingName} onCancel={() => onViewChange("list")} onFileChange={onSkillFileChange} onScopeChange={onSkillEditingScopeChange} onSelectedFileChange={onSkillSelectedFileChange} onSubmit={onSaveSkill} scope={skillEditingScope} selectedFile={skillSelectedFile} />
         ) : view === "add-plugin" || view === "plugin-detail" ? (
           <AddPluginForm
             form={pluginForm}

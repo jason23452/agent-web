@@ -841,6 +841,11 @@ type PendingSkillSnapshot = {
   files: Record<string, string>;
 };
 
+type PendingSkillEdit = {
+  scope: "project" | "global";
+  files: Record<string, string>;
+};
+
 function skillSnapshotKey(scope: "project" | "global", name: string) {
   return `${scope}:${name}`;
 }
@@ -929,8 +934,9 @@ export function AppSidebar({
     const [pluginSkillActionLoading, setPluginSkillActionLoading] = useState(false);
    const [skillEditing, setSkillEditing] = useState<SkillDefinition | null>(null);
    const [skillEditingScope, setSkillEditingScope] = useState<"project" | "global">("project");
-   const [skillDocument, setSkillDocument] = useState("");
-    const [pendingSkillEdits, setPendingSkillEdits] = useState<Record<string, { scope: "project" | "global"; content: string }>>({});
+    const [skillEditingFiles, setSkillEditingFiles] = useState<Record<string, string>>({});
+    const [skillSelectedFile, setSkillSelectedFile] = useState("");
+     const [pendingSkillEdits, setPendingSkillEdits] = useState<Record<string, PendingSkillEdit>>({});
     const [enabledGlobalSkills, setEnabledGlobalSkills] = useState<string[]>([]);
     const [savedEnabledGlobalSkills, setSavedEnabledGlobalSkills] = useState<string[]>([]);
   const [batchUpdateNotice, setBatchUpdateNotice] = useState("");
@@ -2060,7 +2066,7 @@ export function AppSidebar({
           await deleteOpenCodeSkills(names, skillScope as "project" | "global", skillScope === "project" ? activeProjectName : undefined, false);
         }
         for (const [name, edit] of Object.entries(pendingSkillEdits)) {
-          await upsertSkillRegistryEntry(edit.scope, name, { content: edit.content, filename: "SKILL.md", restart: false, wait: false, reason: "skill-edited" }, edit.scope === "project" ? activeProjectName : undefined);
+           await upsertSkillRegistryEntry(edit.scope, name, { files: edit.files, restart: false, wait: false, reason: "skill-edited" }, edit.scope === "project" ? activeProjectName : undefined);
         }
         if (activeProjectName && JSON.stringify(enabledGlobalSkills) !== JSON.stringify(savedEnabledGlobalSkills)) {
           await updateSkillProjectSettings({ project: activeProjectName, enabledGlobalSkills, restart: false, reason: "project-skills-updated" });
@@ -2915,9 +2921,14 @@ export function AppSidebar({
     const scope = skill.scope === "global" ? "global" : "project";
     try {
       const response = await readSkillRegistryEntry(scope, skill.name, scope === "project" ? activeProjectName : undefined);
+      const files = response.files ?? (response.content === undefined ? {} : { [`${skill.name}/SKILL.md`]: response.content });
+      const selectedFile = response.file && files[response.file] !== undefined
+        ? response.file
+        : Object.keys(files).find((file) => file.endsWith("/SKILL.md")) ?? Object.keys(files)[0] ?? "";
       setSkillEditing(skill);
       setSkillEditingScope(scope);
-      setSkillDocument(response.content ?? "");
+      setSkillEditingFiles(files);
+      setSkillSelectedFile(selectedFile);
       setPluginSkillDialogView("edit-skill");
     } catch (error) {
       toastManager.add({ id: `skill-read-error-${skill.name}`, title: "Skill 讀取失敗", description: getApiErrorMessage(error), type: "error" });
@@ -2938,7 +2949,7 @@ export function AppSidebar({
         [`${sourceScope}:${skillEditing.name}`]: { ...skillEditing, scope: sourceScope },
       }));
     }
-    setPendingSkillEdits((current) => ({ ...current, [skillEditing.name]: { scope, content: skillDocument } }));
+    setPendingSkillEdits((current) => ({ ...current, [skillEditing.name]: { scope, files: { ...skillEditingFiles } } }));
     setSkillSettings((current) => current.map((skill) => skill.id === skillEditing.id
       ? { ...skill, scope, path: scope === "global" ? skill.path.replace(/\.opencode\/skills/, "~/.config/opencode/skills") : skill.path.replace(/~\/.config\/opencode\/skills/, ".opencode/skills") }
       : skill));
@@ -4563,12 +4574,14 @@ export function AppSidebar({
         skillForm={skillForm}
          skillInstallResult={skillInstallResult}
          skillImportLoading={skillImportLoading}
-         skillDocument={skillDocument}
-         skillEditingName={skillEditing?.name ?? "Skill"}
-         skillEditingScope={skillEditingScope}
-         onSkillEditingScopeChange={changeSkillEditingScope}
-         onSkillDocumentChange={setSkillDocument}
-         onSaveSkill={saveSkillEdit}
+          skillFiles={skillEditingFiles}
+          skillEditingName={skillEditing?.name ?? "Skill"}
+          skillEditingScope={skillEditingScope}
+          onSkillEditingScopeChange={changeSkillEditingScope}
+          skillSelectedFile={skillSelectedFile}
+          onSkillFileChange={(file, content) => setSkillEditingFiles((current) => ({ ...current, [file]: content }))}
+          onSkillSelectedFileChange={setSkillSelectedFile}
+          onSaveSkill={saveSkillEdit}
         skillSettings={skillSettings}
         tab={pluginSkillTab}
         view={pluginSkillDialogView}
