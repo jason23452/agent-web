@@ -42,8 +42,8 @@ export function WorkflowTopbar({
       <div className="flex min-w-0 items-center gap-2.5">
         <Button aria-label="瀏覽 Workflow" onClick={onBrowse} size="icon" variant="ghost"><FolderOpenIcon aria-hidden="true" /></Button>
         <div className="min-w-0">
-          <Input aria-label="Workflow 名稱" className="border-transparent bg-transparent shadow-none before:hidden" disabled={protectedWorkflow} onChange={(event) => onNameChange(event.target.value)} value={workflow.name} />
-          <div className="flex items-center gap-1.5 px-2 text-[10px] text-muted-foreground"><code className="truncate font-mono">{workflow.id}</code><span>·</span><span>{scopeLabel(workflow.scope)}</span>{protectedWorkflow && <Badge size="sm" variant="info">預設 · 僅限測試</Badge>}{dirty ? <Badge size="sm" variant="warning">未儲存</Badge> : <Badge size="sm" variant="success">已同步 JSON</Badge>}</div>
+          <Input aria-label="Workflow 名稱" className="border-transparent bg-transparent shadow-none before:hidden" onChange={(event) => onNameChange(event.target.value)} value={workflow.name} />
+          <div className="flex items-center gap-1.5 px-2 text-[10px] text-muted-foreground"><code className="truncate font-mono">{workflow.id}</code><span>·</span><span>{scopeLabel(workflow.scope)}</span>{protectedWorkflow && <Badge size="sm" variant="info">預設 · 僅限測試 · 不可刪除</Badge>}{dirty ? <Badge size="sm" variant="warning">未儲存</Badge> : <Badge size="sm" variant="success">已同步 JSON</Badge>}</div>
         </div>
       </div>
 

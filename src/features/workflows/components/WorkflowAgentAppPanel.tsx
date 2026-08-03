@@ -38,7 +38,7 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddDelegation, onOpen
       <header className="border-border border-b p-4">
         <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Dify-like layer</p>
         <h2 className="mt-1 font-semibold text-sm">Agent Apps</h2>
-        <p className="mt-1 text-muted-foreground text-xs leading-5">{protectedWorkflow ? "預設 Workflow 已鎖定 Agent App graph；只能從節點設定調整 Model / Variant。" : "Command 指定 primary Agent；其餘 Agent 透過 OpenCode-native task delegation 組成 DAG。"}</p>
+        <p className="mt-1 text-muted-foreground text-xs leading-5">{protectedWorkflow ? "預設 Workflow 可以編輯 Agent App graph，但不能刪除整個 Workflow。" : "Command 指定 primary Agent；其餘 Agent 透過 OpenCode-native task delegation 組成 DAG。"}</p>
       </header>
       <div className="grid gap-3 p-3">
         {!command && agents.length === 0 ? (
@@ -65,7 +65,6 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddDelegation, onOpen
                 <select
                   aria-label="Agent App primary Agent"
                   className="workflow-select"
-                  disabled={protectedWorkflow}
                   onChange={(event) => {
                     if (event.target.value) onSetCommandAgent(event.target.value)
                   }}
@@ -89,14 +88,13 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddDelegation, onOpen
                 onAddDelegation={onAddDelegation}
                 onRemoveEdge={onRemoveEdge}
                 onSelectNode={onSelectNode}
-                protectedWorkflow={protectedWorkflow}
                 resourceNodes={resourceNodes}
               />
             )) : (
               <p className="rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">請先從節點面板建立一個 Agent。</p>
             )}
 
-            <Button disabled={protectedWorkflow} onClick={onOpenPalette} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增或加入資源</Button>
+            <Button onClick={onOpenPalette} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增或加入資源</Button>
             <p className="text-[11px] text-muted-foreground">V2 delegation 只會同步 OpenCode agent 的 permission.task，不會建立額外 runner 或 workflow step。</p>
           </article>
         )}
@@ -105,7 +103,7 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddDelegation, onOpen
   )
 }
 
-function AgentRelationshipCard({ agent, agents, edges, isPrimary, onAddCapability, onAddDelegation, onRemoveEdge, onSelectNode, protectedWorkflow, resourceNodes }: {
+function AgentRelationshipCard({ agent, agents, edges, isPrimary, onAddCapability, onAddDelegation, onRemoveEdge, onSelectNode, resourceNodes }: {
   agent: AgentResourceNode
   agents: AgentResourceNode[]
   edges: WorkflowEdge[]
@@ -114,7 +112,6 @@ function AgentRelationshipCard({ agent, agents, edges, isPrimary, onAddCapabilit
   onAddDelegation: (sourceAgentID: string, targetAgentID: string) => void
   onRemoveEdge: (edgeID: string) => void
   onSelectNode: (nodeID: string) => void
-  protectedWorkflow: boolean
   resourceNodes: Array<WorkflowNode & { type: `resource.${string}`; data: ResourceNodeData }>
 }) {
   const delegations = edges
@@ -137,14 +134,13 @@ function AgentRelationshipCard({ agent, agents, edges, isPrimary, onAddCapabilit
         {delegations.map(({ edge, node }) => (
           <div className="flex min-w-0 items-center gap-1.5" key={edge.id}>
             <button className="min-w-0 flex-1 truncate text-left text-xs hover:underline" onClick={() => onSelectNode(node.id)} type="button">{resourceName(node)}</button>
-            <Button aria-label={`解除 ${resourceName(node)} delegation`} disabled={protectedWorkflow} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
+            <Button aria-label={`解除 ${resourceName(node)} delegation`} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
           </div>
         ))}
         {delegations.length === 0 && <span className="text-muted-foreground text-xs">未配置</span>}
         <select
           aria-label={`新增 ${resourceName(agent)} delegation`}
           className="workflow-select h-8"
-          disabled={protectedWorkflow}
           onChange={(event) => {
             if (event.target.value) onAddDelegation(agent.id, event.target.value)
           }}
@@ -169,7 +165,7 @@ function AgentRelationshipCard({ agent, agents, edges, isPrimary, onAddCapabilit
                     {connected.map(({ edge, node }) => (
                       <div className="flex min-w-0 items-center gap-1.5" key={edge.id}>
                         <button className="min-w-0 flex-1 truncate text-left text-xs hover:underline" onClick={() => onSelectNode(node.id)} type="button">{resourceName(node)}</button>
-                        <Button aria-label={`解除 ${resourceName(node)} capability`} disabled={protectedWorkflow} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
+                        <Button aria-label={`解除 ${resourceName(node)} capability`} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
                       </div>
                     ))}
                   </div>
@@ -179,7 +175,6 @@ function AgentRelationshipCard({ agent, agents, edges, isPrimary, onAddCapabilit
             <select
             aria-label={`新增 ${meta.label} 到 ${resourceName(agent)}`}
             className="workflow-select h-8"
-            disabled={protectedWorkflow}
               onChange={(event) => {
                 if (event.target.value) onAddCapability(agent.id, event.target.value)
               }}

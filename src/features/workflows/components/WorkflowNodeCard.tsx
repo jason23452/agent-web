@@ -24,7 +24,6 @@ export type WorkflowCanvasNodeData = Record<string, unknown> & {
   onDelete: (nodeID: string) => void
   onDuplicate: (nodeID: string) => void
   onLockToggle: (nodeID: string) => void
-  readOnly?: boolean
 }
 
 export type WorkflowCanvasNode = Node<WorkflowCanvasNodeData, "workflow-node">
@@ -82,19 +81,19 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
       <footer className="flex items-center justify-between border-border/70 border-t px-2.5 py-1.5">
         <span className="font-mono text-[10px] text-muted-foreground">{WORKFLOW_NODE_META[node.type].category}</span>
         <div className="nodrag nopan flex items-center gap-0.5">
-          <Button aria-label={`複製 ${getWorkflowNodeTitle(node)}`} disabled={data.readOnly} onClick={() => data.onDuplicate(node.id)} size="icon-xs" variant="ghost">
+          <Button aria-label={`複製 ${getWorkflowNodeTitle(node)}`} onClick={() => data.onDuplicate(node.id)} size="icon-xs" variant="ghost">
             <CopyIcon aria-hidden="true" />
           </Button>
-          <Button aria-label={`刪除 ${getWorkflowNodeTitle(node)}`} disabled={data.readOnly} onClick={() => data.onDelete(node.id)} size="icon-xs" variant="ghost">
+          <Button aria-label={`刪除 ${getWorkflowNodeTitle(node)}`} onClick={() => data.onDelete(node.id)} size="icon-xs" variant="ghost">
             <Trash2Icon aria-hidden="true" />
           </Button>
         </div>
       </footer>
 
-      {isResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" isConnectable={!data.readOnly} position={Position.Right} style={{ top: 38 }} type="source" />}
-      {isResource && CAPABILITY_TARGETS[node.type] && <Handle className="workflow-handle workflow-handle--capability" id={CAPABILITY_TARGETS[node.type]} isConnectable={!data.readOnly} position={Position.Left} style={{ top: 38 }} type="target" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" isConnectable={!data.readOnly} position={Position.Right} style={{ top: 68 }} type="source" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="subagent" isConnectable={!data.readOnly} position={Position.Left} style={{ top: 68 }} type="target" />}
+      {isResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
+      {isResource && CAPABILITY_TARGETS[node.type] && <Handle className="workflow-handle workflow-handle--capability" id={CAPABILITY_TARGETS[node.type]} position={Position.Left} style={{ top: 38 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" position={Position.Right} style={{ top: 68 }} type="source" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="subagent" position={Position.Left} style={{ top: 68 }} type="target" />}
     </article>
   )
 }

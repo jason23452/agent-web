@@ -253,32 +253,6 @@ export function workflowFrontmatterValue(content: string | undefined, key: strin
   return value || undefined
 }
 
-export function updateWorkflowFrontmatterValue(content: string | undefined, key: string, value: string) {
-  const source = content ?? ""
-  const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
-  if (!match) return source
-  const frontmatter = match[1].split(/\r?\n/)
-  const body = source.slice(match[0].length)
-  setFrontmatterValue(frontmatter, key, value.trim() || undefined)
-  return `---\n${frontmatter.filter(Boolean).join("\n")}\n---\n${body}`
-}
-
-export function isProtectedWorkflowNodeUpdateAllowed(previous: WorkflowNode, next: WorkflowNode): boolean {
-  if (previous.id !== next.id || previous.type !== next.type || !["resource.agent", "resource.command"].includes(previous.type)) return false
-  if (JSON.stringify(previous.position) !== JSON.stringify(next.position) || JSON.stringify(previous.lock) !== JSON.stringify(next.lock)) return false
-  const before = previous.data as ResourceNodeData
-  const after = next.data as ResourceNodeData
-  const { content: beforeContent, ...beforeData } = before
-  const { content: afterContent, ...afterData } = after
-  if (JSON.stringify(beforeData) !== JSON.stringify(afterData)) return false
-  if (beforeContent === afterContent) return true
-  if (typeof beforeContent !== "string" || typeof afterContent !== "string") return false
-  const beforeParts = splitFrontmatterContent(beforeContent)
-  const afterParts = splitFrontmatterContent(afterContent)
-  if (!beforeParts || !afterParts || beforeParts.body !== afterParts.body) return false
-  return comparableProtectedFrontmatter(beforeParts.frontmatter) === comparableProtectedFrontmatter(afterParts.frontmatter)
-}
-
 export function syncCommandContentWithAgent(content: string | undefined, agentName: string, model?: string): string {
   const source = content ?? ""
   const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
@@ -484,16 +458,6 @@ function setFrontmatterValue(lines: string[], key: string, value?: string) {
   const next = `${key}: ${value}`
   if (index >= 0) lines[index] = next
   else lines.push(next)
-}
-
-function splitFrontmatterContent(content: string): { frontmatter: string[]; body: string } | undefined {
-  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
-  if (!match) return undefined
-  return { frontmatter: match[1].split(/\r?\n/), body: content.slice(match[0].length) }
-}
-
-function comparableProtectedFrontmatter(lines: string[]) {
-  return lines.filter((line) => !/^\s*(?:model|variant):/.test(line)).join("\n")
 }
 
 function setPermissionTask(lines: string[], delegatedAgents: string[]) {

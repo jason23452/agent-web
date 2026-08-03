@@ -76,7 +76,7 @@ export function WorkflowPalette({ catalog, error, loading, onAdd, protectedWorkf
       <div className="grid gap-3 border-border border-b p-4">
         <div>
           <h2 className="font-semibold text-sm" id="workflow-palette-title">新增節點</h2>
-          <p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "預設 Workflow 已鎖定節點與資源；只能編輯 Model / Variant。" : "選取既有資源，或建立 managed draft 後在畫布配置。"}</p>
+          <p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "預設 Workflow 可以編輯節點與資源，但不能刪除整個 Workflow。" : "選取既有資源，或建立 managed draft 後在畫布配置。"}</p>
         </div>
         <div className="relative">
           <SearchIcon aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -112,8 +112,8 @@ export function WorkflowPalette({ catalog, error, loading, onAdd, protectedWorkf
                     <button
                       aria-label={`${item.disabled ? "尚未支援" : "新增"} ${item.label}`}
                       className="group flex min-h-14 w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left outline-none transition-colors hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={item.disabled || protectedWorkflow}
-                      draggable={!item.disabled && !protectedWorkflow}
+                      disabled={item.disabled}
+                      draggable={!item.disabled}
                       key={item.key}
                       onClick={() => onAdd(item)}
                       onDragStart={(event) => startDrag(event, item)}

@@ -24,7 +24,6 @@ import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/wo
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
 import { WorkflowAgentConfigPanel } from "@/features/workflows/components/WorkflowAgentConfigPanel"
-import { updateWorkflowFrontmatterValue, workflowFrontmatterValue } from "@/features/workflows/workflowUtils"
 
 type WorkflowResourceConfigPanelProps = {
   availableModels?: string[]
@@ -37,11 +36,9 @@ type WorkflowResourceConfigPanelProps = {
   edges?: WorkflowEdge[]
   nodes?: WorkflowNode[]
   project?: string
-  protectedWorkflow: boolean
 }
 
-export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onUpdateNode, project, protectedWorkflow }: WorkflowResourceConfigPanelProps) {
-  if (protectedWorkflow) return <ProtectedResourceConfigPanel availableModels={availableModels} modelOptions={modelOptions} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
+export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
   if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel node={node} onClose={onClose} />
   switch (node.type) {
     case "resource.agent":
@@ -59,63 +56,6 @@ export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions
     default:
       return null
   }
-}
-
-function ProtectedResourceConfigPanel({ availableModels, modelOptions, node, onClose, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "availableModels" | "modelOptions" | "node" | "onClose" | "onUpdateNode">) {
-  const data = resourceData(node)
-  const model = workflowFrontmatterValue(data.content, "model") ?? ""
-  const variant = workflowFrontmatterValue(data.content, "variant") ?? ""
-  const models = [...new Set([...(availableModels ?? []), model].filter(Boolean))]
-  const variants = [...new Set([...buildAgentVariantOptions(model, modelOptions ?? []), variant])]
-  const editable = data.mode === "managed" && (node.type === "resource.agent" || node.type === "resource.command")
-
-  function updateValue(key: "model" | "variant", value: string) {
-    const content = updateWorkflowFrontmatterValue(data.content, key, value)
-    if (content === data.content) return
-    onUpdateNode({ ...node, data: { ...data, content } } as WorkflowNode)
-  }
-
-  return (
-    <div className="grid gap-4 p-5">
-      <div className="grid gap-1">
-        <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Default Prompt Writer</p>
-        <h3 className="font-semibold text-base">{data.name}</h3>
-        <p className="text-muted-foreground text-xs leading-5">此預設 Workflow 的節點、連線、prompt、resource 與設定均已鎖定，只能調整 Model / Variant。</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Badge variant="info">僅限 workflow-test</Badge>
-        <Badge variant="outline">{node.type.replace("resource.", "")}</Badge>
-        <Badge variant="secondary">{data.mode === "managed" ? "Managed" : "Reference"}</Badge>
-      </div>
-      {editable ? (
-        <div className="grid gap-4">
-          {models.length ? (
-            <label className="grid gap-1.5 text-xs text-muted-foreground">
-              Model
-              <select aria-label="Default Prompt Writer model" className="workflow-select" onChange={(event) => updateValue("model", event.target.value)} value={model}>
-                <option value="">未指定</option>
-                {models.map((option) => <option key={option} value={option}>{option}</option>)}
-              </select>
-            </label>
-          ) : (
-            <label className="grid gap-1.5 text-xs text-muted-foreground">
-              Model
-              <Input aria-label="Default Prompt Writer model" onChange={(event) => updateValue("model", event.target.value)} value={model} />
-            </label>
-          )}
-          <label className="grid gap-1.5 text-xs text-muted-foreground">
-            Variant
-            <select aria-label="Default Prompt Writer variant" className="workflow-select" onChange={(event) => updateValue("variant", event.target.value)} value={variant}>
-              {variants.map((option) => <option key={option || "default"} value={option}>{option || "預設"}</option>)}
-            </select>
-          </label>
-        </div>
-      ) : (
-        <p className="rounded-lg border border-border bg-muted px-3 py-2.5 text-muted-foreground text-xs">此 resource 僅供檢視，不允許修改。</p>
-      )}
-      <div className="flex justify-end"><Button onClick={onClose} variant="outline">完成配置</Button></div>
-    </div>
-  )
 }
 
 type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }
