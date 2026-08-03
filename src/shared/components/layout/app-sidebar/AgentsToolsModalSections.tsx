@@ -1562,6 +1562,8 @@ export function AgentConfigPanel({
   availableModels,
   modelOptions,
   availableSkillNames,
+  connectedMcpNames,
+  connectedPluginNames,
   editingAgentId,
   guidanceSkill,
   guidanceSubagent,
@@ -1597,6 +1599,8 @@ export function AgentConfigPanel({
   availableModels: string[];
   modelOptions?: ModelOption[];
   availableSkillNames: string[];
+  connectedMcpNames?: string[];
+  connectedPluginNames?: string[];
   editingAgentId: string | null;
   guidanceSkill: string | null;
   guidanceSubagent: string | null;
@@ -2329,6 +2333,12 @@ export function AgentConfigPanel({
               </Button>
             </div>
           </section>
+          {connectedPluginNames !== undefined && (
+            <ConnectedCapabilitySection label="Plugins" names={connectedPluginNames} />
+          )}
+          {connectedMcpNames !== undefined && (
+            <ConnectedCapabilitySection label="MCP" names={connectedMcpNames} />
+          )}
           <section className="grid gap-2">
             <h4 className="font-semibold text-sm text-foreground">
               權限
@@ -2396,4 +2406,27 @@ export function AgentConfigPanel({
       </div>
     </div>
   );
+}
+
+function ConnectedCapabilitySection({ label, names }: { label: string; names: string[] }) {
+  return (
+    <section className="grid gap-2" aria-label={`Workflow ${label}`}>
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold text-sm text-foreground">{label}</h4>
+        <Badge size="sm" variant="secondary">{names.length}</Badge>
+      </div>
+      {names.length > 0 ? (
+        <div className="grid gap-1.5">
+          {names.map((name) => (
+            <div className="rounded-md border bg-background px-2 py-1.5 font-mono text-xs" key={name}>
+              {name}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-md border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">尚未連接</p>
+      )}
+      <p className="text-muted-foreground text-xs">由 Workflow graph capability 連線管理，不會寫入 Agent Markdown。</p>
+    </section>
+  )
 }

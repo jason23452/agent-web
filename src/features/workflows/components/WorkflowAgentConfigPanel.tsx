@@ -8,7 +8,7 @@ import type {
   PermissionAction,
   ToolDefinition,
 } from "@/shared/types/app-sidebar"
-import { agentToYaml } from "@/shared/utils/app-sidebar"
+import { agentToYaml, getToolPermissionKey } from "@/shared/utils/app-sidebar"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/workflows/types"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentModelKeys, buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
@@ -41,8 +41,14 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
   const delegatedAgentNodes = edges
     .filter((edge) => edge.kind === "delegation" && edge.source === node.id)
     .flatMap((edge) => workflowAgents.filter((candidate) => candidate.id === edge.target))
-  const initialForm = {
-    ...agentFormFromContent(data.content ?? "", data.name, data.scope),
+  const initialForm = mergeConnectedCapabilities(agentFormFromContent(data.content ?? "", data.name, data.scope), {
+    tool: connectedCapabilityNames(node, edges, nodes, "resource.tool"),
+    skill: connectedCapabilityNames(node, edges, nodes, "resource.skill"),
+  })
+  const connectedPluginNames = connectedCapabilityNames(node, edges, nodes, "resource.plugin")
+  const connectedMcpNames = connectedCapabilityNames(node, edges, nodes, "resource.mcp")
+  const initialFormWithDelegations = {
+    ...initialForm,
     subagents: delegatedAgentNodes.map((candidate) => (candidate.data as ResourceNodeData).name),
   }
   const workflowAgentDefinitions = workflowAgents.map((candidate): AgentDefinition => {
@@ -80,9 +86,9 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
     })
   const availableModels = [...new Set([...buildAgentModelKeys(modelOptions), initialForm.model].filter(Boolean))]
   const [agentConfigMode, setAgentConfigMode] = useState<AgentConfigMode>("interface")
-  const [agentForm, setAgentForm] = useState<AgentForm>(initialForm)
+  const [agentForm, setAgentForm] = useState<AgentForm>(initialFormWithDelegations)
   const [agentYaml, setAgentYaml] = useState(() =>
-    data.content?.trim() ? data.content : agentToYaml(agentFromForm(initialForm, node)),
+    data.content?.trim() ? data.content : agentToYaml(agentFromForm(initialFormWithDelegations, node)),
   )
   const [toolToAdd, setToolToAdd] = useState(toolDefinitions[0]?.name ?? "")
   const [skillToAdd, setSkillToAdd] = useState(availableSkillNames[0] ?? "")
@@ -106,13 +112,21 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
     if (mode === "yaml") {
       setAgentYaml(agentToYaml(agentFromForm(agentForm, node)))
     } else {
-      updateAgentForm(agentFormFromContent(agentYaml, data.name, data.scope))
+      updateAgentForm(mergeConnectedCapabilities(agentFormFromContent(agentYaml, data.name, data.scope), {
+        tool: connectedCapabilityNames(node, edges, nodes, "resource.tool"),
+        skill: connectedCapabilityNames(node, edges, nodes, "resource.skill"),
+      }))
     }
     setAgentConfigMode(mode)
   }
 
   function submitConfig() {
-    const content = agentConfigMode === "yaml" ? agentYaml : agentToYaml(agentFromForm(agentForm, node))
+    const content = agentConfigMode === "yaml"
+      ? syncAgentYamlCapabilities(agentYaml, data.name, data.scope, {
+          tool: connectedCapabilityNames(node, edges, nodes, "resource.tool"),
+          skill: connectedCapabilityNames(node, edges, nodes, "resource.skill"),
+        })
+      : agentToYaml(agentFromForm(agentForm, node))
     const yamlName = readFrontmatterValue(content, "name")
     const name = (agentConfigMode === "yaml" ? yamlName : agentForm.name).trim() || data.name
     onUpdateNode({
@@ -166,10 +180,12 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
       agentEditMode="edit"
       agentForm={agentForm}
       agentYaml={agentYaml}
-       agents={workflowAgentDefinitions}
+      agents={workflowAgentDefinitions}
       availableModels={availableModels}
       modelOptions={modelOptions}
       availableSkillNames={availableSkillNames}
+      connectedMcpNames={connectedMcpNames}
+      connectedPluginNames={connectedPluginNames}
       editingAgentId={node.id}
       guidanceSkill={guidanceSkill}
       guidanceSubagent={guidanceSubagent}
@@ -208,6 +224,75 @@ function agentFromForm(form: AgentForm, node: WorkflowAgentNode) {
     scope: "custom" as const,
     permission: form.permission,
   }
+}
+
+function mergeConnectedCapabilities(form: AgentForm, connected: { tool: string[]; skill: string[] }): AgentForm {
+  const tools = mergeNames(form.tools, connected.tool)
+  const permission = { ...form.permission }
+  for (const tool of connected.tool) {
+    const permissionKey = getToolPermissionKey(tool)
+    if (permission[permissionKey] === undefined) permission[permissionKey] = "ask"
+  }
+  return {
+    ...form,
+    tools,
+    skills: mergeNames(form.skills, connected.skill),
+    permission,
+  }
+}
+
+function mergeNames(current: string[], additions: string[]) {
+  return [...new Set([...current, ...additions])]
+}
+
+function connectedCapabilityNames(
+  agent: WorkflowAgentNode,
+  edges: WorkflowEdge[],
+  nodes: WorkflowNode[],
+  type: "resource.skill" | "resource.tool" | "resource.mcp" | "resource.plugin",
+) {
+  const byID = new Map(nodes.map((item) => [item.id, item]))
+  return edges.flatMap((edge) => {
+    if (edge.kind !== "capability") return []
+    const resourceID = edge.target === agent.id && edge.targetHandle === "capability"
+      ? edge.source
+      : edge.source === agent.id && edge.targetHandle === type.replace("resource.", "")
+        ? edge.target
+        : undefined
+    const resource = resourceID ? byID.get(resourceID) : undefined
+    if (!resource || resource.type !== type) return []
+    const name = (resource.data as ResourceNodeData).name.trim()
+    return name ? [name] : []
+  })
+}
+
+function syncAgentYamlCapabilities(
+  content: string,
+  fallbackName: string,
+  scope: ResourceNodeData["scope"],
+  connected: { tool: string[]; skill: string[] },
+) {
+  const form = mergeConnectedCapabilities(agentFormFromContent(content, fallbackName, scope), connected)
+  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
+  if (!match) return agentToYaml({ ...form, id: "workflow-agent", scope: "custom", name: form.name || fallbackName })
+  const lines = match[1].split(/\r?\n/)
+  replaceFrontmatterSection(lines, "tools", form.tools.map((tool) => `${tool}: true`))
+  replaceFrontmatterSection(lines, "skills", form.skills.map((skill) => `- ${skill}`))
+  return `---\n${lines.join("\n")}\n---\n${content.slice(match[0].length)}`
+}
+
+function replaceFrontmatterSection(lines: string[], name: string, values: string[]) {
+  const start = lines.findIndex((line) => line.trim() === `${name}:` && !line.startsWith(" "))
+  const nextLines = values.length > 0 ? [`${name}:`, ...values.map((value) => `  ${value}`)] : []
+  if (start < 0) {
+    if (nextLines.length === 0) return
+    const permissionIndex = lines.findIndex((line) => line.trim() === "permission:" && !line.startsWith(" "))
+    lines.splice(permissionIndex < 0 ? lines.length : permissionIndex, 0, ...nextLines)
+    return
+  }
+  let end = start + 1
+  while (end < lines.length && (!lines[end]?.trim() || lines[end]?.startsWith(" "))) end += 1
+  lines.splice(start, end - start, ...nextLines)
 }
 
 function agentFormFromContent(content: string, fallbackName: string, scope: ResourceNodeData["scope"]): AgentForm {
