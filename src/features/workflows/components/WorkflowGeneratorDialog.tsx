@@ -7,7 +7,7 @@ import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, Dia
 import { Textarea } from "@/shared/components/ui/textarea"
 import { WORKFLOW_GENERATOR_WORKFLOW_ID, runWorkflowSystemCommand } from "@/features/workflows/api/workflowTestChat"
 import { validateWorkflow } from "@/features/workflows/api/workflows"
-import type { WorkflowV1 } from "@/features/workflows/types"
+import type { ResourceNodeData, WorkflowV1 } from "@/features/workflows/types"
 import { issueMessage } from "@/features/workflows/workflowUtils"
 
 const DEFAULT_REQUEST = "請建立一個可由使用者描述需求後執行的 Workflow，包含合理的 Command、Agent、delegation、capability resources 與完整 V3 graph。"
@@ -44,6 +44,7 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
     const text = [
       "請根據以下需求產生完整 agent-system.workflow.v3 JSON。",
       `目前 UI project: ${project}`,
+      "workflow.scope 必須是 project，workflow.project 必須是目前 UI project；Command 與所有 managed resources 的 scope 也必須是 project。Reference resources 可以保留原本 scope。",
       "",
       request.trim(),
     ].join("\n")
@@ -56,7 +57,7 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
         setError("Agent 回應不是完整 Workflow JSON。")
         return
       }
-       const validation = await validateWorkflow(parsed, { signal: controller.signal, workspace: project })
+       const validation = await validateWorkflow(scopeWorkflowToProject(parsed, project), { signal: controller.signal, workspace: project })
       if (!validation.valid || !validation.workflow) {
         setError(validation.errors.map(issueMessage).join("；") || "生成的 Workflow 未通過驗證。")
         return
@@ -74,7 +75,7 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
     setCreating(true)
     setError(null)
     try {
-       const validation = await validateWorkflow(generated, { workspace: project })
+        const validation = await validateWorkflow(scopeWorkflowToProject(generated, project), { workspace: project })
       if (!validation.valid || !validation.workflow) {
         setError(validation.errors.map(issueMessage).join("；") || "Workflow JSON 未通過驗證，尚未建立。")
         return
@@ -109,3 +110,18 @@ function parseWorkflowResult(text: string): WorkflowV1 | null {
     return null
   }
 }
+
+function scopeWorkflowToProject(workflow: WorkflowV1, project: string): WorkflowV1 {
+  return {
+    ...workflow,
+    scope: "project",
+    project,
+    nodes: workflow.nodes.map((node) => {
+      if (!node.type.startsWith("resource.")) return node
+      const data = node.data as ResourceNodeData
+      return data.mode === "managed" ? { ...node, data: { ...data, scope: "project" } } as WorkflowNodeWithProjectResource : node
+    }),
+  }
+}
+
+type WorkflowNodeWithProjectResource = Extract<WorkflowV1["nodes"][number], { type: `resource.${string}` }>

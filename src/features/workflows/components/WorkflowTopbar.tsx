@@ -1,4 +1,4 @@
-import { BracesIcon, CloudUploadIcon, FlaskConicalIcon, FolderOpenIcon, MenuIcon, MessageSquareTextIcon, RocketIcon, SaveIcon } from "lucide-react"
+import { BracesIcon, CloudUploadIcon, FlaskConicalIcon, FolderOpenIcon, MenuIcon, MessageSquareTextIcon, RocketIcon, SaveIcon, SparklesIcon } from "lucide-react"
 import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
@@ -12,6 +12,7 @@ export function WorkflowTopbar({
   onBrowse,
   onNameChange,
   onOpenPanel,
+  onOpenGenerator,
   onOpenTestChat,
   onRequestAction,
   onSave,
@@ -25,6 +26,7 @@ export function WorkflowTopbar({
   onBrowse: () => void
   onNameChange: (name: string) => void
   onOpenPanel: () => void
+  onOpenGenerator: () => void
   onOpenTestChat: () => void
   onRequestAction: (action: WorkflowRequestedAction) => void
   onSave: () => Promise<void>
@@ -47,7 +49,9 @@ export function WorkflowTopbar({
         </div>
       </div>
 
-       <div className="workflow-topbar-actions" role="group" aria-label="Workflow 儲存、發布與執行">
+       <div className="workflow-topbar-actions" role="group" aria-label="Workflow 建立、儲存、發布與執行">
+         <Button onClick={onOpenGenerator} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />新增 Workflow</Button>
+         <span aria-hidden="true" className="mx-0.5 h-5 w-px bg-border" />
          <Button loading={busy} onClick={() => void onSave()} size="sm"><SaveIcon aria-hidden="true" />儲存</Button>
          <Button disabled={publishDisabled} onClick={() => onRequestAction({ kind: "publish", target: "workflow-test" })} size="sm" title={blockedReason} variant="outline"><FlaskConicalIcon aria-hidden="true" />測試發布</Button>
          <Button disabled={mainDisabled} onClick={() => onRequestAction({ kind: "publish", target: "main" })} size="sm" title={protectedWorkflow ? "預設 Prompt Writer 僅限 workflow-test" : blockedReason} variant="destructive-outline"><CloudUploadIcon aria-hidden="true" />正式發布</Button>
