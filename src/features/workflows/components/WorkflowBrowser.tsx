@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Clock3Icon, FilePlus2Icon, FolderOpenIcon, GitBranchIcon, Trash2Icon } from "lucide-react"
+import { Clock3Icon, FilePlus2Icon, FolderOpenIcon, GitBranchIcon, SparklesIcon, Trash2Icon } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogClose,
@@ -28,6 +28,7 @@ type WorkflowBrowserProps = {
   onDelete: (workflow: WorkflowSummary) => Promise<void>
   onLoad: (workflow: WorkflowSummary) => Promise<void>
   onOpenChange: (open: boolean) => void
+  onOpenGenerator: () => void
 }
 
 export function WorkflowBrowser({
@@ -39,6 +40,7 @@ export function WorkflowBrowser({
   onDelete,
   onLoad,
   onOpenChange,
+  onOpenGenerator,
   open,
   project,
   workflows,
@@ -66,7 +68,7 @@ export function WorkflowBrowser({
           <DialogHeader>
             <div className="flex items-start justify-between gap-4 pr-8">
               <div><DialogTitle>Workflow</DialogTitle><DialogDescription className="mt-1">瀏覽、載入或建立 {project ? `${project} 專案與全域` : "全域"} workflow。</DialogDescription></div>
-              <Button onClick={() => setCreateMode((current) => !current)} size="sm"><FilePlus2Icon aria-hidden="true" />新增</Button>
+              <div className="flex gap-2"><Button onClick={onOpenGenerator} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />需求生成</Button><Button onClick={() => setCreateMode((current) => !current)} size="sm"><FilePlus2Icon aria-hidden="true" />新增</Button></div>
             </div>
           </DialogHeader>
           <DialogPanel className="grid gap-4">

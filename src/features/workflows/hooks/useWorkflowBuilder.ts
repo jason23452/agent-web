@@ -181,6 +181,26 @@ export function useWorkflowBuilder(project?: string) {
     }
   }
 
+  async function createGenerated(nextWorkflow: WorkflowV1) {
+    setBusyAction("create-generated")
+    try {
+      const response = await createWorkflow(nextWorkflow)
+      setWorkflow(response.workflow)
+      setPersisted(true)
+      setDirty(false)
+      setTestPublished(false)
+      setRun(null)
+      setPublishReport(null)
+      await loadLibrary()
+      toast("Workflow 專案已建立", "完整 Workflow JSON 已保存，尚未發布到 OpenCode。", "success")
+    } catch (error) {
+      toast("建立生成的 Workflow 失敗", getApiErrorMessage(error), "error")
+      throw error
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function load(summary: WorkflowSummary) {
     setBusyAction("load")
     try {
@@ -302,6 +322,7 @@ export function useWorkflowBuilder(project?: string) {
     catalogLoading,
     clearCache,
     createNew,
+    createGenerated,
     dirty,
     libraryError,
     libraryLoading,
