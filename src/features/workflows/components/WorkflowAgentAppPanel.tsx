@@ -2,7 +2,7 @@ import { BotIcon, CheckCircle2Icon, CircleAlertIcon, CommandIcon, PlugZapIcon, P
 import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
 import type { ResourceNodeData, WorkflowCapabilityKind, WorkflowEdge, WorkflowNode, WorkflowV1 } from "@/features/workflows/types"
-import { capabilityTargetHandle, projectWorkflowRelationships, resolveWorkflowAgentRoles } from "@/features/workflows/workflowUtils"
+import { projectWorkflowRelationships, resolveWorkflowAgentRoles } from "@/features/workflows/workflowUtils"
 
 type WorkflowAgentAppPanelProps = {
   workflow: WorkflowV1
@@ -98,7 +98,7 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddPrimaryLink, onAdd
             )}
 
             <Button onClick={onOpenPalette} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增或加入資源</Button>
-            <p className="text-[11px] text-muted-foreground">綠色代表 Agent-to-Agent；黃色代表目前 Agent 可用的 capability。Primary link 尚未對應 runtime handoff。</p>
+            <p className="text-[11px] text-muted-foreground">黃色只代表 Agent-to-Agent；綠色代表 capability resource 連到 Agent input。每個 Agent 可以接多個 Tool、Plugin、Skill 或 MCP。</p>
           </article>
         )}
       </div>
@@ -228,9 +228,12 @@ function capabilityNodesFor(
   nodeType: WorkflowNode["type"],
 ) {
   return edges
-    .filter((edge) => edge.kind === "capability" && edge.source === agent.id && edge.targetHandle === capabilityTargetHandle(nodeType))
+    .filter((edge) => edge.kind === "capability" && (
+      edge.target === agent.id && edge.targetHandle === "capability"
+      || edge.source === agent.id && ["skill", "tool", "mcp", "plugin"].includes(edge.targetHandle ?? "")
+    ))
     .flatMap((edge) => {
-      const node = nodes.find((candidate) => candidate.id === edge.target && candidate.type === nodeType)
+      const node = nodes.find((candidate) => candidate.id === (edge.target === agent.id ? edge.source : edge.target) && candidate.type === nodeType)
       return node ? [{ edge, node }] : []
     })
 }

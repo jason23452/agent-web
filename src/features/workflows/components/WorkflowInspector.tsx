@@ -304,7 +304,7 @@ function CapabilitySummary({ edges, node, nodes }: { edges: WorkflowEdge[]; node
     <InspectorGroup title="Agent relationships">
       {related.length ? (
         <ul className="grid gap-1.5">
-           {related.map(({ edge, other }) => <li className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-2 text-xs" key={edge.id}><span className="text-muted-foreground">{edge.kind === "delegation" ? "委派" : edge.kind === "primary-link" ? "Primary 連線" : edge.source === node.id ? "使用" : "被使用"}</span><strong className="truncate">{other ? getWorkflowNodeTitle(other) : edge.source === node.id ? edge.target : edge.source}</strong></li>)}
+           {related.map(({ edge, other }) => <li className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-2 text-xs" key={edge.id}><span className="text-muted-foreground">{edge.kind === "delegation" ? "委派" : edge.kind === "primary-link" ? "Primary 連線" : node.type === "resource.agent" && edge.target === node.id ? "使用" : edge.source === node.id ? "提供" : "被使用"}</span><strong className="truncate">{other ? getWorkflowNodeTitle(other) : edge.source === node.id ? edge.target : edge.source}</strong></li>)}
         </ul>
       ) : <p className="rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs">尚未建立 relationship。</p>}
       <p className="text-[11px] text-muted-foreground">Capability 是 declarative dependency；delegation 會投影為 OpenCode permission.task，兩者都不代表 runtime hard isolation。</p>
@@ -339,7 +339,8 @@ function BindingSummary({ inbound }: { inbound: Array<{ edge: WorkflowEdge; sour
 function EdgeInspector({ edge, nodes, onDeleteEdge, onUpdateEdge }: WorkflowInspectorProps & { edge: WorkflowEdge }) {
   const source = nodes.find((node) => node.id === edge.source)
   const target = nodes.find((node) => node.id === edge.target)
-  const expectedKind = resolveConnectionKind(source, target, edge.sourceHandle, edge.targetHandle)
+  const agentKind = edge.kind === "primary-link" || edge.kind === "delegation" ? edge.kind : undefined
+  const expectedKind = resolveConnectionKind(source, target, edge.sourceHandle, edge.targetHandle, agentKind)
   const valid = expectedKind === edge.kind
   return (
     <section aria-labelledby="edge-inspector-title" className="min-h-0 overflow-y-auto">

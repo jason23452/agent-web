@@ -18,7 +18,7 @@ import {
 import "@xyflow/react/dist/style.css"
 import { AlertTriangleIcon, MousePointer2Icon } from "lucide-react"
 import type { WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition } from "@/features/workflows/types"
-import { getEdgeLabel, resolveConnectionKind, validateWorkflowAgentEdge, wouldCreateControlCycle } from "@/features/workflows/workflowUtils"
+import { getEdgeLabel, isWorkflowCapabilityResource, resolveConnectionKind, resolveWorkflowAgentConnectionKind, validateWorkflowAgentEdge, wouldCreateControlCycle } from "@/features/workflows/workflowUtils"
 import { WorkflowNodeCard, type WorkflowCanvasNode, type WorkflowCanvasNodeData } from "@/features/workflows/components/WorkflowNodeCard"
 
 type WorkflowCanvasEdge = Edge<{ kind: WorkflowEdge["kind"] }>
@@ -85,6 +85,7 @@ function edgePresentation(edge: WorkflowEdge, nodes: WorkflowNode[], currentAgen
     const source = nodes.find((node) => node.id === edge.source)
     const target = nodes.find((node) => node.id === edge.target)
     if (source?.type === "resource.command" && target?.type === "resource.agent") return "entry"
+    if (source && target?.type === "resource.agent" && isWorkflowCapabilityResource(source.type)) return "capability"
     if (source?.type === "resource.agent") return source.id === currentAgentID ? "current-capability" : "capability-muted"
   }
   return edge.kind.replace(".", "-")
@@ -165,10 +166,17 @@ function WorkflowCanvasInner({
     startTransition(() => setCanvasEdges((current) => mergeCanvasEdges(current, nextEdges)))
   }, [currentAgentID, edges, nodes, selectedEdgeID])
 
-  function validateConnection(connection: Connection | WorkflowCanvasEdge) {
+  function connectionKind(connection: Connection | WorkflowCanvasEdge) {
     const sourceNode = nodes.find((node) => node.id === connection.source)
     const targetNode = nodes.find((node) => node.id === connection.target)
-    const kind = resolveConnectionKind(sourceNode, targetNode, connection.sourceHandle, connection.targetHandle)
+    const agentKind = sourceNode?.type === "resource.agent" && targetNode?.type === "resource.agent"
+      ? resolveWorkflowAgentConnectionKind({ nodes, edges }, connection.source, connection.target)
+      : undefined
+    return resolveConnectionKind(sourceNode, targetNode, connection.sourceHandle, connection.targetHandle, agentKind)
+  }
+
+  function validateConnection(connection: Connection | WorkflowCanvasEdge) {
+    const kind = connectionKind(connection)
     if (!kind) return false
     if (kind === "control" && connection.source && connection.target && wouldCreateControlCycle(edges, connection.source, connection.target)) return false
     if ((kind === "delegation" || kind === "primary-link") && connection.source && connection.target) {
@@ -193,9 +201,7 @@ function WorkflowCanvasInner({
 
   function connect(connection: Connection) {
     if (!validateConnection(connection) || !connection.source || !connection.target) return
-    const sourceNode = nodes.find((node) => node.id === connection.source)
-    const targetNode = nodes.find((node) => node.id === connection.target)
-    const kind = resolveConnectionKind(sourceNode, targetNode, connection.sourceHandle, connection.targetHandle)
+    const kind = connectionKind(connection)
     if (!kind) return
     if ((kind === "delegation" || kind === "primary-link") && connection.source && connection.target) {
       const error = validateWorkflowAgentEdge({ nodes, edges }, {
@@ -301,15 +307,15 @@ function WorkflowCanvasInner({
       >
         <Background color="var(--border)" gap={22} size={1.2} variant={BackgroundVariant.Dots} />
         <Controls aria-label="畫布縮放與檢視控制" position="bottom-left" />
-         <MiniMap ariaLabel="Workflow 縮圖" maskColor="color-mix(in srgb, var(--background) 72%, transparent)" nodeColor="var(--muted-foreground)" pannable zoomable />
-         <div aria-label="Workflow 連線圖例" className="pointer-events-none absolute right-4 top-4 z-10 grid gap-1.5 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm">
-           <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--green" />Agent-to-Agent</span>
-           <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--yellow" />目前 Agent capabilities</span>
-           <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--blue" />Command entry</span>
-         </div>
+        <MiniMap ariaLabel="Workflow 縮圖" maskColor="color-mix(in srgb, var(--background) 72%, transparent)" nodeColor="var(--muted-foreground)" pannable zoomable />
+        <div aria-label="Workflow 連線圖例" className="pointer-events-none absolute right-4 top-4 z-10 grid gap-1.5 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--green" />Capability -&gt; Agent input</span>
+          <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--yellow" />Agent-to-Agent</span>
+          <span><i aria-hidden="true" className="workflow-legend-dot workflow-legend-dot--blue" />Command entry</span>
+        </div>
         <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-muted-foreground text-xs shadow-sm backdrop-blur-sm">
           <MousePointer2Icon aria-hidden="true" className="size-3.5" />
-           單擊選取 · 雙擊開啟詳細配置 · 拉動 handle 建立連線
+          單擊選取 · 雙擊開啟詳細配置 · 拉動 handle 建立連線
         </div>
       </ReactFlow>
       <p aria-live="polite" className={`workflow-connection-feedback ${connectionFeedback ? "workflow-connection-feedback--visible" : ""}`}>

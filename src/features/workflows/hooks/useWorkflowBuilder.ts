@@ -25,7 +25,7 @@ import type {
   WorkflowTarget,
   WorkflowV1,
 } from "@/features/workflows/types"
-import { createWorkflowDraft, issueMessage, touchWorkflow } from "@/features/workflows/workflowUtils"
+import { createWorkflowDraft, issueMessage, normalizeWorkflowSchemaVersion, syncWorkflowAgentConfigs, touchWorkflow } from "@/features/workflows/workflowUtils"
 
 export function useWorkflowBuilder(project?: string) {
   const [workflow, setWorkflow] = useState<WorkflowV1>(() => createWorkflowDraft(project))
@@ -184,7 +184,7 @@ export function useWorkflowBuilder(project?: string) {
     setBusyAction("load")
     try {
       const response = await getWorkflow(summary.id, summary.scope, summary.project)
-      setWorkflow(response)
+      setWorkflow(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(response)))
       setPersisted(true)
       setDirty(false)
       setTestPublished(false)

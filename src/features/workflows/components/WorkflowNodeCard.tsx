@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/shared/components/ui/button"
 import type { WorkflowNode } from "@/features/workflows/types"
-import { getWorkflowNodeSummary, getWorkflowNodeTitle, WORKFLOW_NODE_META } from "@/features/workflows/workflowUtils"
+import { getWorkflowNodeSummary, getWorkflowNodeTitle, isWorkflowCapabilityResource, WORKFLOW_NODE_META } from "@/features/workflows/workflowUtils"
 
 export type WorkflowCanvasNodeData = Record<string, unknown> & {
   workflowNode: WorkflowNode
@@ -48,24 +48,11 @@ const TYPE_ICONS = {
   "flow.merge": GitBranchIcon,
 } as const
 
-const CAPABILITY_TARGETS: Partial<Record<WorkflowNode["type"], string>> = {
-  "resource.agent": "agent",
-  "resource.skill": "skill",
-  "resource.tool": "tool",
-  "resource.mcp": "mcp",
-  "resource.plugin": "plugin",
-}
-
 export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNode>) {
   const node = data.workflowNode
   const Icon = TYPE_ICONS[node.type]
-  const isResource = node.type.startsWith("resource.")
+  const isCapabilityResource = isWorkflowCapabilityResource(node.type)
   const isCurrentAgent = node.type === "resource.agent" && node.id === data.currentAgentID
-  const capabilitySourceClass = node.type === "resource.command"
-    ? "workflow-handle--entry"
-    : isCurrentAgent
-      ? "workflow-handle--current-capability"
-      : "workflow-handle--capability-muted"
 
   return (
     <article
@@ -98,11 +85,11 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
         </div>
       </footer>
 
-      {isResource && <Handle className={`workflow-handle ${capabilitySourceClass}`} id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
-      {isResource && CAPABILITY_TARGETS[node.type] && <Handle className="workflow-handle workflow-handle--capability" id={CAPABILITY_TARGETS[node.type]} position={Position.Left} style={{ top: 38 }} type="target" />}
+      {node.type === "resource.command" && <Handle className="workflow-handle workflow-handle--entry" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
+      {isCapabilityResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--entry" id="agent" position={Position.Left} style={{ top: 28 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Left} style={{ top: 48 }} type="target" />}
       {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" position={Position.Right} style={{ top: 68 }} type="source" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="primary" position={Position.Left} style={{ top: 68 }} type="target" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="subagent" position={Position.Left} style={{ top: 92 }} type="target" />}
     </article>
   )
 }

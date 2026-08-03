@@ -66,7 +66,7 @@ function ReferenceResourcePanel({ node, onClose }: { node: WorkflowNode; onClose
       <div className="grid gap-1">
         <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Reference resource</p>
         <h3 className="font-semibold text-base">{data.name}</h3>
-        <p className="text-muted-foreground text-xs leading-5">這個節點只引用 target runtime 已存在的 OpenCode resource。若要在 Workflow 內編輯內容，請從節點面板建立 managed draft。</p>
+        <p className="text-muted-foreground text-xs leading-5">這個節點只引用 target runtime 已存在的 OpenCode resource，可作為 workflow 的 Agent context 或 delegation source；Workflow 不會修改它。若要在 Workflow 內編輯內容，請從節點面板建立 managed draft。</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Badge variant="secondary">{node.type.replace("resource.", "")}</Badge>

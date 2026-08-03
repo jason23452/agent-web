@@ -271,7 +271,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     const agent = builder.workflow.nodes.find((node) => node.id === agentNodeID && node.type === "resource.agent")
     const capability = builder.workflow.nodes.find((node) => node.id === capabilityNodeID)
     if (!agent || !capability) return
-    const edge = createCapabilityEdge(agent, capability)
+    const edge = createCapabilityEdge(capability, agent)
     if (!edge || builder.workflow.edges.some((current) => current.source === edge.source && current.target === edge.target && current.kind === "capability")) return
     mutate((workflow) => ({ ...workflow, edges: [...workflow.edges, edge] }))
   }
@@ -369,7 +369,8 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     if (!current) return
     const source = builder.workflow.nodes.find((node) => node.id === nextEdge.source)
     const target = builder.workflow.nodes.find((node) => node.id === nextEdge.target)
-    if (resolveConnectionKind(source, target, nextEdge.sourceHandle, nextEdge.targetHandle) !== nextEdge.kind) {
+    const agentKind = nextEdge.kind === "primary-link" || nextEdge.kind === "delegation" ? nextEdge.kind : undefined
+    if (resolveConnectionKind(source, target, nextEdge.sourceHandle, nextEdge.targetHandle, agentKind) !== nextEdge.kind) {
       toastManager.add({ id: `workflow-edge-kind-${Date.now()}`, title: "連線類型與 handle 不相容", description: "請刪除連線後從正確的 handle 重新建立。", type: "warning" })
       return
     }
