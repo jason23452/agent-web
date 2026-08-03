@@ -2,6 +2,7 @@ import { apiRequest } from "@/shared/api"
 import type {
   WorkflowCacheClearResult,
   WorkflowCacheMetadataResult,
+  WorkflowCreateInput,
   WorkflowPublishReport,
   WorkflowResourceCatalog,
   WorkflowRun,
@@ -38,7 +39,7 @@ export async function getWorkflow(id: string, scope: WorkflowScope, project?: st
   return "workflow" in response ? response.workflow : response
 }
 
-export function createWorkflow(workflow: WorkflowV1, options: RequestOptions = {}) {
+export function createWorkflow(workflow: WorkflowCreateInput, options: RequestOptions = {}) {
   return apiRequest<WorkflowSaveResult>("/bff/workflows", {
     body: { workflow },
     method: "POST",
@@ -55,7 +56,7 @@ export function updateWorkflow(workflow: WorkflowV1, options: RequestOptions = {
 }
 
 export function deleteWorkflow(id: string, scope: WorkflowScope, project?: string, options: RequestOptions = {}) {
-  return apiRequest<{ deleted: boolean }>(`/bff/workflows/${encodeURIComponent(id)}`, {
+  return apiRequest<{ deleted: boolean; resourcesDeleted?: string[] }>(`/bff/workflows/${encodeURIComponent(id)}`, {
     method: "DELETE",
     query: { scope, project },
     signal: options.signal,

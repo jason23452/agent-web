@@ -14,7 +14,7 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogDescription, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Input } from "@/shared/components/ui/input"
 import type { WorkflowScope, WorkflowSummary, WorkflowV1 } from "@/features/workflows/types"
-import { scopeLabel, slugifyWorkflowID } from "@/features/workflows/workflowUtils"
+import { scopeLabel } from "@/features/workflows/workflowUtils"
 
 type WorkflowBrowserProps = {
   activeWorkflowID: string
@@ -24,7 +24,7 @@ type WorkflowBrowserProps = {
   open: boolean
   project?: string
   workflows: WorkflowSummary[]
-  onCreate: (input: Pick<WorkflowV1, "id" | "name" | "description" | "scope">) => Promise<void>
+  onCreate: (input: Pick<WorkflowV1, "name" | "description" | "scope">) => Promise<void>
   onDelete: (workflow: WorkflowSummary) => Promise<void>
   onLoad: (workflow: WorkflowSummary) => Promise<void>
   onOpenChange: (open: boolean) => void
@@ -45,21 +45,16 @@ export function WorkflowBrowser({
 }: WorkflowBrowserProps) {
   const [createMode, setCreateMode] = useState(false)
   const [name, setName] = useState("")
-  const [id, setID] = useState("")
-  const [idTouched, setIDTouched] = useState(false)
   const [description, setDescription] = useState("")
   const [scope, setScope] = useState<WorkflowScope>(project ? "project" : "global")
   const [deleteTarget, setDeleteTarget] = useState<WorkflowSummary | null>(null)
 
   async function submitCreate() {
     const normalizedName = name.trim()
-    const normalizedID = id.trim() || slugifyWorkflowID(normalizedName)
-    if (!normalizedName || !normalizedID) return
-    await onCreate({ id: normalizedID, name: normalizedName, description: description.trim(), scope })
+    if (!normalizedName) return
+    await onCreate({ name: normalizedName, description: description.trim(), scope })
     setCreateMode(false)
     setName("")
-    setID("")
-    setIDTouched(false)
     setDescription("")
     onOpenChange(false)
   }
@@ -78,12 +73,11 @@ export function WorkflowBrowser({
             {createMode && (
               <form className="grid gap-3 rounded-xl border border-border bg-muted/30 p-4" onSubmit={(event) => { event.preventDefault(); void submitCreate() }}>
                 <div><h3 className="font-semibold text-sm">建立 Workflow</h3><p className="mt-0.5 text-muted-foreground text-xs">建立時只保存 workflow JSON，不會發布到 OpenCode。</p></div>
-                <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">名稱</span><Input autoFocus onChange={(event) => { setName(event.target.value); if (!idTouched) setID(slugifyWorkflowID(event.target.value)) }} placeholder="例如 PR 自動檢查" value={name} /></label>
-                <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">Workflow ID</span><Input maxLength={80} onChange={(event) => { setIDTouched(true); setID(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 80)) }} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="pr-review" value={id} /></label>
+                <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">名稱</span><Input autoFocus onChange={(event) => setName(event.target.value)} placeholder="例如 PR 自動檢查" value={name} /></label>
                 <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">說明</span><Input onChange={(event) => setDescription(event.target.value)} placeholder="這個 workflow 會完成什麼工作" value={description} /></label>
                 <label className="grid gap-1.5 text-xs"><span className="font-medium text-muted-foreground">範圍</span><select className="workflow-select" onChange={(event) => setScope(event.target.value as WorkflowScope)} value={scope}>{project && <option value="project">專案 · {project}</option>}<option value="global">全域</option></select></label>
                 {scope === "global" && <p className="rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">全域 workflow 可發布到影響所有 Project 的環境，正式發布前會再次確認。</p>}
-                <div className="flex justify-end gap-2"><Button onClick={() => setCreateMode(false)} type="button" variant="outline">取消</Button><Button disabled={!name.trim() || !id.trim()} loading={busy} type="submit">建立並儲存</Button></div>
+                <div className="flex justify-end gap-2"><Button onClick={() => setCreateMode(false)} type="button" variant="outline">取消</Button><Button disabled={!name.trim()} loading={busy} type="submit">建立並儲存</Button></div>
               </form>
             )}
 
@@ -107,7 +101,7 @@ export function WorkflowBrowser({
 
       <AlertDialog onOpenChange={(nextOpen) => { if (!nextOpen) setDeleteTarget(null) }} open={Boolean(deleteTarget)}>
         <AlertDialogPopup>
-          <AlertDialogHeader><AlertDialogTitle>刪除 Workflow？</AlertDialogTitle><AlertDialogDescription>「{deleteTarget?.name}」的已保存 JSON 將被刪除。此操作不會移除已發布的 OpenCode 資源。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>刪除 Workflow？</AlertDialogTitle><AlertDialogDescription>「{deleteTarget?.name}」的 JSON，以及由它管理的 agents、commands、skills、tools、plugins 與 MCP 設定都會被移除；reference 資源不會受影響。</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><AlertDialogClose render={<Button variant="outline" />}>取消</AlertDialogClose><AlertDialogClose render={<Button loading={busy} variant="destructive" />} onClick={() => { if (deleteTarget) void onDelete(deleteTarget) }}>確認刪除</AlertDialogClose></AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>

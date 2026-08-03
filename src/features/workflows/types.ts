@@ -115,6 +115,8 @@ export type WorkflowV1 = {
   updatedAt: string
 }
 
+export type WorkflowCreateInput = Omit<WorkflowV1, "id"> & Partial<Pick<WorkflowV1, "id">>
+
 export type WorkflowSummary = Pick<
   WorkflowV1,
   "id" | "name" | "description" | "scope" | "project" | "updatedAt"

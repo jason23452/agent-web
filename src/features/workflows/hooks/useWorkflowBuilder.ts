@@ -18,6 +18,7 @@ import {
 import type {
   WorkflowPublishReport,
   WorkflowCacheMetadataResult,
+  WorkflowCreateInput,
   WorkflowResourceCatalog,
   WorkflowRun,
   WorkflowSummary,
@@ -156,11 +157,13 @@ export function useWorkflowBuilder(project?: string) {
     }
   }
 
-  async function createNew(input: Pick<WorkflowV1, "id" | "name" | "description" | "scope">) {
+  async function createNew(input: Pick<WorkflowV1, "name" | "description" | "scope">) {
     setBusyAction("create")
     try {
       const draft = createWorkflowDraft(project, input)
-      const response = await createWorkflow(draft)
+      const createPayload: WorkflowCreateInput = { ...draft }
+      delete createPayload.id
+      const response = await createWorkflow(createPayload)
       setWorkflow(response.workflow)
       setPersisted(true)
       setDirty(false)
@@ -198,7 +201,7 @@ export function useWorkflowBuilder(project?: string) {
   async function remove(summary: WorkflowSummary) {
     setBusyAction("delete")
     try {
-      await deleteWorkflow(summary.id, summary.scope, summary.project)
+      const result = await deleteWorkflow(summary.id, summary.scope, summary.project)
       if (summary.id === workflow.id && summary.scope === workflow.scope) {
          setWorkflow(createWorkflowDraft(project))
          setPersisted(false)
@@ -208,7 +211,8 @@ export function useWorkflowBuilder(project?: string) {
         setPublishReport(null)
       }
       await loadLibrary()
-      toast("Workflow 已刪除", "已保存的 JSON 已移除；已發布資源不會自動刪除。", "success")
+      const resourcesDeleted = result.resourcesDeleted?.length ?? 0
+      toast("Workflow 已刪除", `已移除 Workflow JSON 與 ${resourcesDeleted} 個由此 Workflow 管理的 OpenCode 資源。`, "success")
     } catch (error) {
       toast("刪除 Workflow 失敗", getApiErrorMessage(error), "error")
       throw error
