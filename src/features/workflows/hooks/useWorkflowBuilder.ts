@@ -25,7 +25,7 @@ import type {
   WorkflowTarget,
   WorkflowV1,
 } from "@/features/workflows/types"
-import { createWorkflowDraft, issueMessage, normalizeWorkflowSchemaVersion, syncWorkflowAgentConfigs, touchWorkflow } from "@/features/workflows/workflowUtils"
+import { createWorkflowDraft, ensureWorkflowCapabilityConnections, issueMessage, normalizeWorkflowSchemaVersion, syncWorkflowAgentConfigs, touchWorkflow } from "@/features/workflows/workflowUtils"
 
 export function useWorkflowBuilder(project?: string) {
   const [workflow, setWorkflow] = useState<WorkflowV1>(() => createWorkflowDraft(project))
@@ -63,28 +63,33 @@ export function useWorkflowBuilder(project?: string) {
     }
   }, [project])
 
+  const loadCatalog = useCallback(async (signal?: AbortSignal) => {
+    setCatalogLoading(true)
+    setCatalogError(null)
+    try {
+      const response = await getWorkflowResources(project, { signal, workspace: project })
+      if (signal?.aborted) return null
+      setCatalog(response)
+      return response
+    } catch (error) {
+      if (!signal?.aborted) setCatalogError(getApiErrorMessage(error))
+      return null
+    } finally {
+      if (!signal?.aborted) setCatalogLoading(false)
+    }
+  }, [project])
+
   useEffect(() => {
     const controller = new AbortController()
     const timeoutID = window.setTimeout(() => {
       void loadLibrary(controller.signal)
-      setCatalogLoading(true)
-      setCatalogError(null)
-      void getWorkflowResources(project, { signal: controller.signal, workspace: project })
-        .then((response) => {
-          if (!controller.signal.aborted) setCatalog(response)
-        })
-        .catch((error: unknown) => {
-          if (!controller.signal.aborted) setCatalogError(getApiErrorMessage(error))
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setCatalogLoading(false)
-        })
+      void loadCatalog(controller.signal)
     }, 0)
     return () => {
       controller.abort()
       window.clearTimeout(timeoutID)
     }
-  }, [loadLibrary, project])
+  }, [loadCatalog, loadLibrary])
 
   useEffect(() => {
     if (!activeRunID || !activeRunWorkflowID || (activeRunStatus !== "queued" && activeRunStatus !== "running")) return
@@ -205,9 +210,11 @@ export function useWorkflowBuilder(project?: string) {
     setBusyAction("load")
     try {
        const response = await getWorkflow(summary.id, summary.scope, summary.project, { workspace: project })
-      setWorkflow(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(response)))
-      setPersisted(true)
-      setDirty(false)
+       const normalized = syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(response))
+       const prepared = ensureWorkflowCapabilityConnections(normalized)
+       setWorkflow(prepared)
+       setPersisted(true)
+       setDirty(prepared !== normalized)
       setTestPublished(false)
       setRun(null)
       setPublishReport(null)
@@ -327,6 +334,7 @@ export function useWorkflowBuilder(project?: string) {
     libraryError,
     libraryLoading,
     load,
+    loadCatalog,
     loadCache,
     persisted,
     publish,

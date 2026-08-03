@@ -13,6 +13,7 @@ import {
   RotateCwIcon,
   SearchIcon,
   SparklesIcon,
+  UploadCloudIcon,
   WrenchIcon,
   ZapIcon,
 } from "lucide-react"
@@ -47,11 +48,12 @@ type WorkflowPaletteProps = {
   error: string | null
   loading: boolean
   onAdd: (item: WorkflowPaletteItem) => void
+  onImportSkill: () => void
   nodes: WorkflowNode[]
   protectedWorkflow: boolean
 }
 
-export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, protectedWorkflow }: WorkflowPaletteProps) {
+export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, onImportSkill, protectedWorkflow }: WorkflowPaletteProps) {
   const [query, setQuery] = useState("")
   const [scope, setScope] = useState<"all" | "project" | "global">("all")
   const firstNodeIsCommand = nodes[0]?.type === "resource.command"
@@ -114,12 +116,12 @@ export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, protect
                   const Icon = TYPE_ICONS[item.type]
                   return (
                     <button
-                      aria-label={`${item.disabled ? "尚未支援" : "新增"} ${item.label}`}
+                       aria-label={`${item.disabled ? "尚未支援" : item.action === "import-skill" ? "匯入" : "新增"} ${item.label}`}
                       className="group flex min-h-14 w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left outline-none transition-colors hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-55"
                       disabled={item.disabled}
-                      draggable={!item.disabled}
+                       draggable={!item.disabled && !item.action}
                       key={item.key}
-                      onClick={() => onAdd(item)}
+                       onClick={() => item.action === "import-skill" ? onImportSkill() : onAdd(item)}
                       onDragStart={(event) => startDrag(event, item)}
                       type="button"
                     >
@@ -129,7 +131,8 @@ export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, protect
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
                           <strong className="truncate font-medium text-xs">{item.label}</strong>
-                          {!item.resource && item.resourceMode === "managed" && <Badge size="sm" variant="outline">建立</Badge>}
+                           {!item.resource && item.action === "import-skill" && <Badge size="sm" variant="info"><UploadCloudIcon aria-hidden="true" />匯入</Badge>}
+                           {!item.resource && !item.action && item.resourceMode === "managed" && <Badge size="sm" variant="outline">建立</Badge>}
                           {item.disabled && <Badge size="sm" variant="secondary">未來</Badge>}
                           {item.resource?.inherited && <Badge size="sm" variant="info">繼承</Badge>}
                         </span>

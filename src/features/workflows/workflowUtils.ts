@@ -8,6 +8,7 @@ import type {
   WorkflowPosition,
   WorkflowRelationshipProjection,
   WorkflowResource,
+  WorkflowResourceMode,
   WorkflowScope,
   WorkflowV1,
 } from "@/features/workflows/types"
@@ -46,13 +47,33 @@ export const WORKFLOW_NODE_META: Record<WorkflowNodeType, { label: string; categ
   "flow.merge": { label: "合併流程", category: "流程", description: "合併多個分支（未來支援）" },
 }
 
-const STATIC_PALETTE_TYPES: Array<{ type: Extract<WorkflowNodeType, `resource.${string}`>; disabled?: boolean }> = [
-  { type: "resource.command" },
-  { type: "resource.agent" },
-  { type: "resource.skill" },
-  { type: "resource.tool" },
-  { type: "resource.mcp" },
-  { type: "resource.plugin" },
+const STATIC_PALETTE_TYPES: Array<{
+  type: Extract<WorkflowNodeType, `resource.${string}`>
+  action?: "import-skill"
+  disabled?: boolean
+  key?: string
+  label?: string
+  description?: string
+  resourceMode?: WorkflowResourceMode
+}> = [
+  { type: "resource.command", resourceMode: "managed" },
+  { type: "resource.agent", resourceMode: "managed" },
+  {
+    type: "resource.skill",
+    label: "Agent 撰寫 Skill",
+    description: "建立 managed Skill node，並自動串接目前 entry Agent 編輯 SKILL.md。",
+    resourceMode: "managed",
+  },
+  {
+    action: "import-skill",
+    key: "import:skill",
+    type: "resource.skill",
+    label: "匯入 Skill",
+    description: "上傳 Skill 壓縮檔，或使用 skills.sh / npx skills add 網路來源。",
+  },
+  { type: "resource.tool", resourceMode: "managed" },
+  { type: "resource.mcp", resourceMode: "managed" },
+  { type: "resource.plugin", resourceMode: "managed" },
 ]
 
 const RESOURCE_TYPE_BY_KIND = {
@@ -128,14 +149,15 @@ export function touchWorkflow(workflow: WorkflowV1, changes: Partial<WorkflowV1>
 }
 
 export function buildPaletteItems(resources?: Record<string, WorkflowResource[]>): WorkflowPaletteItem[] {
-  const staticItems = STATIC_PALETTE_TYPES.map(({ type, disabled }) => ({
-    key: `create:${type}`,
+  const staticItems = STATIC_PALETTE_TYPES.map(({ action, description, key, label, resourceMode, type, disabled }) => ({
+    action,
+    key: key ?? `create:${type}`,
     type,
-    label: `新增 ${WORKFLOW_NODE_META[type].label}`,
-    description: `建立 managed ${WORKFLOW_NODE_META[type].label} draft，完成設定後才會在 Publish 時同步。`,
+    label: label ?? `新增 ${WORKFLOW_NODE_META[type].label}`,
+    description: description ?? `建立 managed ${WORKFLOW_NODE_META[type].label} draft，完成設定後才會在 Publish 時同步。`,
     category: WORKFLOW_NODE_META[type].category,
     disabled,
-    resourceMode: "managed" as const,
+    ...(resourceMode ? { resourceMode } : {}),
   }))
   const resourceItems = Object.entries(RESOURCE_TYPE_BY_KIND).flatMap(([kind, type]) =>
     (resources?.[kind] ?? []).map((resource) => ({
@@ -270,6 +292,27 @@ export function createCapabilityEdge(source: WorkflowNode, target: WorkflowNode,
     sourceHandle: "capability",
     targetHandle: targetHandle ?? undefined,
   }
+}
+
+export function ensureWorkflowCapabilityConnections(workflow: WorkflowV1): WorkflowV1 {
+  const primaryID = [...resolveWorkflowAgentRoles(workflow).entryPrimaryIDs][0]
+  const primaryAgent = primaryID ? workflow.nodes.find((node) => node.id === primaryID && node.type === "resource.agent") : undefined
+  if (!primaryAgent) return workflow
+
+  const edges = [...workflow.edges]
+  let changed = false
+  for (const resource of workflow.nodes.filter((node) => isWorkflowCapabilityResource(node.type))) {
+    const alreadyConnected = edges.some((edge) => edge.kind === "capability" && (
+      edge.source === resource.id && edge.target === primaryAgent.id
+      || edge.target === resource.id && edge.source === primaryAgent.id
+    ))
+    if (alreadyConnected) continue
+    const edge = createCapabilityEdge(resource, primaryAgent, `capability-${resource.id}-${primaryAgent.id}`.slice(0, 100))
+    if (!edge) continue
+    edges.push(edge)
+    changed = true
+  }
+  return changed ? { ...workflow, edges } : workflow
 }
 
 export function createDelegationEdge(source: WorkflowNode, target: WorkflowNode, id = `edge-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`): WorkflowEdge | null {

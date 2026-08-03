@@ -376,6 +376,7 @@ export type WorkflowPaletteItem = {
   description: string
   category: string
   disabled?: boolean
+  action?: "import-skill"
   resource?: WorkflowResource
   resourceMode?: WorkflowResourceMode
 }

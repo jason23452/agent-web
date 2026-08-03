@@ -4,7 +4,7 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
-import { createCapabilityEdge, createDelegationEdge, createNodeFromPalette, createPrimaryLinkEdge, duplicateWorkflowNode, getWorkflowNodeTitle, isPromptEditableWorkflowNode, isProtectedWorkflow, normalizeWorkflowSchemaVersion, resolveConnectionKind, resolveWorkflowAgentRoles, syncCommandContentForAgents, syncCommandNodeToAgent, syncWorkflowAgentConfigs, touchWorkflow, validateWorkflowAgentEdge, workflowFrontmatterValue } from "@/features/workflows/workflowUtils"
+import { createCapabilityEdge, createDelegationEdge, createNodeFromPalette, createPrimaryLinkEdge, duplicateWorkflowNode, ensureWorkflowCapabilityConnections, getWorkflowNodeTitle, isPromptEditableWorkflowNode, isProtectedWorkflow, normalizeWorkflowSchemaVersion, resolveConnectionKind, resolveWorkflowAgentRoles, syncCommandContentForAgents, syncCommandNodeToAgent, syncWorkflowAgentConfigs, touchWorkflow, validateWorkflowAgentEdge, workflowFrontmatterValue } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
 import { WorkflowAgentAppPanel } from "@/features/workflows/components/WorkflowAgentAppPanel"
@@ -18,6 +18,7 @@ import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowP
 import { WorkflowPromptWriterDialog } from "@/features/workflows/components/WorkflowPromptWriterDialog"
 import { WorkflowGeneratorDialog } from "@/features/workflows/components/WorkflowGeneratorDialog"
 import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
+import { WorkflowSkillImportDialog, type ImportedWorkflowSkill } from "@/features/workflows/components/WorkflowSkillImportDialog"
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
 import { WorkflowTestChatDialog } from "@/features/workflows/components/WorkflowTestChatDialog"
 import { WorkflowTopbar } from "@/features/workflows/components/WorkflowTopbar"
@@ -44,6 +45,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const [requestedAction, setRequestedAction] = useState<WorkflowRequestedAction | null>(null)
   const [publishReportOpen, setPublishReportOpen] = useState(false)
   const [testChatOpen, setTestChatOpen] = useState(false)
+  const [skillImportOpen, setSkillImportOpen] = useState(false)
   const [promptWriterTargetID, setPromptWriterTargetID] = useState<string | null>(null)
   const [workflowGeneratorOpen, setWorkflowGeneratorOpen] = useState(false)
   const [nodeDetailOpen, setNodeDetailOpen] = useState(false)
@@ -88,7 +90,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   })
 
   function mutate(updater: (workflow: WorkflowV1) => WorkflowV1) {
-    builder.updateDraft((workflow) => syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(updater(workflow))))
+    builder.updateDraft((workflow) => ensureWorkflowCapabilityConnections(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(updater(workflow)))))
   }
 
   function addNode(item: WorkflowPaletteItem, position?: WorkflowPosition) {
@@ -111,11 +113,59 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     }
     const fallbackPosition = { x: 310 + (builder.workflow.nodes.length % 3) * 38, y: (builder.workflow.nodes.length % 5 - 2) * 130 }
     const node = createNodeFromPalette(item, position ?? fallbackPosition, builder.workflow.nodes, builder.workflow.scope)
-    mutate((workflow) => ({ ...workflow, nodes: node.type === "resource.command" ? [node, ...workflow.nodes] : [...workflow.nodes, node] }))
+    mutate((workflow) => ({
+      ...workflow,
+      nodes: node.type === "resource.command" ? [node, ...workflow.nodes] : [...workflow.nodes, node],
+    }))
     setSelectedNodeID(node.id)
     setSelectedEdgeID(null)
     setRightTab("inspector")
     if ((node.data as ResourceNodeData).mode === "managed") setNodeDetailOpen(true)
+  }
+
+  function addImportedSkills(imported: ImportedWorkflowSkill[]) {
+    if (!imported.length) return
+    const existingNames = new Set(
+      builder.workflow.nodes
+        .filter((node) => node.type === "resource.skill")
+        .map((node) => (node.data as ResourceNodeData).name),
+    )
+    const nodes: WorkflowNode[] = []
+    const resourceItems: WorkflowPaletteItem[] = imported
+      .filter((skill) => !existingNames.has(skill.name))
+      .map((skill) => ({
+        key: `resource.skill:${skill.scope}:${skill.name}`,
+        type: "resource.skill",
+        label: skill.name,
+        description: `已匯入 Skill · ${skill.source}`,
+        category: "Skill",
+        resource: {
+          name: skill.name,
+          type: "resource.skill",
+          scope: skill.scope,
+          sources: ["registry"],
+          status: skill.source === "archive" ? "上傳" : "網路",
+        },
+      }))
+    let existingNodes = [...builder.workflow.nodes]
+    for (const item of resourceItems) {
+      const node = createNodeFromPalette(item, { x: 310 + (existingNodes.length % 3) * 38, y: (existingNodes.length % 5 - 2) * 130 }, existingNodes, builder.workflow.scope)
+      nodes.push(node)
+      existingNodes = [...existingNodes, node]
+    }
+    if (!nodes.length) {
+      toastManager.add({ id: `workflow-skill-import-duplicate-${Date.now()}`, title: "Skill 已在畫布", description: "匯入的 Skill 都已經加入目前 workflow。", type: "info" })
+      return
+    }
+    mutate((workflow) => ({ ...workflow, nodes: [...workflow.nodes, ...nodes] }))
+    const lastNode = nodes[nodes.length - 1]
+    if (lastNode) {
+      setSelectedNodeID(lastNode.id)
+      setSelectedEdgeID(null)
+      setRightTab("inspector")
+    }
+    void builder.loadCatalog()
+    toastManager.add({ id: `workflow-skill-imported-${Date.now()}`, title: "Skill 已加入 Workflow", description: `${nodes.length} 個匯入 Skill 已連接到 entry Agent。`, type: "success" })
   }
 
   function addEdge(edge: WorkflowEdge) {
@@ -514,7 +564,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
           <Button aria-label="關閉工具面板" className="ml-1 min-[1001px]:hidden" onClick={() => setRightPanelOpen(false)} size="icon-sm" variant="ghost"><XIcon aria-hidden="true" /></Button>
         </div>
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
-            {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} nodes={builder.workflow.nodes} onAdd={(item) => addNode(item)} protectedWorkflow={protectedWorkflow} />}
+            {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} nodes={builder.workflow.nodes} onAdd={(item) => addNode(item)} onImportSkill={() => setSkillImportOpen(true)} protectedWorkflow={protectedWorkflow} />}
             {rightTab === "apps" && <WorkflowAgentAppPanel onAddCapability={addAgentCapability} onAddPrimaryLink={addPrimaryLink} onAddDelegation={addDelegation} onOpenPalette={openPalette} onRemoveEdge={(edgeID) => deleteEdges([edgeID])} onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} onSetCommandAgent={setCommandAgent} protectedWorkflow={protectedWorkflow} workflow={builder.workflow} />}
             {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
@@ -529,8 +579,9 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
        <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} onOpenGenerator={() => { setBrowserOpen(false); setWorkflowGeneratorOpen(true) }} open={browserOpen} project={project} workflows={builder.workflows} />
       <WorkflowConfirmDialog action={requestedAction} busy={busy} name={builder.workflow.name} onConfirm={confirmAction} onOpenChange={(open) => { if (!open && !busy) setRequestedAction(null) }} scope={builder.workflow.scope} />
        <WorkflowPublishReport onOpenChange={setPublishReportOpen} open={publishReportOpen} report={builder.publishReport} />
-        <WorkflowTestChatDialog catalog={builder.catalog} key={`${builder.workflow.id}:${testChatOpen ? "open" : "closed"}`} modelOptions={modelOptions} onOpenChange={setTestChatOpen} open={testChatOpen} published={builder.testPublished && !builder.dirty} workflow={builder.workflow} workspace={project} />
-        <WorkflowPromptWriterDialog key={`${builder.workflow.id}:${promptWriterTargetID ?? "none"}`} onApplyPrompt={applyPromptWriterPrompt} onOpenChange={closePromptWriter} open={Boolean(promptWriterTarget)} targetNode={promptWriterTarget} workflow={builder.workflow} workspace={project} />
+         <WorkflowTestChatDialog catalog={builder.catalog} key={`${builder.workflow.id}:${testChatOpen ? "open" : "closed"}`} modelOptions={modelOptions} onOpenChange={setTestChatOpen} open={testChatOpen} published={builder.testPublished && !builder.dirty} workflow={builder.workflow} workspace={project} />
+         <WorkflowSkillImportDialog defaultScope={builder.workflow.scope} key={`${builder.workflow.scope}:${skillImportOpen ? "open" : "closed"}`} onImported={addImportedSkills} onOpenChange={setSkillImportOpen} open={skillImportOpen} workspace={project} />
+         <WorkflowPromptWriterDialog key={`${builder.workflow.id}:${promptWriterTargetID ?? "none"}`} onApplyPrompt={applyPromptWriterPrompt} onOpenChange={closePromptWriter} open={Boolean(promptWriterTarget)} targetNode={promptWriterTarget} workflow={builder.workflow} workspace={project} />
         <WorkflowGeneratorDialog onCreateWorkflow={builder.createGenerated} onOpenChange={setWorkflowGeneratorOpen} open={workflowGeneratorOpen} project={project} />
          <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
          <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>

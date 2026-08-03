@@ -114,14 +114,7 @@ function WorkflowToolConfigPanel({ node, onUpdateNode, project }: Pick<WorkflowR
       name,
       scope: toolForm.installTarget,
       content: toolForm.code,
-      config: {
-        ...data.config,
-        category: toolForm.category,
-        description: toolForm.description,
-        entry: toolForm.entry,
-        runtime: toolForm.runtime ?? "js-ts",
-        testInput: toolForm.testInput,
-      },
+      config: undefined,
     })
   }
 
@@ -269,6 +262,7 @@ function WorkflowPluginConfigPanel({ node, onClose, onUpdateNode, project }: Pic
         description: pluginForm.description,
         useInProject: pluginForm.useInProject,
       }
+      delete nextData.content
     }
     onUpdateNode({ ...node, data: nextData } as WorkflowNode)
   }
@@ -405,7 +399,10 @@ function resourceData(node: WorkflowNode) {
 
 function updateResourceNode(node: WorkflowNode, onUpdateNode: (node: WorkflowNode) => void, changes: Partial<ResourceNodeData>) {
   const data = resourceData(node)
-  onUpdateNode({ ...node, data: { ...data, ...changes } } as WorkflowNode)
+  const nextData = { ...data, ...changes }
+  if ("config" in changes && changes.config === undefined) delete nextData.config
+  if ("content" in changes && changes.content === undefined) delete nextData.content
+  onUpdateNode({ ...node, data: nextData } as WorkflowNode)
 }
 
 function toolFormFromNode(data: ResourceNodeData): ToolForm {
