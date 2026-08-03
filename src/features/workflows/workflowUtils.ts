@@ -376,6 +376,9 @@ export function validateWorkflowAgentEdge(workflow: Pick<WorkflowV1, "nodes" | "
   if (!isAgentRelationshipTargetHandle(edge.targetHandle)) return "Agent-to-Agent 連線必須連到 Agent input。"
 
   if (wouldCreateAgentCycle(workflow.edges, edge.source, edge.target)) return "這條連線會形成 Agent delegation cycle。"
+  if (edge.kind === "delegation" && (source.data as ResourceNodeData).mode === "reference") {
+    return "Reference Agent 不能作為 delegation parent；請建立 managed coordinator，讓 Workflow UI 管理 permission.task。"
+  }
   const nextWorkflow = { ...workflow, edges: [...workflow.edges, edge] }
   const roles = resolveWorkflowAgentRoles(nextWorkflow)
   if (roles.primaryIDs.has(edge.source) && roles.subagentIDs.has(edge.source)) return "來源 Agent 同時被解析為 primary 與 subagent。"
@@ -504,6 +507,12 @@ export function getWorkflowAppReadiness(workflow: WorkflowV1) {
     const reachable = workflowAgentReachableIDs(workflow, roles.entryPrimaryIDs)
     for (const agent of agents) {
       if (!reachable.has(agent.id)) errors.push(`${getWorkflowNodeTitle(agent)} 尚未從 entry primary 連接到。`)
+    }
+    for (const edge of workflow.edges.filter((item) => item.kind === "delegation")) {
+      const source = agents.find((agent) => agent.id === edge.source)
+      if (source && (source.data as ResourceNodeData).mode === "reference") {
+        errors.push(`${getWorkflowNodeTitle(source)} 是 reference Agent，不能作為 delegation parent；請建立 managed coordinator。`)
+      }
     }
     if (commandAgentEdges.length > 1 || workflow.edges.some((edge) => edge.kind === "primary-link")) {
       errors.push("V3 multi-primary 目前只能儲存與匯入，尚未支援 Publish、Run 或測試對話。")
@@ -691,6 +700,7 @@ function emptyCapabilityMap(): WorkflowRelationshipProjection["agentApps"][numbe
 
 export function issueMessage(issue: string | { code?: string; message: string }) {
   if (typeof issue === "string") return issue
+  if (issue.code === "WORKFLOW_REFERENCE_AGENT_DELEGATION_SOURCE_UNSUPPORTED") return "Reference Agent 不能作為 delegation parent；請建立 managed coordinator，讓 Workflow UI 管理 permission.task。"
   if (issue.code === "WORKFLOW_REFERENCE_AGENT_DELEGATION") return "Reference Agent 只會被 workflow 借用，Publish 不會修改它的 prompt 或 permission.task。"
   return issue.message
 }

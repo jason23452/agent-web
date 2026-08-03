@@ -38,6 +38,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
   const data = node.data as ResourceNodeData
   const workflowAgents = nodes.filter((item): item is WorkflowAgentNode => item.type === "resource.agent")
   const roles = resolveWorkflowAgentRoles({ nodes, edges })
+  const derivedMode: AgentDefinition["mode"] = roles.primaryIDs.has(node.id) ? "primary" : "subagent"
   const delegatedAgentNodes = edges
     .filter((edge) => edge.kind === "delegation" && edge.source === node.id)
     .flatMap((edge) => workflowAgents.filter((candidate) => candidate.id === edge.target))
@@ -49,6 +50,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
   const connectedMcpNames = connectedCapabilityNames(node, edges, nodes, "resource.mcp")
   const initialFormWithDelegations = {
     ...initialForm,
+    mode: derivedMode,
     subagents: delegatedAgentNodes.map((candidate) => (candidate.data as ResourceNodeData).name),
   }
   const workflowAgentDefinitions = workflowAgents.map((candidate): AgentDefinition => {
@@ -110,7 +112,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
   function changeConfigMode(mode: AgentConfigMode) {
     if (mode === agentConfigMode) return
     if (mode === "yaml") {
-      setAgentYaml(agentToYaml(agentFromForm(agentForm, node)))
+      setAgentYaml(agentToYaml(agentFromForm({ ...agentForm, mode: derivedMode }, node)))
     } else {
       updateAgentForm(mergeConnectedCapabilities(agentFormFromContent(agentYaml, data.name, data.scope), {
         tool: connectedCapabilityNames(node, edges, nodes, "resource.tool"),
@@ -126,7 +128,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
           tool: connectedCapabilityNames(node, edges, nodes, "resource.tool"),
           skill: connectedCapabilityNames(node, edges, nodes, "resource.skill"),
         })
-      : agentToYaml(agentFromForm(agentForm, node))
+      : agentToYaml(agentFromForm({ ...agentForm, mode: derivedMode }, node))
     const yamlName = readFrontmatterValue(content, "name")
     const name = (agentConfigMode === "yaml" ? yamlName : agentForm.name).trim() || data.name
     onUpdateNode({
@@ -176,6 +178,9 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
 
   return (
     <AgentConfigPanel
+      agentModeOverride={derivedMode}
+      agentModeReadOnly
+      agentModeReadOnlyReason="Workflow graph 會決定 primary / subagent；請使用 Command、primary-link 或 delegation 來調整角色。"
       agentConfigMode={agentConfigMode}
       agentEditMode="edit"
       agentForm={agentForm}

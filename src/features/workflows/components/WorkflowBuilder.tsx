@@ -361,7 +361,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   }
 
   function showDelegationSyncNotice() {
-    toastManager.add({ id: `workflow-delegation-sync-${Date.now()}`, title: "Delegation 已同步", description: "primary Agent 的 OpenCode permission.task 已更新。", type: "success" })
+    toastManager.add({ id: `workflow-delegation-sync-${Date.now()}`, title: "Delegation graph 已同步", description: "儲存時會由 managed parent Agent 的 graph 產生 permission.task；reference Agent 不能作為 delegation parent。", type: "success" })
   }
 
   function updateEdge(nextEdge: WorkflowEdge) {

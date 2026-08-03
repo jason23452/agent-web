@@ -38,7 +38,7 @@ type WorkflowResourceConfigPanelProps = {
 }
 
 export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
-  if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel node={node} onClose={onClose} />
+  if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel edges={edges} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
   switch (node.type) {
     case "resource.agent":
        return <WorkflowAgentConfigPanel edges={edges} modelOptions={modelOptions} nodes={nodes} node={node as WorkflowAgentNode} onAddDelegation={onAddDelegation} onRemoveDelegation={onRemoveDelegation} onUpdateNode={onUpdateNode} />
@@ -59,21 +59,37 @@ export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions
 
 type WorkflowAgentNode = WorkflowNode & { type: "resource.agent"; data: ResourceNodeData }
 
-function ReferenceResourcePanel({ node, onClose }: { node: WorkflowNode; onClose: () => void }) {
+function ReferenceResourcePanel({ edges, node, onClose, onUpdateNode }: { edges: WorkflowEdge[]; node: WorkflowNode; onClose: () => void; onUpdateNode: (node: WorkflowNode) => void }) {
   const data = node.data as ResourceNodeData
+  const isDelegationParent = node.type === "resource.agent" && edges.some((edge) => edge.kind === "delegation" && edge.source === node.id)
+  const isOfficialPlan = node.type === "resource.agent" && data.name === "plan"
+
+  function createManagedDraft() {
+    const content = data.content ?? (node.type === "resource.agent"
+      ? `---\nname: ${data.name}\ndescription: Managed workflow agent\nmode: subagent\n---\n\nDescribe this workflow Agent's responsibility.\n`
+      : "")
+    onUpdateNode({ ...node, data: { ...data, mode: "managed", content } } as WorkflowNode)
+  }
+
   return (
     <div className="grid gap-4 p-5">
       <div className="grid gap-1">
         <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Reference resource</p>
         <h3 className="font-semibold text-base">{data.name}</h3>
-        <p className="text-muted-foreground text-xs leading-5">這個節點只引用 target runtime 已存在的 OpenCode resource，可作為 workflow 的 Agent context 或 delegation source；Workflow 不會修改它。若要在 Workflow 內編輯內容，請從節點面板建立 managed draft。</p>
+         <p className="text-muted-foreground text-xs leading-5">這個節點只引用 target runtime 已存在的 OpenCode resource。Workflow 只會驗證或使用它，不會修改原始 resource。</p>
       </div>
       <div className="flex flex-wrap gap-2">
         <Badge variant="secondary">{node.type.replace("resource.", "")}</Badge>
         <Badge variant="outline">{data.scope === "global" ? "Global" : "Project"}</Badge>
         <Badge variant="info">Publish 時驗證</Badge>
       </div>
-      <div className="flex justify-end"><Button onClick={onClose} variant="outline">關閉</Button></div>
+      {node.type === "resource.agent" && (
+        <div className="grid gap-2 rounded-lg border border-warning/30 bg-warning/8 p-3 text-warning-foreground text-xs leading-5">
+          <strong>Reference Agent 不管理 permission.task</strong>
+          <span>{isDelegationParent ? "目前這個 reference Agent 有 delegation child，請改用 managed coordinator 作為 parent，否則 runtime 可能無法自動委派。" : isOfficialPlan ? "官方 plan 是互動式規劃 Agent；若要接續自訂 subagent，請建立 managed coordinator，再把 plan 作為 child。" : "若要由 Workflow UI 管理 delegation 與 permission.task，請建立 managed draft。"}</span>
+        </div>
+      )}
+      <div className="flex justify-between gap-2"><Button onClick={createManagedDraft} variant="outline">建立 managed draft</Button><Button onClick={onClose} variant="outline">關閉</Button></div>
     </div>
   )
 }

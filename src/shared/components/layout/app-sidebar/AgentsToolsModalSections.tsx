@@ -1554,6 +1554,9 @@ export function AgentDetailPanel({
 }
 
 export function AgentConfigPanel({
+  agentModeOverride,
+  agentModeReadOnly = false,
+  agentModeReadOnlyReason,
   agentConfigMode,
   agentEditMode,
   agentForm,
@@ -1591,6 +1594,9 @@ export function AgentConfigPanel({
   toolToAdd,
   variantOptions = modelVariants,
 }: {
+  agentModeOverride?: AgentDefinition["mode"];
+  agentModeReadOnly?: boolean;
+  agentModeReadOnlyReason?: string;
   agentConfigMode: AgentConfigMode;
   agentEditMode: AgentEditMode;
   agentForm: AgentForm;
@@ -1639,6 +1645,7 @@ export function AgentConfigPanel({
   const resolvedVariantOptions = modelOptions === undefined
     ? [...new Set([...variantOptions, agentForm.variant])]
     : [...new Set([...buildAgentVariantOptions(agentForm.model, modelOptions), agentForm.variant])];
+  const displayedAgentMode = agentModeOverride ?? agentForm.mode;
 
   function updateAgentModel(model: string) {
     const options = modelOptions === undefined ? variantOptions : buildAgentVariantOptions(model, modelOptions);
@@ -1705,9 +1712,12 @@ export function AgentConfigPanel({
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="grid gap-2 text-muted-foreground text-sm">
-              模式
+              <span className="flex items-center gap-2">模式 {agentModeReadOnly && <Badge size="sm" variant="info">由 Graph 決定</Badge>}</span>
               <select
+                aria-describedby={agentModeReadOnly && agentModeReadOnlyReason ? "workflow-agent-mode-help" : undefined}
+                aria-label="智能體模式"
                 className="h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                disabled={agentModeReadOnly}
                 onChange={(event) =>
                   onAgentFormChange((current) => {
                     const mode = event.target.value as AgentDefinition["mode"];
@@ -1718,12 +1728,13 @@ export function AgentConfigPanel({
                     };
                   })
                 }
-                value={agentForm.mode}
+                value={displayedAgentMode}
               >
                 <option value="primary">主要智能體</option>
                 <option value="subagent">子智能體</option>
                 <option value="all">全部</option>
               </select>
+              {agentModeReadOnly && agentModeReadOnlyReason && <span className="text-[11px] text-muted-foreground" id="workflow-agent-mode-help">{agentModeReadOnlyReason}</span>}
             </label>
             <label className="grid gap-2 text-muted-foreground text-sm">
               溫度
@@ -2380,6 +2391,7 @@ export function AgentConfigPanel({
       ) : (
         <label className="grid gap-2 text-muted-foreground text-sm">
            OpenCode 智能體 Markdown（.md）
+          {agentModeReadOnly && <span className="rounded-md border border-warning/30 bg-warning/8 px-2.5 py-2 text-warning-foreground text-xs leading-5">Workflow Agent 的 mode 與 permission.task 由 graph 管理；儲存時會依 primary / delegation edge 同步。</span>}
           <Textarea
             aria-label="OpenCode 智能體 Markdown"
             className="font-mono"

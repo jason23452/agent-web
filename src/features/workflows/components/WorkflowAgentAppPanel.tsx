@@ -146,6 +146,11 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
         <button className="min-w-0 flex-1 truncate text-left font-semibold text-xs hover:underline" onClick={() => onSelectNode(agent.id)} type="button">{resourceName(agent)}</button>
         <Badge size="sm" variant={role === "primary" ? "default" : "secondary"}>{role === "primary" ? (isEntryPrimary ? "Entry Primary" : "Primary") : role === "subagent" ? "Subagent" : "未分類"}</Badge>
       </div>
+      {agent.data.mode === "reference" && (
+        <p className="rounded-md border border-warning/30 bg-warning/8 px-2.5 py-2 text-warning-foreground text-[11px] leading-5">
+          Reference Agent 只能被 Workflow 使用；不能作為 delegation parent。請使用 managed coordinator 管理 permission.task。
+        </p>
+      )}
 
       {role === "primary" && (
         <div className="grid gap-1.5">
@@ -172,7 +177,7 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
           </div>
         ))}
         {delegations.length === 0 && <span className="text-muted-foreground text-xs">未配置</span>}
-        <select aria-label={`新增 ${resourceName(agent)} delegation`} className="workflow-select h-8" disabled={role === "unresolved"} onChange={(event) => { if (event.target.value) onAddDelegation(agent.id, event.target.value) }} value="">
+        <select aria-label={`新增 ${resourceName(agent)} delegation`} className="workflow-select h-8" disabled={role === "unresolved" || agent.data.mode === "reference"} onChange={(event) => { if (event.target.value) onAddDelegation(agent.id, event.target.value) }} value="">
           <option value="">新增 delegated Agent...</option>
           {availableDelegates.map((candidate) => <option key={candidate.id} value={candidate.id}>{resourceName(candidate)}</option>)}
         </select>
