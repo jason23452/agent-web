@@ -111,6 +111,7 @@ export type WorkflowV1 = {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
   variables?: Record<string, unknown>
+  metadata?: Record<string, unknown>
   createdAt: string
   updatedAt: string
 }
@@ -120,7 +121,9 @@ export type WorkflowCreateInput = Omit<WorkflowV1, "id"> & Partial<Pick<Workflow
 export type WorkflowSummary = Pick<
   WorkflowV1,
   "id" | "name" | "description" | "scope" | "project" | "updatedAt"
->
+> & {
+  protected?: boolean
+}
 
 export type WorkflowResourceKind = "agents" | "tools" | "skills" | "plugins" | "mcp" | "commands"
 

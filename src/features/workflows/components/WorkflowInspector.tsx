@@ -21,6 +21,7 @@ import {
   scopeLabel,
   WORKFLOW_NODE_META,
 } from "@/features/workflows/workflowUtils"
+import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
 
 type WorkflowInspectorProps = {
   availableModels?: string[]
@@ -39,9 +40,18 @@ type WorkflowInspectorProps = {
   onTargetChange: (target: WorkflowTarget) => void
   onUpdateEdge: (edge: WorkflowEdge) => void
   onUpdateNode: (node: WorkflowNode) => void
+  protectedWorkflow: boolean
 }
 
 export function WorkflowInspector(props: WorkflowInspectorProps) {
+  if (props.protectedWorkflow) {
+    if (props.selectedNode?.type.startsWith("resource.")) {
+      return <WorkflowResourceConfigPanel availableModels={props.availableModels} edges={props.edges} node={props.selectedNode} nodes={props.nodes} onClose={() => undefined} onUpdateNode={props.onUpdateNode} protectedWorkflow />
+    }
+    if (props.selectedNode || props.selectedEdge) {
+      return <section className="grid gap-3 px-7 py-16 text-center" aria-label="預設 Workflow 鎖定資訊"><LockIcon className="mx-auto size-5 text-muted-foreground" /><h2 className="font-semibold text-sm">預設 Workflow 已鎖定</h2><p className="text-muted-foreground text-xs leading-5">只有 resource.agent 與 resource.command 的 Model / Variant 可以編輯。</p></section>
+    }
+  }
   if (props.selectedNode) return <NodeInspector key={props.selectedNode.id} node={props.selectedNode} {...props} />
   if (props.selectedEdge) return <EdgeInspector edge={props.selectedEdge} {...props} />
 

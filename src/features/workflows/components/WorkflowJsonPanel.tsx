@@ -8,9 +8,10 @@ type WorkflowJsonPanelProps = {
   workflow: WorkflowV1
   onImport: (workflow: WorkflowV1) => void
   onValidateImport: (workflow: WorkflowV1, signal?: AbortSignal) => Promise<WorkflowValidationResult>
+  protectedWorkflow: boolean
 }
 
-export function WorkflowJsonPanel({ onImport, onValidateImport, workflow }: WorkflowJsonPanelProps) {
+export function WorkflowJsonPanel({ onImport, onValidateImport, protectedWorkflow, workflow }: WorkflowJsonPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const controllerRef = useRef<AbortController | null>(null)
   const [notice, setNotice] = useState("")
@@ -75,14 +76,14 @@ export function WorkflowJsonPanel({ onImport, onValidateImport, workflow }: Work
   return (
     <section aria-labelledby="workflow-json-title" className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
       <header className="grid gap-3 border-border border-b p-4">
-        <div><h2 className="font-semibold text-sm" id="workflow-json-title">Workflow JSON</h2><p className="mt-0.5 text-muted-foreground text-xs">目前草稿可複製、下載或經 BFF 驗證後匯入。</p></div>
+        <div><h2 className="font-semibold text-sm" id="workflow-json-title">Workflow JSON</h2><p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "預設 Workflow 僅供檢視；請從節點設定編輯 Model / Variant。" : "目前草稿可複製、下載或經 BFF 驗證後匯入。"}</p></div>
         <div className="grid grid-cols-3 gap-1.5">
           <Button onClick={() => void copyJson()} size="sm" variant="outline"><ClipboardIcon aria-hidden="true" />複製</Button>
           <Button onClick={downloadJson} size="sm" variant="outline"><DownloadIcon aria-hidden="true" />下載</Button>
-          <Button loading={validating} onClick={() => inputRef.current?.click()} size="sm" variant="outline"><FileUpIcon aria-hidden="true" />匯入</Button>
+          <Button disabled={protectedWorkflow} loading={validating} onClick={() => inputRef.current?.click()} size="sm" variant="outline"><FileUpIcon aria-hidden="true" />匯入</Button>
           <input accept="application/json,.json" aria-label="匯入 Workflow JSON" className="sr-only" onChange={(event) => void importFile(event)} ref={inputRef} type="file" />
         </div>
-        <p className="flex items-start gap-1.5 rounded-lg bg-info/8 px-3 py-2 text-info-foreground text-[11px] leading-4"><ShieldCheckIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />匯入與儲存都不會修改 OpenCode。只有明確發布才會同步資源。</p>
+        <p className="flex items-start gap-1.5 rounded-lg bg-info/8 px-3 py-2 text-info-foreground text-[11px] leading-4"><ShieldCheckIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{protectedWorkflow ? "預設 Workflow 只允許 Model / Variant 變更，且只可發布到 workflow-test。" : "匯入與儲存都不會修改 OpenCode。只有明確發布才會同步資源。"}</p>
         {notice && <p aria-live="polite" className="flex items-start gap-1.5 rounded-lg bg-success/8 px-3 py-2 text-success-foreground text-xs"><CheckCircle2Icon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{notice}</p>}
         {errors.length > 0 && <ul className="grid gap-1 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{errors.map((error) => <li key={error}>{error}</li>)}</ul>}
         {warnings.length > 0 && <ul className="grid gap-1 rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}

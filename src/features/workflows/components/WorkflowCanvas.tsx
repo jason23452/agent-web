@@ -29,6 +29,7 @@ type CanvasCallbacks = {
   onDelete: (nodeID: string) => void
   onDuplicate: (nodeID: string) => void
   onLockToggle: (nodeID: string) => void
+  readOnly: boolean
 }
 
 function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, callbacks: CanvasCallbacks): WorkflowCanvasNode[] {
@@ -42,6 +43,7 @@ function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, 
       onDelete: callbacks.onDelete,
       onDuplicate: callbacks.onDuplicate,
       onLockToggle: callbacks.onLockToggle,
+      readOnly: callbacks.readOnly,
     } satisfies WorkflowCanvasNodeData,
   }))
 }
@@ -102,6 +104,7 @@ type WorkflowCanvasProps = {
   onOpenNodeDetails: (nodeID: string) => void
   onSelectEdge: (edgeID: string | null) => void
   onSelectNode: (nodeID: string | null) => void
+  protectedWorkflow: boolean
 }
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
@@ -127,6 +130,7 @@ function WorkflowCanvasInner({
   onOpenNodeDetails,
   onSelectEdge,
   onSelectNode,
+  protectedWorkflow,
 }: WorkflowCanvasProps) {
   const [instance, setInstance] = useState<ReactFlowInstance<WorkflowCanvasNode, WorkflowCanvasEdge> | null>(null)
   const [connectionFeedback, setConnectionFeedback] = useState("")
@@ -135,7 +139,8 @@ function WorkflowCanvasInner({
     onDelete: (nodeID) => onDeleteNodes([nodeID]),
     onDuplicate: onDuplicateNode,
     onLockToggle: onLockNode,
-  }), [onDeleteNodes, onDuplicateNode, onLockNode])
+    readOnly: protectedWorkflow,
+  }), [onDeleteNodes, onDuplicateNode, onLockNode, protectedWorkflow])
 
   const [canvasNodes, setCanvasNodes] = useState<WorkflowCanvasNode[]>(() => buildCanvasNodes(nodes, selectedNodeID, canvasCallbacks))
   const [canvasEdges, setCanvasEdges] = useState<WorkflowCanvasEdge[]>(() => buildCanvasEdges(edges, selectedEdgeID))
@@ -221,12 +226,14 @@ function WorkflowCanvasInner({
     <section aria-label="Workflow 畫布" className="relative min-h-0 min-w-0 overflow-hidden bg-muted/30">
       <ReactFlow<WorkflowCanvasNode, WorkflowCanvasEdge>
         colorMode="light"
-        deleteKeyCode={["Backspace", "Delete"]}
+        deleteKeyCode={protectedWorkflow ? null : ["Backspace", "Delete"]}
         edges={canvasEdges}
         fitView
         fitViewOptions={{ maxZoom: 1, padding: 0.45 }}
         isValidConnection={validateConnection}
         minZoom={0.15}
+        nodesConnectable={!protectedWorkflow}
+        nodesDraggable={!protectedWorkflow}
         nodeTypes={nodeTypes}
         nodes={canvasNodes}
         onConnect={connect}
