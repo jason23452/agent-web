@@ -51,8 +51,8 @@ export function useWorkflowBuilder(project?: string) {
     setLibraryError(null)
     try {
       const responses = await Promise.all([
-        ...(project ? [listWorkflows("project", project, { signal })] : []),
-        listWorkflows("global", undefined, { signal }),
+        ...(project ? [listWorkflows("project", project, { signal, workspace: project })] : []),
+        listWorkflows("global", undefined, { signal, workspace: project }),
       ])
       if (signal?.aborted) return
       setWorkflows(responses.flat().sort((first, second) => second.updatedAt.localeCompare(first.updatedAt)))
@@ -69,7 +69,7 @@ export function useWorkflowBuilder(project?: string) {
       void loadLibrary(controller.signal)
       setCatalogLoading(true)
       setCatalogError(null)
-      void getWorkflowResources(project, { signal: controller.signal })
+      void getWorkflowResources(project, { signal: controller.signal, workspace: project })
         .then((response) => {
           if (!controller.signal.aborted) setCatalog(response)
         })
@@ -94,7 +94,7 @@ export function useWorkflowBuilder(project?: string) {
     let timer = 0
     async function poll() {
       try {
-        const response = await getWorkflowRun(workflowID, runID, { signal: controller.signal })
+        const response = await getWorkflowRun(workflowID, runID, { signal: controller.signal, workspace: project })
         if (controller.signal.aborted) return
         setRun(response)
         if (response.status === "queued" || response.status === "running") {
@@ -112,7 +112,7 @@ export function useWorkflowBuilder(project?: string) {
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [activeRunID, activeRunStatus, activeRunWorkflowID])
+  }, [activeRunID, activeRunStatus, activeRunWorkflowID, project])
 
   function updateDraft(updater: (current: WorkflowV1) => WorkflowV1) {
     setWorkflow((current) => touchWorkflow(updater(current), {}))
@@ -138,10 +138,10 @@ export function useWorkflowBuilder(project?: string) {
     setBusyAction("save")
     try {
       const workflowToSave = syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(workflow))
-      const validation = await validateWorkflow(workflowToSave)
+       const validation = await validateWorkflow(workflowToSave, { workspace: project })
       if (!validation.valid) throw new Error(validation.errors.map(issueMessage).join("；") || "Workflow 驗證失敗。")
       const payload = validation.workflow ?? workflowToSave
-      const response = persisted ? await updateWorkflow(payload) : await createWorkflow(payload)
+       const response = persisted ? await updateWorkflow(payload, { workspace: project }) : await createWorkflow(payload, { workspace: project })
       setWorkflow(response.workflow)
       setPersisted(true)
       setDirty(false)
@@ -164,7 +164,7 @@ export function useWorkflowBuilder(project?: string) {
       const draft = createWorkflowDraft(project, input)
       const createPayload: WorkflowCreateInput = { ...draft }
       delete createPayload.id
-      const response = await createWorkflow(createPayload)
+       const response = await createWorkflow(createPayload, { workspace: project })
       setWorkflow(response.workflow)
       setPersisted(true)
       setDirty(false)
@@ -184,7 +184,7 @@ export function useWorkflowBuilder(project?: string) {
   async function createGenerated(nextWorkflow: WorkflowV1) {
     setBusyAction("create-generated")
     try {
-      const response = await createWorkflow(nextWorkflow)
+       const response = await createWorkflow(nextWorkflow, { workspace: project })
       setWorkflow(response.workflow)
       setPersisted(true)
       setDirty(false)
@@ -204,7 +204,7 @@ export function useWorkflowBuilder(project?: string) {
   async function load(summary: WorkflowSummary) {
     setBusyAction("load")
     try {
-      const response = await getWorkflow(summary.id, summary.scope, summary.project)
+       const response = await getWorkflow(summary.id, summary.scope, summary.project, { workspace: project })
       setWorkflow(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(response)))
       setPersisted(true)
       setDirty(false)
@@ -222,7 +222,7 @@ export function useWorkflowBuilder(project?: string) {
   async function remove(summary: WorkflowSummary) {
     setBusyAction("delete")
     try {
-      const result = await deleteWorkflow(summary.id, summary.scope, summary.project)
+       const result = await deleteWorkflow(summary.id, summary.scope, summary.project, { workspace: project })
       if (summary.id === workflow.id && summary.scope === workflow.scope) {
          setWorkflow(createWorkflowDraft(project))
          setPersisted(false)
@@ -245,14 +245,14 @@ export function useWorkflowBuilder(project?: string) {
   async function publish(target: WorkflowTarget) {
     setBusyAction(`publish-${target}`)
     try {
-      const report = await publishWorkflow(workflow.id, {
+       const report = await publishWorkflow(workflow.id, {
         target,
         scope: workflow.scope,
         project: workflow.project,
         restart: true,
         wait: true,
         reason: target === "main" ? "Workflow Builder 正式發布" : "Workflow Builder 測試發布",
-      })
+       }, { workspace: project })
       setPublishReport(report)
       if (target === "workflow-test") setTestPublished(report.published)
       toast(report.published ? "發布完成" : "發布未完成", `${target} · ${report.restart.status ?? "未重啟"}`, report.published ? "success" : "error")
@@ -268,11 +268,11 @@ export function useWorkflowBuilder(project?: string) {
   async function startRun(target: WorkflowTarget) {
     setBusyAction(`run-${target}`)
     try {
-      const response = await runWorkflow(workflow.id, {
+       const response = await runWorkflow(workflow.id, {
         target,
         scope: workflow.scope,
         project: workflow.project,
-      })
+       }, { workspace: project })
       setRun(response)
       toast("Workflow 已送出執行", `${target} · Run ${response.runID}`, "info")
       return response
@@ -287,7 +287,7 @@ export function useWorkflowBuilder(project?: string) {
   async function clearCache(nodeID: string, target: WorkflowTarget) {
     setBusyAction("clear-cache")
     try {
-      const result = await clearNodeCache(workflow.id, nodeID, target, workflow.scope, workflow.project)
+       const result = await clearNodeCache(workflow.id, nodeID, target, workflow.scope, workflow.project, { workspace: project })
       setCacheMetadata((current) => current?.nodeID === nodeID && current.target === target ? { ...current, cache: null } : current)
       toast("Node cache 已處理", result.deleted ? `${target} cache 已清除；若 node 保持鎖定，下次執行將會失敗。` : "找不到可清除的 cache。", result.deleted ? "success" : "info")
     } catch (error) {
@@ -304,7 +304,7 @@ export function useWorkflowBuilder(project?: string) {
       return
     }
     try {
-      const result = await getNodeCache(workflow.id, nodeID, target, workflow.scope, workflow.project, { signal })
+       const result = await getNodeCache(workflow.id, nodeID, target, workflow.scope, workflow.project, { signal, workspace: project })
       if (!signal?.aborted) setCacheMetadata(result)
     } catch (error) {
       if (!signal?.aborted) {
@@ -312,7 +312,7 @@ export function useWorkflowBuilder(project?: string) {
         toast("Cache 狀態讀取失敗", getApiErrorMessage(error), "error")
       }
     }
-  }, [persisted, workflow.id, workflow.project, workflow.scope])
+  }, [persisted, project, workflow.id, workflow.project, workflow.scope])
 
   return {
     busyAction,
@@ -338,7 +338,7 @@ export function useWorkflowBuilder(project?: string) {
     startRun,
     testPublished,
     updateDraft,
-    validateImport: validateWorkflow,
+     validateImport: (nextWorkflow: WorkflowV1, options: { signal?: AbortSignal } = {}) => validateWorkflow(nextWorkflow, { ...options, workspace: project }),
     workflow,
     workflows,
   }

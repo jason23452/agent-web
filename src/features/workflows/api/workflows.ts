@@ -14,11 +14,16 @@ import type {
   WorkflowValidationResult,
 } from "@/features/workflows/types"
 
-type RequestOptions = { signal?: AbortSignal }
+type RequestOptions = { signal?: AbortSignal; workspace?: string }
+
+function workflowHeaders(workspace?: string): HeadersInit | undefined {
+  return workspace?.trim() ? { "x-agent-system-workspace": workspace.trim() } : undefined
+}
 
 export async function getWorkflowResources(project?: string, options: RequestOptions = {}) {
   return apiRequest<WorkflowResourceCatalog>("/bff/workflow-resources", {
     query: { project, includeGlobal: true },
+    headers: workflowHeaders(options.workspace),
     signal: options.signal,
   })
 }
@@ -26,6 +31,7 @@ export async function getWorkflowResources(project?: string, options: RequestOpt
 export async function listWorkflows(scope: WorkflowScope, project?: string, options: RequestOptions = {}) {
   const response = await apiRequest<WorkflowSummary[] | { workflows: WorkflowSummary[] }>("/bff/workflows", {
     query: { scope, project },
+    headers: workflowHeaders(options.workspace),
     signal: options.signal,
   })
   return Array.isArray(response) ? response : response.workflows
@@ -34,6 +40,7 @@ export async function listWorkflows(scope: WorkflowScope, project?: string, opti
 export async function getWorkflow(id: string, scope: WorkflowScope, project?: string, options: RequestOptions = {}) {
   const response = await apiRequest<WorkflowV1 | { workflow: WorkflowV1 }>(`/bff/workflows/${encodeURIComponent(id)}`, {
     query: { scope, project },
+    headers: workflowHeaders(options.workspace),
     signal: options.signal,
   })
   return "workflow" in response ? response.workflow : response
@@ -42,6 +49,7 @@ export async function getWorkflow(id: string, scope: WorkflowScope, project?: st
 export function createWorkflow(workflow: WorkflowCreateInput, options: RequestOptions = {}) {
   return apiRequest<WorkflowSaveResult>("/bff/workflows", {
     body: { workflow },
+    headers: workflowHeaders(options.workspace),
     method: "POST",
     signal: options.signal,
   })
@@ -50,6 +58,7 @@ export function createWorkflow(workflow: WorkflowCreateInput, options: RequestOp
 export function updateWorkflow(workflow: WorkflowV1, options: RequestOptions = {}) {
   return apiRequest<WorkflowSaveResult>(`/bff/workflows/${encodeURIComponent(workflow.id)}`, {
     body: { workflow },
+    headers: workflowHeaders(options.workspace),
     method: "PATCH",
     signal: options.signal,
   })
@@ -59,6 +68,7 @@ export function deleteWorkflow(id: string, scope: WorkflowScope, project?: strin
   return apiRequest<{ deleted: boolean; resourcesDeleted?: string[] }>(`/bff/workflows/${encodeURIComponent(id)}`, {
     method: "DELETE",
     query: { scope, project },
+    headers: workflowHeaders(options.workspace),
     signal: options.signal,
   })
 }
@@ -66,6 +76,7 @@ export function deleteWorkflow(id: string, scope: WorkflowScope, project?: strin
 export function validateWorkflow(workflow: WorkflowV1, options: RequestOptions = {}) {
   return apiRequest<WorkflowValidationResult>("/bff/workflows/validate", {
     body: { workflow },
+    headers: workflowHeaders(options.workspace),
     method: "POST",
     signal: options.signal,
   })
@@ -74,6 +85,7 @@ export function validateWorkflow(workflow: WorkflowV1, options: RequestOptions =
 export function importWorkflow(workflow: WorkflowV1, options: RequestOptions = {}) {
   return apiRequest<WorkflowValidationResult>("/bff/workflows/import", {
     body: { workflow },
+    headers: workflowHeaders(options.workspace),
     method: "POST",
     signal: options.signal,
   })
@@ -82,7 +94,7 @@ export function importWorkflow(workflow: WorkflowV1, options: RequestOptions = {
 export async function exportWorkflow(id: string, scope: WorkflowScope, project?: string, options: RequestOptions = {}) {
   const response = await apiRequest<WorkflowV1 | { workflow: WorkflowV1 }>(
     `/bff/workflows/${encodeURIComponent(id)}/export`,
-    { query: { scope, project }, signal: options.signal },
+    { headers: workflowHeaders(options.workspace), query: { scope, project }, signal: options.signal },
   )
   return "workflow" in response ? response.workflow : response
 }
@@ -101,6 +113,7 @@ export function publishWorkflow(
 ) {
   return apiRequest<WorkflowPublishReport>(`/bff/workflows/${encodeURIComponent(id)}/publish`, {
     body: request,
+    headers: workflowHeaders(options.workspace),
     method: "POST",
     signal: options.signal,
   })
@@ -113,7 +126,7 @@ export async function runWorkflow(
 ) {
   const response = await apiRequest<WorkflowRun | { run: WorkflowRun }>(
     `/bff/workflows/${encodeURIComponent(id)}/runs`,
-    { body: request, method: "POST", signal: options.signal },
+    { body: request, headers: workflowHeaders(options.workspace), method: "POST", signal: options.signal },
   )
   return normalizeRun("run" in response ? response.run : response)
 }
@@ -121,7 +134,7 @@ export async function runWorkflow(
 export async function getWorkflowRun(id: string, runID: string, options: RequestOptions = {}) {
   const response = await apiRequest<WorkflowRun | { run: WorkflowRun }>(
     `/bff/workflows/${encodeURIComponent(id)}/runs/${encodeURIComponent(runID)}`,
-    { signal: options.signal },
+    { headers: workflowHeaders(options.workspace), signal: options.signal },
   )
   return normalizeRun("run" in response ? response.run : response)
 }
@@ -136,7 +149,7 @@ export function clearNodeCache(
 ) {
   return apiRequest<WorkflowCacheClearResult>(
     `/bff/workflows/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeID)}/cache`,
-    { method: "DELETE", query: { target, scope, project }, signal: options.signal },
+    { headers: workflowHeaders(options.workspace), method: "DELETE", query: { target, scope, project }, signal: options.signal },
   )
 }
 
@@ -150,7 +163,7 @@ export function getNodeCache(
 ) {
   return apiRequest<WorkflowCacheMetadataResult>(
     `/bff/workflows/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeID)}/cache`,
-    { query: { target, scope, project }, signal: options.signal },
+    { headers: workflowHeaders(options.workspace), query: { target, scope, project }, signal: options.signal },
   )
 }
 

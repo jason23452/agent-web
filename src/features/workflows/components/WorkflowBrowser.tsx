@@ -22,7 +22,7 @@ type WorkflowBrowserProps = {
   error: string | null
   loading: boolean
   open: boolean
-  project?: string
+  project: string
   workflows: WorkflowSummary[]
   onCreate: (input: Pick<WorkflowV1, "name" | "description" | "scope">) => Promise<void>
   onDelete: (workflow: WorkflowSummary) => Promise<void>

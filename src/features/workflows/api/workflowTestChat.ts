@@ -26,9 +26,14 @@ type WorkflowTestChatLocation = {
   project?: string
 }
 
-export function createWorkflowTestChatSession(id: string, location: WorkflowTestChatLocation, signal?: AbortSignal) {
+function workspaceHeaders(workspace?: string): HeadersInit | undefined {
+  return workspace?.trim() ? { "x-agent-system-workspace": workspace.trim() } : undefined
+}
+
+export function createWorkflowTestChatSession(id: string, location: WorkflowTestChatLocation, signal?: AbortSignal, workspace?: string) {
   return apiRequest<WorkflowTestChatSession>(`/bff/workflows/${encodeURIComponent(id)}/test-chat/sessions`, {
     body: location,
+    headers: workspaceHeaders(workspace),
     method: "POST",
     signal,
   })
@@ -39,20 +44,22 @@ export function sendWorkflowTestChatMessage(
   sessionID: string,
   location: WorkflowTestChatLocation & { model?: string; text: string; variant?: string },
   signal?: AbortSignal,
+  workspace?: string,
 ) {
   return apiRequest<WorkflowTestChatMessage>(`/bff/workflows/${encodeURIComponent(id)}/test-chat/sessions/${encodeURIComponent(sessionID)}/messages`, {
     body: location,
+    headers: workspaceHeaders(workspace),
     method: "POST",
     signal,
   })
 }
 
-export async function runWorkflowSystemCommand(workflowID: string, text: string, signal?: AbortSignal) {
-  const session = await createWorkflowTestChatSession(workflowID, { scope: "global" }, signal)
-  return sendWorkflowTestChatMessage(workflowID, session.sessionID, { scope: "global", text }, signal)
+export async function runWorkflowSystemCommand(workflowID: string, text: string, signal?: AbortSignal, workspace?: string) {
+  const session = await createWorkflowTestChatSession(workflowID, { scope: "global" }, signal, workspace)
+  return sendWorkflowTestChatMessage(workflowID, session.sessionID, { scope: "global", text }, signal, workspace)
 }
 
-export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID: string, request: string, signal?: AbortSignal) {
+export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID: string, request: string, signal?: AbortSignal, workspace?: string) {
   const text = [
     "請使用官方 plan Agent 完整規劃後，再由 prompt-writer-agent 為目前 target node 建立可直接回寫的 prompt。",
     "",
@@ -64,5 +71,5 @@ export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID:
     "完整 target workflow JSON：",
     JSON.stringify(workflow, null, 2),
   ].join("\n")
-  return runWorkflowSystemCommand(PROMPT_WRITER_WORKFLOW_ID, text, signal)
+  return runWorkflowSystemCommand(PROMPT_WRITER_WORKFLOW_ID, text, signal, workspace ?? workflow.project)
 }

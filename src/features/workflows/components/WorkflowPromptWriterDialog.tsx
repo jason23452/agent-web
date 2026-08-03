@@ -11,12 +11,13 @@ import { getWorkflowNodeTitle } from "@/features/workflows/workflowUtils"
 
 const DEFAULT_REQUEST = "請建立或改寫目前 target node 的 prompt，保留使用者目標、connected resources 與 Agent relationship 規則，並輸出可直接回寫的完整內容。"
 
-export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, targetNode, workflow }: {
+export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyPrompt: (content: string) => void
   onOpenChange: (open: boolean) => void
   open: boolean
   targetNode: WorkflowNode | null
   workflow: WorkflowV1
+  workspace: string
 }) {
   const [request, setRequest] = useState(DEFAULT_REQUEST)
   const [result, setResult] = useState("")
@@ -41,7 +42,7 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
     setResult("")
     setPromptDraft("")
     try {
-      const response = await runPromptWriterForNode(workflow, targetNode.id, request, controller.signal)
+      const response = await runPromptWriterForNode(workflow, targetNode.id, request, controller.signal, workspace)
       if (controller.signal.aborted) return
       setResult(response.text)
       setPromptDraft(extractPrompt(response.text))

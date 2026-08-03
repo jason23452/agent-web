@@ -18,12 +18,13 @@ export type PlannedResource = {
 
 const DEFAULT_REQUEST = "請依目前 node 的角色與 Workflow graph，規劃一份可直接套用的資源內容或設定，保留使用者需求並列出驗證問題。"
 
-export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, open, targetNode, workflow }: {
+export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyResource: (resource: PlannedResource) => void
   onOpenChange: (open: boolean) => void
   open: boolean
   targetNode: WorkflowNode | null
   workflow: WorkflowV1
+  workspace: string
 }) {
   const [request, setRequest] = useState(DEFAULT_REQUEST)
   const [result, setResult] = useState("")
@@ -64,7 +65,7 @@ export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, o
       JSON.stringify(workflow, null, 2),
     ].join("\n")
     try {
-      const response = await runWorkflowSystemCommand(workflowID, text, controller.signal)
+      const response = await runWorkflowSystemCommand(workflowID, text, controller.signal, workspace)
       if (controller.signal.aborted) return
       setResult(response.text)
       const parsed = parsePlannerResult(response.text)

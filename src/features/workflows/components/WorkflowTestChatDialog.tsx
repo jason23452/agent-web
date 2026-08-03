@@ -89,6 +89,7 @@ export function WorkflowTestChatDialog({
   onOpenChange,
   open,
   published,
+  workspace,
   workflow,
 }: {
   catalog?: WorkflowResourceCatalog | null
@@ -96,6 +97,7 @@ export function WorkflowTestChatDialog({
   onOpenChange: (open: boolean) => void
   open: boolean
   published: boolean
+  workspace: string
   workflow: WorkflowV1
 }) {
   const [session, setSession] = useState<WorkflowTestChatSession | null>(null)
@@ -134,7 +136,7 @@ export function WorkflowTestChatDialog({
     setStarting(true)
     setError(null)
     try {
-      const nextSession = await createWorkflowTestChatSession(workflow.id, { scope: workflow.scope, project: workflow.project }, controller.signal)
+      const nextSession = await createWorkflowTestChatSession(workflow.id, { scope: workflow.scope, project: workflow.project }, controller.signal, workspace)
       if (controller.signal.aborted) return null
       setSession(nextSession)
       return nextSession
@@ -171,7 +173,7 @@ export function WorkflowTestChatDialog({
         text,
         ...(selectedModel ? { model: getAgentModelKey(selectedModel) } : {}),
         ...(effectiveThinkingVariant !== "default" ? { variant: effectiveThinkingVariant } : {}),
-      }, controller.signal)
+      }, controller.signal, workspace)
       if (controller.signal.aborted) return
       setMessages((current) => [...current, {
         id: response.messageID ?? `assistant-${Date.now()}`,
