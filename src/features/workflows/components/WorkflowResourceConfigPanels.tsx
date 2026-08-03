@@ -3,10 +3,10 @@ import { getApiErrorMessage } from "@/shared/api"
 import { testOpenCodeMcpConnection, type OpenCodeMcpTestResult } from "@/shared/api/opencodeMcpTest"
 import { testToolScript } from "@/shared/api/opencodeRegistry"
 import { Badge } from "@/shared/components/ui/badge"
-import { AddPluginForm, AddSkillForm } from "@/shared/components/layout/app-sidebar/PluginSkillModalSections"
+import { AddPluginForm, SkillEditorForm } from "@/shared/components/layout/app-sidebar/PluginSkillModalSections"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
-import { emptyCommandForm, emptyMcpForm, emptyPluginForm, emptySkillForm, emptyToolForm } from "@/shared/components/layout/app-sidebar/config"
+import { emptyCommandForm, emptyMcpForm, emptyPluginForm, emptyToolForm } from "@/shared/components/layout/app-sidebar/config"
 import { CommandConfigPanel, ToolConfigPanel } from "@/shared/components/layout/app-sidebar/AgentsToolsModalSections"
 import { McpEditor } from "@/shared/components/layout/app-sidebar/McpServersDialog"
 import type {
@@ -17,7 +17,6 @@ import type {
   McpForm,
   PluginEditorMode,
   PluginForm,
-  SkillForm,
   ToolForm,
 } from "@/shared/types/app-sidebar"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/workflows/types"
@@ -50,7 +49,7 @@ export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions
     case "resource.plugin":
       return <WorkflowPluginConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
     case "resource.skill":
-      return <WorkflowSkillConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
+      return <WorkflowSkillConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
     case "resource.mcp":
       return <WorkflowMcpConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
     default:
@@ -263,31 +262,21 @@ function WorkflowPluginConfigPanel({ node, onClose, onUpdateNode, project }: Pic
   )
 }
 
-function WorkflowSkillConfigPanel({ node, onClose, onUpdateNode, project }: Pick<WorkflowResourceConfigPanelProps, "node" | "onClose" | "onUpdateNode" | "project">) {
+function WorkflowSkillConfigPanel({ node, onClose, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "node" | "onClose" | "onUpdateNode">) {
   const data = resourceData(node)
   const [skillName, setSkillName] = useState(data.name)
-  const [skillForm, setSkillForm] = useState<SkillForm>(() => skillFormFromNode(data))
-  const [installResult, setInstallResult] = useState<InstallResult | null>(null)
+  const [skillScope, setSkillScope] = useState(data.scope)
+  const [skillDocument, setSkillDocument] = useState(() => data.content ?? createWorkflowSkillContent(data.name))
+  const editorName = skillName.trim() || data.name.trim() || "new-skill"
+  const skillFile = `${editorName}/SKILL.md`
 
   function submit() {
-    const name = skillName.trim() || data.name.trim() || "new-skill"
-    const description = skillForm.description.trim() || `Managed workflow skill: ${name}`
+    const content = skillContentWithName(skillDocument.trim() || createWorkflowSkillContent(editorName), editorName)
     updateResourceNode(node, onUpdateNode, {
-      name,
-      scope: skillForm.installTarget,
-      content: data.content?.trim() || `---\nname: ${name}\ndescription: ${description}\n---\n\n# Instructions\n\nDescribe the skill instructions here.\n`,
-      config: {
-        ...data.config,
-        method: skillForm.method,
-        sources: skillForm.sources,
-        archiveName: skillForm.archiveName,
-        description: skillForm.description,
-        license: skillForm.license,
-        compatibility: skillForm.compatibility,
-        useInProject: skillForm.useInProject,
-      },
+      name: editorName,
+      scope: skillScope,
+      content,
     })
-    setInstallResult({ status: "success", message: "Workflow Skill draft 已保存；發布時才會套用來源或內容。" })
   }
 
   return (
@@ -296,14 +285,16 @@ function WorkflowSkillConfigPanel({ node, onClose, onUpdateNode, project }: Pick
         Skill 名稱
         <Input aria-label="Skill 名稱" onChange={(event) => setSkillName(event.target.value)} value={skillName} />
       </label>
-      <AddSkillForm
-        currentProjectName={project}
-        form={skillForm}
-        installResult={installResult}
+      <SkillEditorForm
+        files={{ [skillFile]: skillDocument }}
+        name={editorName}
         onCancel={onClose}
-        onFormChange={setSkillForm}
-        onInstallResultChange={setInstallResult}
+        onFileChange={(_, content) => setSkillDocument(content)}
+        onScopeChange={setSkillScope}
+        onSelectedFileChange={() => undefined}
         onSubmit={submit}
+        scope={skillScope}
+        selectedFile={skillFile}
       />
     </div>
   )
@@ -456,23 +447,21 @@ function pluginFormFromNode(data: ResourceNodeData): PluginForm {
   }
 }
 
-function skillFormFromNode(data: ResourceNodeData): SkillForm {
-  const config = data.config ?? {}
-  return {
-    ...emptySkillForm,
-    method: stringValue(config.method) === "upload" ? "upload" : "remote",
-    installTarget: data.scope,
-    sources: stringValue(config.sources),
-    archiveName: stringValue(config.archiveName),
-    description: stringValue(config.description),
-    license: stringValue(config.license),
-    compatibility: stringValue(config.compatibility) || "opencode",
-    useInProject: config.useInProject !== false,
-  }
-}
-
 function mcpFormFromNode(data: ResourceNodeData) {
   return mcpFormFromConfig(data.name, data.config ?? {})
+}
+
+function createWorkflowSkillContent(name: string) {
+  return `---\nname: ${name}\ndescription: Managed workflow skill\n---\n\n# Instructions\n\nDescribe the skill here.\n`
+}
+
+function skillContentWithName(content: string, name: string) {
+  const frontmatter = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)
+  if (!frontmatter) return content
+  const nextFrontmatter = /^name:\s*[^\r\n]*$/m.test(frontmatter[1] ?? "")
+    ? (frontmatter[1] ?? "").replace(/^name:\s*[^\r\n]*$/m, `name: ${name}`)
+    : `name: ${name}\n${frontmatter[1] ?? ""}`
+  return content.replace(frontmatter[1] ?? "", nextFrontmatter)
 }
 
 function mcpFormFromConfig(name: string, config: Record<string, unknown>): McpForm {

@@ -3656,7 +3656,7 @@ export function AppSidebar({
       skillGuidance: agentConfigMode === "yaml" ? {} : agentForm.skillGuidance,
       skills:
         agentConfigMode === "yaml"
-          ? ["react-vite-feature-based"]
+          ? []
           : agentForm.skills,
       subagents: agentConfigMode === "yaml" ? [] : agentForm.subagents,
       subagentGuidance:

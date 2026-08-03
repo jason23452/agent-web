@@ -103,9 +103,7 @@ export function agentToYaml(
     Partial<AgentDefinition>,
 ) {
   const tools = agent.tools?.length ? agent.tools : ["read", "grep", "glob"];
-  const skills = agent.skills?.length
-    ? agent.skills
-    : ["react-vite-feature-based"];
+  const skills = agent.skills?.length ? agent.skills : [];
   const subagents = agent.subagents?.length ? agent.subagents : [];
   const permission: Record<string, PermissionValue> =
     "permission" in agent && agent.permission
@@ -160,7 +158,10 @@ export function agentToYaml(
     agent.promptSource === "file" && agent.promptFile?.trim()
       ? `prompt: "{file:${agent.promptFile.trim()}}"\n`
       : "";
-  return `---\nname: ${agent.name || "my-agent"}\ndescription: ${agent.description || "Describe when this agent should be used."}\nmode: ${agent.mode ?? "subagent"}\nmodel: ${"model" in agent && agent.model ? agent.model : ""}\ntemperature: ${"temperature" in agent && agent.temperature ? agent.temperature : "0.3"}\ntop_p: ${"top_p" in agent && agent.top_p ? agent.top_p : "1"}\n${"variant" in agent && agent.variant ? `variant: ${agent.variant}\n` : ""}${"steps" in agent && agent.steps ? `steps: ${agent.steps}\n` : ""}${agent.disable ? "disable: true\n" : ""}${agent.hidden ? "hidden: true\n" : ""}${agent.color ? `color: ${agent.color}\n` : ""}${promptFile}${providerOptionsYaml ? `${providerOptionsYaml}\n` : ""}tools:\n${tools.map((tool) => `  ${tool}: true`).join("\n")}\nskills:\n${skills.map((skill) => `  - ${skill}`).join("\n")}\npermission:\n${permissionToYaml(effectivePermission)}\n---\n${agent.promptSource === "file" ? "" : systemPrompt}${guidanceText ? `\n\n## Tool usage guidance\n${guidanceText}` : ""}${skillGuidanceText ? `\n\n## Skill usage guidance\n${skillGuidanceText}` : ""}${subagentGuidanceText ? `\n\n## Subagent usage guidance\n${subagentGuidanceText}` : ""}\n`;
+  const skillsYaml = skills.length > 0
+    ? `skills:\n${skills.map((skill) => `  - ${skill}`).join("\n")}\n`
+    : "";
+  return `---\nname: ${agent.name || "my-agent"}\ndescription: ${agent.description || "Describe when this agent should be used."}\nmode: ${agent.mode ?? "subagent"}\nmodel: ${"model" in agent && agent.model ? agent.model : ""}\ntemperature: ${"temperature" in agent && agent.temperature ? agent.temperature : "0.3"}\ntop_p: ${"top_p" in agent && agent.top_p ? agent.top_p : "1"}\n${"variant" in agent && agent.variant ? `variant: ${agent.variant}\n` : ""}${"steps" in agent && agent.steps ? `steps: ${agent.steps}\n` : ""}${agent.disable ? "disable: true\n" : ""}${agent.hidden ? "hidden: true\n" : ""}${agent.color ? `color: ${agent.color}\n` : ""}${promptFile}${providerOptionsYaml ? `${providerOptionsYaml}\n` : ""}tools:\n${tools.map((tool) => `  ${tool}: true`).join("\n")}\n${skillsYaml}permission:\n${permissionToYaml(effectivePermission)}\n---\n${agent.promptSource === "file" ? "" : systemPrompt}${guidanceText ? `\n\n## Tool usage guidance\n${guidanceText}` : ""}${skillGuidanceText ? `\n\n## Skill usage guidance\n${skillGuidanceText}` : ""}${subagentGuidanceText ? `\n\n## Subagent usage guidance\n${subagentGuidanceText}` : ""}\n`;
 }
 
 export type ToolCollection = ToolDefinition[];
