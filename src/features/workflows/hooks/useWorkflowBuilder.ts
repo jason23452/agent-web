@@ -137,9 +137,10 @@ export function useWorkflowBuilder(project?: string) {
     const shouldInvalidateTest = dirty
     setBusyAction("save")
     try {
-      const validation = await validateWorkflow(workflow)
+      const workflowToSave = syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(workflow))
+      const validation = await validateWorkflow(workflowToSave)
       if (!validation.valid) throw new Error(validation.errors.map(issueMessage).join("；") || "Workflow 驗證失敗。")
-      const payload = validation.workflow ?? workflow
+      const payload = validation.workflow ?? workflowToSave
       const response = persisted ? await updateWorkflow(payload) : await createWorkflow(payload)
       setWorkflow(response.workflow)
       setPersisted(true)
