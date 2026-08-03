@@ -49,7 +49,7 @@ import {
 } from "@/shared/api/opencodeRegistry";
 import { listProjectToolIds } from "@/shared/api/opencodeTools";
 import { listOpenCodeCommands, type OpenCodeRuntimeCommand } from "@/shared/api/opencodeCommands";
- import { deleteOpenCodeSkills, importSkillArchives, importSkillUrls, listOpenCodeSkills, updateSkillProjectSettings } from "@/shared/api/opencodeSkills";
+ import { deleteOpenCodeSkill, deleteOpenCodeSkills, importSkillArchives, importSkillUrls, listOpenCodeSkills, updateSkillProjectSettings } from "@/shared/api/opencodeSkills";
 import {
   applyOpenCodeConfig,
   getOpenCodeConfig,
@@ -833,6 +833,18 @@ function getNpmPackageNameFromSpec(spec: string) {
   return versionIndex >= 0 ? normalized.slice(0, versionIndex) : normalized;
 }
 
+type PendingSkillSnapshot = {
+  name: string;
+  scope: "project" | "global";
+  project?: string;
+  existed: boolean;
+  files: Record<string, string>;
+};
+
+function skillSnapshotKey(scope: "project" | "global", name: string) {
+  return `${scope}:${name}`;
+}
+
 export function AppSidebar({
   activeProjectPath,
   activeSessionId,
@@ -911,8 +923,10 @@ export function AppSidebar({
     useState<InstallResult | null>(null);
    const [skillInstallResult, setSkillInstallResult] =
      useState<InstallResult | null>(null);
-   const [skillImportLoading, setSkillImportLoading] = useState(false);
-   const [pendingSkillDeletes, setPendingSkillDeletes] = useState<Record<string, SkillDefinition>>({});
+    const [skillImportLoading, setSkillImportLoading] = useState(false);
+    const [pendingSkillDeletes, setPendingSkillDeletes] = useState<Record<string, SkillDefinition>>({});
+    const [pendingSkillSnapshots, setPendingSkillSnapshots] = useState<Record<string, PendingSkillSnapshot>>({});
+    const [pluginSkillActionLoading, setPluginSkillActionLoading] = useState(false);
    const [skillEditing, setSkillEditing] = useState<SkillDefinition | null>(null);
    const [skillEditingScope, setSkillEditingScope] = useState<"project" | "global">("project");
    const [skillDocument, setSkillDocument] = useState("");
@@ -1922,6 +1936,7 @@ export function AppSidebar({
     scope: "agents-tools" | "plugins-skills",
     label: string,
   ) {
+    if (scope === "plugins-skills") setPluginSkillActionLoading(true);
     setBatchUpdateNotice(`${label} 更新中，正在重新啟動 OpenCode server...`);
 
     try {
@@ -2130,15 +2145,18 @@ export function AppSidebar({
         setAgentsToolsHasChanges(false);
       } else {
         setPluginSkillHasChanges(false);
+        setPendingSkillSnapshots({});
       }
+      if (scope === "plugins-skills") setPluginSkillActionLoading(false);
       setBatchUpdateNotice(`${label} 已更新，OpenCode server 已重新啟動。`);
       toastManager.add({
-         id: `batch-update-success-${scope}`,
+          id: `batch-update-success-${scope}`,
         title: "OpenCode 已重新啟動",
         description: `${label} 更新已生效。`,
         type: "success",
       });
     } catch (error) {
+      if (scope === "plugins-skills") setPluginSkillActionLoading(false);
       const message = getApiErrorMessage(error);
       setBatchUpdateNotice(`${label} 更新失敗：${message}`);
       toastManager.add({
@@ -2579,21 +2597,54 @@ export function AppSidebar({
     setPluginSkillHasChanges(false);
   }
 
+  async function rollbackPendingSkillChanges() {
+    const snapshots = Object.values(pendingSkillSnapshots);
+    let rolledBack = false;
+    setPluginSkillActionLoading(true);
+    try {
+      for (const snapshot of snapshots) {
+        const project = snapshot.scope === "project" ? snapshot.project : undefined;
+        await deleteOpenCodeSkill(snapshot.name, snapshot.scope, project, false);
+        if (snapshot.existed && Object.keys(snapshot.files).length > 0) {
+          await upsertSkillRegistryEntry(snapshot.scope, snapshot.name, {
+            files: snapshot.files,
+            restart: false,
+            wait: false,
+            reason: "skills-cancelled",
+          }, project);
+        }
+      }
+      await loadPluginConfig();
+      await loadSkills();
+      rolledBack = true;
+      setPendingSkillSnapshots({});
+      setPendingSkillDeletes({});
+      setPendingSkillEdits({});
+      setBatchUpdateNotice(snapshots.length > 0 ? "已取消 Skill 變更，並刪除或還原剛才的檔案。" : "已取消尚未套用的 Skill 變更。");
+      toastManager.add({ id: `skills-cancelled-${Date.now()}`, title: "Skill 變更已取消", description: snapshots.length > 0 ? "新下載的 Skill 已刪除，原有 Skill 已還原。" : "尚未重新啟動 OpenCode。", type: "info" });
+    } catch (error) {
+      const message = getApiErrorMessage(error);
+      setBatchUpdateNotice(`取消 Skill 變更失敗：${message}`);
+      toastManager.add({ id: `skills-cancel-error-${Date.now()}`, title: "取消 Skill 變更失敗", description: message, type: "error" });
+    } finally {
+      setPluginSkillActionLoading(false);
+      if (rolledBack) {
+        setPluginSkillHasChanges(false);
+        setPluginInstallResult(null);
+        setSkillInstallResult(null);
+        setPluginForm(emptyPluginForm);
+        setSkillForm(emptySkillForm);
+        setPendingPluginFiles({});
+        setPendingPluginDeletes({});
+        setPendingPluginScopeMoves({});
+        setPendingRemotePluginDeletes({});
+      }
+    }
+  }
+
   function cancelPluginSkillChanges() {
-    void loadPluginConfig();
-    void loadSkills();
-    setPendingSkillDeletes({});
-    setPendingSkillEdits({});
-    setPluginForm(emptyPluginForm);
-    setSkillForm(emptySkillForm);
-    setPluginInstallResult(null);
-    setSkillInstallResult(null);
-    setPendingPluginFiles({});
-     setPendingPluginDeletes({});
-    setPendingPluginScopeMoves({});
-    setPendingRemotePluginDeletes({});
-    setPluginSkillHasChanges(false);
-    setBatchUpdateNotice("");
+    if (pluginSkillActionLoading) return;
+    void rollbackPendingSkillChanges();
   }
 
   function addPluginFromOfficialSource() {
@@ -2762,12 +2813,29 @@ export function AppSidebar({
     setBatchUpdateNotice("");
   }
 
+  async function captureSkillSnapshots(scope: "project" | "global", project?: string): Promise<Record<string, PendingSkillSnapshot>> {
+    const response = await listOpenCodeSkills(scope, project, false);
+    const snapshots = await Promise.all(response.entries.map(async (entry) => {
+      const current = await readSkillRegistryEntry(scope, entry.name, scope === "project" ? project : undefined);
+      const files = current.files ?? (current.content === undefined ? {} : { [`${entry.name}/SKILL.md`]: current.content });
+      return [skillSnapshotKey(scope, entry.name), {
+        name: entry.name,
+        scope,
+        ...(scope === "project" && project ? { project } : {}),
+        existed: true,
+        files,
+      } satisfies PendingSkillSnapshot] as const;
+    }));
+    return Object.fromEntries(snapshots);
+  }
+
   async function importSkills() {
     if (skillImportLoading) return;
     const scope = skillForm.installTarget;
     const project = scope === "project" ? activeProjectName : undefined;
     setSkillImportLoading(true);
     try {
+      const existingSnapshots = await captureSkillSnapshots(scope, project);
       const sources = skillForm.sources.split(/\r?\n/).map((source) => source.trim()).filter(Boolean);
       const result = sources.length > 0
         ? await importSkillUrls({ scope, project, sources, overwrite: true, restart: false })
@@ -2777,16 +2845,30 @@ export function AppSidebar({
         status: result.imported.length > 0 ? "success" : "error",
         message: `匯入 ${result.imported.length} 個，略過 ${result.skipped.length} 個，失敗 ${result.failed.length} 個。${failureDetails ? ` ${failureDetails}` : ""}`,
       });
-      if (scope === "global" && skillForm.useInProject && activeProjectName && result.imported.length > 0) {
+      if (result.imported.length > 0) {
         const importedNames = result.imported.map((item) => item.name);
+        setPendingSkillSnapshots((current) => {
+          const next = { ...current };
+          for (const name of importedNames) {
+            const key = skillSnapshotKey(scope, name);
+            if (next[key]) continue;
+            next[key] = existingSnapshots[key] ?? { name, scope, ...(scope === "project" && project ? { project } : {}), existed: false, files: {} };
+          }
+          return next;
+        });
+        setPluginSkillHasChanges(true);
+      }
+      let nextEnabledGlobalSkills: string[] | null = null;
+      if (scope === "global" && skillForm.useInProject && activeProjectName && result.imported.length > 0) {
         const existingEnabled = skillSettings.filter((skill) => skill.inherited && skill.enabled).map((skill) => skill.name);
-        const nextEnabled = [...new Set([...enabledGlobalSkills, ...existingEnabled, ...importedNames])].sort();
-        await updateSkillProjectSettings({ project: activeProjectName, enabledGlobalSkills: nextEnabled, restart: false, reason: "global-skills-enabled-for-project" });
-        setEnabledGlobalSkills(nextEnabled);
-        setSavedEnabledGlobalSkills(nextEnabled);
+        nextEnabledGlobalSkills = [...new Set([...enabledGlobalSkills, ...existingEnabled, ...result.imported.map((item) => item.name)])].sort();
       }
       await loadSkills();
       if (result.imported.length === 0) return;
+      if (nextEnabledGlobalSkills) {
+        setEnabledGlobalSkills(nextEnabledGlobalSkills);
+        setSkillSettings((current) => current.map((skill) => result.imported.some((item) => item.name === skill.name) ? { ...skill, enabled: true } : skill));
+      }
       setSkillForm(emptySkillForm);
       setPluginSkillTab("skills");
       setPluginSkillDialogView("list");
@@ -4429,8 +4511,9 @@ export function AppSidebar({
         view={mcpDialogView}
       />
 
-      <PluginSkillModal
-        batchUpdateNotice={batchUpdateNotice}
+       <PluginSkillModal
+         batchUpdateNotice={batchUpdateNotice}
+         batchUpdateLoading={pluginSkillActionLoading}
         filteredPlugins={filteredPlugins}
         filteredSkillSettings={filteredSkillSettings}
         hasChanges={pluginSkillHasChanges}

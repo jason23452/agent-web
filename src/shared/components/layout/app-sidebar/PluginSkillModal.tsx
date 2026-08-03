@@ -30,6 +30,7 @@ import {
 
 type PluginSkillModalProps = {
   batchUpdateNotice: string
+  batchUpdateLoading: boolean
   filteredPlugins: PluginDefinition[]
   filteredSkillSettings: SkillDefinition[]
   hasChanges: boolean
@@ -88,6 +89,7 @@ type PluginSkillModalProps = {
 
 export function PluginSkillModal({
   batchUpdateNotice,
+  batchUpdateLoading,
   filteredPlugins,
   filteredSkillSettings,
   hasChanges,
@@ -166,11 +168,11 @@ export function PluginSkillModal({
             按下更新會重新啟動 OpenCode server。
           </p>
           <div className="flex items-center gap-2">
-             <Button disabled={!hasChanges} onClick={onCancelBatchUpdate} size="lg" variant="outline">
-               取消
-            </Button>
-             <Button disabled={!hasChanges} onClick={onConfirmBatchUpdate} size="lg">
-              更新
+              <Button disabled={!hasChanges || batchUpdateLoading} onClick={onCancelBatchUpdate} size="lg" variant="outline">
+                取消
+             </Button>
+              <Button disabled={!hasChanges || batchUpdateLoading} loading={batchUpdateLoading} onClick={onConfirmBatchUpdate} size="lg">
+               更新
             </Button>
           </div>
           {batchUpdateNotice && (
@@ -197,7 +199,8 @@ export function PluginSkillModal({
       }
       onOpenChange={(nextOpen) => {
         onOpenChange(nextOpen)
-        if (!nextOpen) {
+       if (!nextOpen) {
+          if (hasChanges) onCancelBatchUpdate()
           onExitPluginEditor()
           onViewChange("list")
         }
