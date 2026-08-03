@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react"
-import type { FormEvent, KeyboardEvent } from "react"
-import { BotIcon, CheckCircle2Icon, ChevronDownIcon, CircleDashedIcon, CommandIcon, CpuIcon, MessageSquareTextIcon, MicIcon, PaperclipIcon, SendIcon, Settings2Icon, WorkflowIcon } from "lucide-react"
+import { BotIcon, CheckCircle2Icon, CircleDashedIcon, CommandIcon, CpuIcon, MessageSquareTextIcon, WorkflowIcon } from "lucide-react"
 import { getApiErrorMessage } from "@/shared/api"
 import { Badge } from "@/shared/components/ui/badge"
 import { Button } from "@/shared/components/ui/button"
+import { ModelSwitcher } from "@/shared/components/layout/app/ModelSwitcher"
+import { ChatComposer, type ChatComposerCompletionOption } from "@/shared/components/layout/context/ChatComposer"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { createWorkflowTestChatSession, sendWorkflowTestChatMessage } from "@/features/workflows/api/workflowTestChat"
-import type { WorkflowNode, WorkflowTestChatSession, WorkflowV1 } from "@/features/workflows/types"
+import type { WorkflowNode, WorkflowResourceCatalog, WorkflowTestChatSession, WorkflowV1 } from "@/features/workflows/types"
+import type { ModelOption } from "@/shared/types/workspace"
+import { buildThinkingVariantOptions, getAgentModelKey } from "@/shared/utils/openCodeModelUtils"
 
 type ChatMessage = {
   id: string
@@ -18,6 +21,7 @@ type WorkflowChatIdentity = {
   agent: string
   command: string
   model: string | null
+  variant: string | null
 }
 
 type WorkflowResourceNode = WorkflowNode & { data: { name: string; content?: string } }
@@ -31,8 +35,9 @@ function getWorkflowChatIdentity(workflow: WorkflowV1): WorkflowChatIdentity {
   const command = commandNode?.data.name || "command"
   const agent = agentNode?.data.name || "primary agent"
   const model = frontmatterValue(agentNode?.data.content, "model") ?? frontmatterValue(commandNode?.data.content, "model")
+  const variant = frontmatterValue(agentNode?.data.content, "variant") ?? frontmatterValue(commandNode?.data.content, "variant")
 
-  return { agent, command, model }
+  return { agent, command, model, variant }
 }
 
 function frontmatterValue(content: string | undefined, key: string) {
@@ -43,12 +48,51 @@ function frontmatterValue(content: string | undefined, key: string) {
   return value || null
 }
 
+function getWorkflowCompletionOptions(workflow: WorkflowV1, catalog: WorkflowResourceCatalog | null | undefined, currentCommand: string, currentAgent: string) {
+  const commandNode = workflow.nodes.find((node): node is WorkflowResourceNode => node.type === "resource.command")
+  const workflowAgents = workflow.nodes.filter((node): node is WorkflowResourceNode => node.type === "resource.agent")
+  const commands = uniqueCompletionOptions([
+    { description: frontmatterValue(commandNode?.data.content, "description") ?? "目前 Workflow command", name: currentCommand },
+    ...(catalog?.resources.commands ?? []).map((resource) => ({ description: resource.description, name: resource.name })),
+  ])
+  const subagents = uniqueCompletionOptions([
+    ...(catalog?.resources.agents ?? [])
+      .filter((resource) => resource.mode !== "primary")
+      .map((resource) => ({ description: resource.description, name: resource.name })),
+    ...workflowAgents.map((agent) => ({ description: frontmatterValue(agent.data.content, "description") ?? undefined, name: agent.data.name })),
+  ]).filter((option) => option.name !== currentAgent)
+
+  return { commands, subagents }
+}
+
+function uniqueCompletionOptions(options: ChatComposerCompletionOption[]) {
+  const seen = new Set<string>()
+  return options.filter((option) => {
+    const key = option.name.trim().toLocaleLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function resolveModelKey(modelLabel: string | null, models: ModelOption[]) {
+  if (modelLabel) {
+    const selected = models.find((model) => getAgentModelKey(model) === modelLabel || model.key === modelLabel)
+    if (selected) return selected.key
+  }
+  return models[0]?.key ?? null
+}
+
 export function WorkflowTestChatDialog({
+  catalog,
+  modelOptions = [],
   onOpenChange,
   open,
   published,
   workflow,
 }: {
+  catalog?: WorkflowResourceCatalog | null
+  modelOptions?: ModelOption[]
   onOpenChange: (open: boolean) => void
   open: boolean
   published: boolean
@@ -56,28 +100,29 @@ export function WorkflowTestChatDialog({
 }) {
   const [session, setSession] = useState<WorkflowTestChatSession | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [draft, setDraft] = useState("")
   const [starting, setStarting] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(() => resolveModelKey(getWorkflowChatIdentity(workflow).model, modelOptions))
+  const [selectedThinkingVariant, setSelectedThinkingVariant] = useState(() => getWorkflowChatIdentity(workflow).variant ?? "default")
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const composerRef = useRef<HTMLTextAreaElement>(null)
   const requestControllerRef = useRef<AbortController | null>(null)
   const identity = getWorkflowChatIdentity(workflow)
   const currentCommand = session?.command ?? identity.command
   const currentAgent = session?.agent ?? identity.agent
-  const currentModel = session?.model ?? identity.model ?? "Default"
+  const effectiveModelKey = selectedModelKey && modelOptions.some((model) => model.key === selectedModelKey)
+    ? selectedModelKey
+    : resolveModelKey(identity.model, modelOptions)
+  const selectedModel = modelOptions.find((model) => model.key === effectiveModelKey) ?? null
+  const thinkingVariants = buildThinkingVariantOptions(selectedModel)
+  const effectiveThinkingVariant = thinkingVariants.some((variant) => variant.key === selectedThinkingVariant) ? selectedThinkingVariant : "default"
+  const currentModel = selectedModel ? getAgentModelKey(selectedModel) : session?.model ?? identity.model ?? "Default"
+  const currentVariant = thinkingVariants.find((variant) => variant.key === effectiveThinkingVariant)?.label ?? "Default"
+  const completionOptions = getWorkflowCompletionOptions(workflow, catalog, currentCommand, currentAgent)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
   }, [messages])
-
-  useEffect(() => {
-    const textarea = composerRef.current
-    if (!textarea) return
-    textarea.style.height = "auto"
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`
-  }, [draft])
 
   useEffect(() => () => requestControllerRef.current?.abort(), [])
 
@@ -101,16 +146,17 @@ export function WorkflowTestChatDialog({
     }
   }
 
-  async function submitMessage(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault()
-    const text = draft.trim()
-    if (!text || sending || starting || !published) return
+  function submitMessage(value: string): boolean {
+    const text = value.trim()
+    if (!text || sending || starting || !published) return false
 
-    setDraft("")
     setError(null)
-    const userMessage: ChatMessage = { id: `user-${Date.now()}`, role: "user", text }
-    setMessages((current) => [...current, userMessage])
+    setMessages((current) => [...current, { id: `user-${current.length}`, role: "user", text }])
+    void sendMessage(text)
+    return true
+  }
 
+  async function sendMessage(text: string) {
     let activeSession = session
     if (!activeSession) activeSession = await startSession()
     if (!activeSession) return
@@ -123,6 +169,8 @@ export function WorkflowTestChatDialog({
         scope: workflow.scope,
         project: workflow.project,
         text,
+        ...(selectedModel ? { model: getAgentModelKey(selectedModel) } : {}),
+        ...(effectiveThinkingVariant !== "default" ? { variant: effectiveThinkingVariant } : {}),
       }, controller.signal)
       if (controller.signal.aborted) return
       setMessages((current) => [...current, {
@@ -140,38 +188,40 @@ export function WorkflowTestChatDialog({
     }
   }
 
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return
-    event.preventDefault()
-    void submitMessage()
-  }
-
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogPopup className="h-[min(760px,calc(100dvh-2rem))] max-w-4xl" closeProps={{ "aria-label": "關閉 Workflow 測試對話" }}>
         <DialogHeader className="border-border border-b">
-          <div className="flex items-start gap-3 pr-8">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/8 text-primary"><MessageSquareTextIcon aria-hidden="true" className="size-5" /></span>
-            <div className="min-w-0">
-              <DialogTitle>測試 Workflow 對話</DialogTitle>
-              <DialogDescription className="mt-1">在 `workflow-test` sandbox 透過目前的 Command、Agent 與節點關係進行對話。</DialogDescription>
+          <div className="flex items-start justify-between gap-3 pr-16">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/8 text-primary"><MessageSquareTextIcon aria-hidden="true" className="size-5" /></span>
+              <div className="min-w-0">
+                <DialogTitle>測試 Workflow 對話</DialogTitle>
+                <DialogDescription className="mt-1">在 `workflow-test` sandbox 透過目前的 Command、Agent 與節點關係進行對話。</DialogDescription>
+              </div>
             </div>
+            {modelOptions.length > 0 ? (
+              <ModelSwitcher activeModelKey={effectiveModelKey} disabled={!published || starting || sending} models={modelOptions} onModelChange={setSelectedModelKey} />
+            ) : (
+              <span className="inline-flex min-h-9 max-w-44 shrink-0 items-center gap-1.5 rounded-lg px-2 text-muted-foreground text-sm" title={`目前 Model ${currentModel}`}>
+                <CpuIcon aria-hidden="true" className="size-4 shrink-0" />
+                <span className="truncate">{currentModel}</span>
+              </span>
+            )}
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
             <Badge variant="info"><WorkflowIcon aria-hidden="true" className="size-3" />workflow-test</Badge>
             <Badge variant={published ? "success" : "warning"}>{published ? <CheckCircle2Icon aria-hidden="true" className="size-3" /> : <CircleDashedIcon aria-hidden="true" className="size-3" />}{published ? "已測試發布" : "尚未測試發布"}</Badge>
-            <code className="truncate text-muted-foreground">{workflow.id}</code>
-            <span className="inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-muted-foreground" title={`目前 Command /${currentCommand}`}>
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 py-1 text-muted-foreground" title={`目前 Command /${currentCommand}`}>
               <CommandIcon aria-hidden="true" className="size-3 shrink-0" />
+              <span className="text-[10px]">Command</span>
               <code className="truncate text-foreground">/{currentCommand}</code>
             </span>
-            <span className="inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-muted-foreground" title={`目前 Agent ${currentAgent}`}>
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 py-1 text-muted-foreground" title={`目前 Agent ${currentAgent}`}>
               <BotIcon aria-hidden="true" className="size-3 shrink-0" />
+              <span className="text-[10px]">Agent</span>
               <span className="truncate text-foreground">{currentAgent}</span>
-            </span>
-            <span className="inline-flex min-w-0 items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-muted-foreground" title={`目前 Model ${currentModel}`}>
-              <CpuIcon aria-hidden="true" className="size-3 shrink-0" />
-              <span className="max-w-48 truncate text-foreground">{currentModel}</span>
             </span>
           </div>
         </DialogHeader>
@@ -199,41 +249,25 @@ export function WorkflowTestChatDialog({
 
             {error && <div className="border-border border-t bg-destructive/8 px-4 py-2 text-destructive-foreground text-xs sm:px-6" role="alert">{error}</div>}
 
-            <form className="border-border border-t bg-background p-3 sm:p-4" onSubmit={(event) => void submitMessage(event)}>
-              <div className="mx-auto w-full max-w-3xl">
-                <div className="flex min-w-0 items-end gap-1.5 rounded-[26px] border border-border bg-background px-2.5 py-2 shadow-[0_10px_30px_color-mix(in_oklch,var(--foreground)_8%,transparent)] transition-colors focus-within:border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] sm:px-3">
-                  <label className="sr-only" htmlFor="workflow-test-chat-composer">輸入測試訊息</label>
-                  <Button aria-label="加入檔案" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent p-0 text-muted-foreground shadow-none before:hidden hover:bg-muted" disabled title="Workflow 測試目前僅支援文字訊息" size="icon" variant="ghost"><PaperclipIcon aria-hidden="true" /></Button>
-                  <textarea
-                    aria-describedby="workflow-test-chat-hint"
-                    aria-label="輸入測試訊息"
-                    className="min-h-11 max-h-[140px] min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-[11px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground/70"
-                    disabled={!published || starting || sending}
-                    id="workflow-test-chat-composer"
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={handleComposerKeyDown}
-                    placeholder={published ? `詢問 AICaht，或請 /${currentCommand} 開始工作` : "請先測試發布 Workflow"}
-                    ref={composerRef}
-                    rows={1}
-                    value={draft}
-                  />
-                  <div className="flex shrink-0 items-center gap-1 self-end max-[620px]:hidden">
-                    <span className="inline-flex h-8 max-w-32 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-muted-foreground text-xs" title={`目前 Command /${currentCommand}`}>
-                      <CommandIcon aria-hidden="true" className="size-3.5 shrink-0" />
-                      <span className="truncate">/{currentCommand}</span>
-                    </span>
-                    <span className="inline-flex h-8 max-w-36 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-muted-foreground text-xs" title={`目前 Model ${currentModel}`}>
-                      <Settings2Icon aria-hidden="true" className="size-3.5 shrink-0" />
-                      <span className="truncate">{currentModel}</span>
-                      <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0" />
-                    </span>
-                  </div>
-                  <Button aria-label="語音輸入" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent p-0 text-muted-foreground shadow-none before:hidden hover:bg-muted" disabled title="語音輸入尚未啟用" size="icon" variant="ghost"><MicIcon aria-hidden="true" /></Button>
-                  <Button aria-label="送出測試訊息" className="size-11 min-h-11 min-w-11 rounded-full border-0 bg-primary text-primary-foreground shadow-none before:hidden hover:bg-primary/90 disabled:bg-muted-foreground/60 disabled:text-white" disabled={!draft.trim() || !published || starting || sending} loading={sending} size="icon-lg" type="submit"><SendIcon aria-hidden="true" /></Button>
-                </div>
-                <p className="mt-2 px-1 text-[10px] text-muted-foreground" id="workflow-test-chat-hint">Enter 送出 · Shift + Enter 換行 · 目前使用 /{currentCommand} · {currentModel}。</p>
-              </div>
-            </form>
+            <ChatComposer
+              attachments={[]}
+              commands={completionOptions.commands}
+              disabled={!published || starting || sending}
+              hint={`Enter 送出 · Shift + Enter 換行 · 目前使用 /${currentCommand} · ${currentModel} · ${currentVariant}。`}
+              onClearPin={() => undefined}
+              onRemoveAttachment={() => undefined}
+              onSubmit={submitMessage}
+              onThinkingVariantChange={setSelectedThinkingVariant}
+              onUploadFiles={async () => {
+                throw new Error("Workflow 測試對話目前僅支援文字訊息。")
+              }}
+              pinContext={null}
+              placeholder={published ? `詢問 AICaht，或請 /${currentCommand} 開始工作` : "請先測試發布 Workflow"}
+              selectedThinkingVariant={effectiveThinkingVariant}
+              subagents={completionOptions.subagents}
+              sending={sending || starting}
+              thinkingVariants={thinkingVariants}
+            />
           </div>
         </DialogPanel>
         <DialogFooter className="border-border border-t bg-muted/40 px-4 py-2 sm:px-6">

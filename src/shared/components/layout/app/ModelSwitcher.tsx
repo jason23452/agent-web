@@ -67,7 +67,7 @@ export function ModelSwitcher({ activeModelKey, disabled = false, loading = fals
       >
         <CpuIcon aria-hidden="true" className="size-4 shrink-0" />
         <span className="truncate">
-          {loading ? "讀取模型..." : activeModel ? activeModel.variant ?? activeModel.name : "沒有可用模型"}
+          {loading ? "讀取模型..." : activeModel ? (compact ? activeModel.variant ?? activeModel.name : activeModel.name) : "沒有可用模型"}
         </span>
         <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0" />
       </button>

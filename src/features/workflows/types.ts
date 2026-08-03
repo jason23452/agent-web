@@ -125,6 +125,8 @@ export type WorkflowResourceKind = "agents" | "tools" | "skills" | "plugins" | "
 export type WorkflowResource = {
   name: string
   type: Extract<WorkflowNodeType, `resource.${string}`>
+  description?: string
+  mode?: "primary" | "subagent" | "all"
   model?: string
   sources: Array<"config" | "registry" | "runtime">
   scope?: WorkflowScope

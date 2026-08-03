@@ -17,7 +17,7 @@ export function createWorkflowTestChatSession(id: string, location: WorkflowTest
 export function sendWorkflowTestChatMessage(
   id: string,
   sessionID: string,
-  location: WorkflowTestChatLocation & { text: string },
+  location: WorkflowTestChatLocation & { model?: string; text: string; variant?: string },
   signal?: AbortSignal,
 ) {
   return apiRequest<WorkflowTestChatMessage>(`/bff/workflows/${encodeURIComponent(id)}/test-chat/sessions/${encodeURIComponent(sessionID)}/messages`, {
