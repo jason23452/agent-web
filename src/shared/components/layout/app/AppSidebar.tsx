@@ -1010,6 +1010,7 @@ export function AppSidebar({
   const [persistedDisabledModelIds, setPersistedDisabledModelIds] = useState<Set<string>>(() => new Set());
   const [modelSettingsApplying, setModelSettingsApplying] = useState(false);
   const [modelProviders, setModelProviders] = useState<ModelProvider[]>([]);
+  const modelProvidersLoadVersionRef = useRef(0);
   const [selectedModelProviderId, setSelectedModelProviderId] = useState<
     string | null
   >(null);
@@ -1167,7 +1168,10 @@ export function AppSidebar({
   }, []);
 
   const loadModelProviders = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, optimisticConnectedProviderId?: string) => {
+      const loadVersion = modelProvidersLoadVersionRef.current + 1;
+      modelProvidersLoadVersionRef.current = loadVersion;
+      const isCurrentLoad = () => modelProvidersLoadVersionRef.current === loadVersion;
       const directory = activeProjectPath?.trim() || undefined;
       const query = directory ? { directory } : undefined;
 
@@ -1176,37 +1180,39 @@ export function AppSidebar({
           query,
           signal,
         });
-        const modelKeys = providerResponse.all.flatMap((provider) =>
-          Object.values(provider.models).map((model) => `${provider.id}/${model.id}`),
-        );
         const [authMethodsResponseResult, modelSettingsResponse] = await Promise.allSettled([
           getOpenCodeProviderAuthMethods({
             query,
             signal,
           }),
-          updateOpenCodeModelSettings({ modelKeys }, { signal }),
+          getOpenCodeModelSettings({ signal }),
         ]);
         let authMethodsResponse: OpenCodeAuthMethodsResponse | undefined;
 
         if (authMethodsResponseResult.status === "fulfilled") authMethodsResponse = authMethodsResponseResult.value;
 
-        if (signal?.aborted) return;
+        if (signal?.aborted || !isCurrentLoad()) return;
         const resolvedModelSettings = modelSettingsResponse.status === "fulfilled"
           ? modelSettingsResponse.value
           : await getOpenCodeModelSettings({ signal });
-        if (signal?.aborted) return;
+        if (signal?.aborted || !isCurrentLoad()) return;
         const nextDisabledModelIds = applyDisabledModelKeys(
           resolvedModelSettings.disabledModelKeys,
           { persisted: true },
         );
+        if (!isCurrentLoad()) return;
         onOpenCodeProviderCatalogChange?.(providerResponse);
 
         const nextProviders = providerResponse.all
           .map((provider) =>
             toModelProvider(provider, providerResponse, authMethodsResponse, nextDisabledModelIds),
           )
+          .map((provider) => optimisticConnectedProviderId === provider.id
+            ? { ...provider, connected: true, enabled: true }
+            : provider)
           .sort((a, b) => a.name.localeCompare(b.name));
 
+        if (!isCurrentLoad()) return;
         setModelProviders((current) => {
           const previousProvidersById = Object.fromEntries(
             current.map((provider) => [provider.id, provider]),
@@ -1227,12 +1233,8 @@ export function AppSidebar({
           }));
         });
 
-        if (selectedModelProviderId && providerResponse.connected.includes(selectedModelProviderId)) {
-          setSelectedProviderAuthMethod(null);
-          setSelectedModelProviderId(null);
-        }
       } catch (error) {
-        if (signal?.aborted) return;
+        if (signal?.aborted || !isCurrentLoad()) return;
         setModelProviders([]);
         toastManager.add({
           id: `model-providers-load-error-${Date.now()}`,
@@ -1242,7 +1244,7 @@ export function AppSidebar({
         });
       }
     },
-    [activeProjectPath, applyDisabledModelKeys, onOpenCodeProviderCatalogChange, selectedModelProviderId],
+    [activeProjectPath, applyDisabledModelKeys, onOpenCodeProviderCatalogChange],
   );
 
   const markModelProviderConnected = useCallback((providerId: string) => {
@@ -1277,8 +1279,8 @@ export function AppSidebar({
         try {
           const oauthStatus = await getOpenCodeProviderOAuthStatus(providerId, { query });
           if (oauthStatus.completed) {
-            await loadModelProviders();
             markModelProviderConnected(providerId);
+            await loadModelProviders(undefined, providerId);
             toastManager.add({
               id: `provider-auth-connected-${providerId}-${Date.now()}`,
               description: "OAuth 驗證已成功，main 與 workflow-test OpenCode 已同步。",
@@ -1291,8 +1293,8 @@ export function AppSidebar({
           const providerResponse = await listOpenCodeProviders({ query });
           if (!providerResponse.connected.includes(providerId)) continue;
 
-          await loadModelProviders();
           markModelProviderConnected(providerId);
+          await loadModelProviders(undefined, providerId);
           toastManager.add({
             id: `provider-auth-connected-${providerId}-${Date.now()}`,
               description: "模型商已成功連接，main 與 workflow-test OpenCode 已同步。",
@@ -1326,8 +1328,8 @@ export function AppSidebar({
         try {
           await completeOpenCodeProviderAuth(providerId, methodIndex, { query });
           await disposeOpenCodeInstance({ query });
-          await loadModelProviders();
           markModelProviderConnected(providerId);
+          await loadModelProviders(undefined, providerId);
           toastManager.add({
             id: `provider-headless-auth-completed-${providerId}-${Date.now()}`,
             description: "Headless 授權已成功，main 與 workflow-test OpenCode 已同步。",
