@@ -9,7 +9,7 @@ export const RESOURCE_WRITER_WORKFLOW_IDS = {
   command: "workflow-command-writer",
   mcp: "workflow-mcp-writer",
   plugin: "workflow-plugin-writer",
-  skill: "workflow-skill-writer",
+  skill: "workflow-skill-creator",
   tool: "workflow-tool-writer",
 } as const
 
