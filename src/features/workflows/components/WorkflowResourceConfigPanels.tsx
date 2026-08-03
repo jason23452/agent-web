@@ -1,5 +1,4 @@
 import { useState, type SetStateAction } from "react"
-import { SparklesIcon } from "lucide-react"
 import { getApiErrorMessage } from "@/shared/api"
 import { testOpenCodeMcpConnection, type OpenCodeMcpTestResult } from "@/shared/api/opencodeMcpTest"
 import { testToolScript } from "@/shared/api/opencodeRegistry"
@@ -34,13 +33,12 @@ type WorkflowResourceConfigPanelProps = {
   onRemoveDelegation?: (edgeID: string) => void
   onUpdateNode: (node: WorkflowNode) => void
   onOpenPromptWriter?: (nodeID: string) => void
-  onOpenResourcePlanner?: (nodeID: string) => void
   edges?: WorkflowEdge[]
   nodes?: WorkflowNode[]
   project?: string
 }
 
-export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onOpenPromptWriter, onOpenResourcePlanner, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
+export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions = [], node, nodes = [], edges = [], onAddDelegation, onClose, onRemoveDelegation, onOpenPromptWriter, onUpdateNode, project }: WorkflowResourceConfigPanelProps) {
   if ((node.data as ResourceNodeData).mode === "reference") return <ReferenceResourcePanel edges={edges} node={node} onClose={onClose} onUpdateNode={onUpdateNode} />
   const content = (() => {
     switch (node.type) {
@@ -49,7 +47,7 @@ export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions
       case "resource.tool":
         return <WorkflowToolConfigPanel key={node.id} node={node} onUpdateNode={onUpdateNode} project={project} />
       case "resource.command":
-        return <WorkflowCommandConfigPanel availableModels={availableModels} key={node.id} modelOptions={modelOptions} node={node} onUpdateNode={onUpdateNode} />
+        return <WorkflowCommandConfigPanel availableModels={availableModels} key={node.id} modelOptions={modelOptions} node={node} onOpenPromptWriter={onOpenPromptWriter ? () => onOpenPromptWriter(node.id) : undefined} onUpdateNode={onUpdateNode} />
       case "resource.plugin":
         return <WorkflowPluginConfigPanel key={node.id} node={node} onClose={onClose} onUpdateNode={onUpdateNode} project={project} />
       case "resource.skill":
@@ -62,7 +60,6 @@ export function WorkflowResourceConfigPanel({ availableModels = [], modelOptions
   })()
   return (
     <div className="grid min-h-0">
-      {onOpenResourcePlanner && (node.data as ResourceNodeData).mode === "managed" && <div className="flex justify-end border-border border-b px-4 py-2"><Button onClick={() => onOpenResourcePlanner(node.id)} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />撰寫此 Resource</Button></div>}
       {content}
     </div>
   )
@@ -188,7 +185,7 @@ function WorkflowToolConfigPanel({ node, onUpdateNode, project }: Pick<WorkflowR
   )
 }
 
-function WorkflowCommandConfigPanel({ availableModels, modelOptions, node, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "availableModels" | "modelOptions" | "node" | "onUpdateNode">) {
+function WorkflowCommandConfigPanel({ availableModels, modelOptions, node, onOpenPromptWriter, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "availableModels" | "modelOptions" | "node" | "onUpdateNode"> & { onOpenPromptWriter?: () => void }) {
   const data = resourceData(node)
   const [commandConfigMode, setCommandConfigMode] = useState<CommandConfigMode>("interface")
   const [commandForm, setCommandForm] = useState<CommandForm>(() => commandFormFromDocument(data.content ?? "", data.name, data.scope))
@@ -240,6 +237,7 @@ function WorkflowCommandConfigPanel({ availableModels, modelOptions, node, onUpd
       onCommandDocumentChange={changeDocument}
       onCommandFormChange={updateCommandForm}
       onSubmitCommandConfig={submit}
+      onOpenPromptWriter={onOpenPromptWriter}
     />
   )
 }

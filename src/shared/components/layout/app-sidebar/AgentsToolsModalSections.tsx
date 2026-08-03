@@ -637,6 +637,7 @@ export function CommandConfigPanel({
   onCommandDocumentChange,
   onCommandFormChange,
   onSubmitCommandConfig,
+  onOpenPromptWriter,
   workflowAgentLinked = false,
 }: {
   commandConfigMode: "interface" | "document";
@@ -650,6 +651,7 @@ export function CommandConfigPanel({
   onCommandDocumentChange: (content: string) => void;
   onCommandFormChange: Dispatch<SetStateAction<CommandForm>>;
   onSubmitCommandConfig: () => void;
+  onOpenPromptWriter?: () => void;
   workflowAgentLinked?: boolean;
 }) {
   const resolvedAvailableModels = modelOptions === undefined ? availableModels : buildAgentModelKeys(modelOptions)
@@ -814,7 +816,7 @@ export function CommandConfigPanel({
             以 subtask 執行
           </label>
           <label className="grid gap-2 text-muted-foreground text-sm">
-            Prompt template
+            <span className="flex items-center justify-between gap-1.5">Prompt template {onOpenPromptWriter && <Button aria-label="用 Prompt Writer 建立 Prompt template" onClick={onOpenPromptWriter} size="icon-xs" title="用 Prompt Writer 建立 Prompt template" type="button" variant="ghost"><SparklesIcon aria-hidden="true" /></Button>}</span>
             <Textarea
               aria-label="Command prompt template"
               className="min-h-56 font-mono"
