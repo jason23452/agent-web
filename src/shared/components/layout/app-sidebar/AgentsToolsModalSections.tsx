@@ -2426,7 +2426,7 @@ function ConnectedCapabilitySection({ label, names }: { label: string; names: st
       ) : (
         <p className="rounded-md border border-dashed bg-background px-3 py-3 text-muted-foreground text-xs">尚未連接</p>
       )}
-      <p className="text-muted-foreground text-xs">由 Workflow graph capability 連線管理，不會寫入 Agent Markdown。</p>
+      <p className="text-muted-foreground text-xs">由 workspace 設定或 Workflow graph capability 管理，不會寫入 Agent Markdown。</p>
     </section>
   )
 }

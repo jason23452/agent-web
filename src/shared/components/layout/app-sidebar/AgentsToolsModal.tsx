@@ -42,6 +42,8 @@ type AgentsToolsModalProps = {
   availableModels: string[];
   modelOptions?: ModelOption[];
   availableSkillNames: string[];
+  connectedMcpNames?: string[];
+  connectedPluginNames?: string[];
   batchUpdateNotice: string;
   commandEditMode: "add" | "edit";
   commandConfigMode: CommandConfigMode;
@@ -132,6 +134,8 @@ export function AgentsToolsModal({
   availableModels,
   modelOptions,
   availableSkillNames,
+  connectedMcpNames,
+  connectedPluginNames,
   batchUpdateNotice,
   commandEditMode,
   commandConfigMode,
@@ -412,7 +416,9 @@ export function AgentsToolsModal({
            availableModels={availableModels}
            modelOptions={modelOptions}
            availableSkillNames={availableSkillNames}
-          editingAgentId={editingAgentId}
+           connectedMcpNames={connectedMcpNames}
+           connectedPluginNames={connectedPluginNames}
+           editingAgentId={editingAgentId}
           guidanceSkill={guidanceSkill}
           guidanceSubagent={guidanceSubagent}
           guidanceTool={guidanceTool}

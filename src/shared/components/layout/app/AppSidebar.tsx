@@ -1061,6 +1061,8 @@ export function AppSidebar({
   const availableSkillNames = skillSettings
     .filter((skill) => skill.enabled)
     .map((skill) => skill.name);
+  const workspacePluginNames = [...new Set(plugins.filter((plugin) => plugin.enabled).map((plugin) => plugin.name))];
+  const workspaceMcpNames = [...new Set(mcpServers.filter((server) => server.enabled).map((server) => server.name))];
   const availableAgentModels = modelOptions.length > 0
     ? buildAgentModelKeys(modelOptions)
     : [...new Set(modelProviders.flatMap((provider) => (provider.availableModels ?? []).map((model) => model.key)))];
@@ -2597,6 +2599,19 @@ export function AppSidebar({
 
     return () => window.clearTimeout(timeoutId);
   }, [loadPluginConfig, pluginSkillDialogOpen, pluginSkillTab]);
+
+  useEffect(() => {
+    if (!agentsDialogOpen || agentsToolsHasChanges) return;
+    const timeoutId = window.setTimeout(() => {
+      void loadMcpConfig(agentsToolsScope);
+      if (pluginConfigScope === agentsToolsScope) {
+        void loadPluginConfig();
+      } else {
+        setPluginConfigScope(agentsToolsScope);
+      }
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [agentsDialogOpen, agentsToolsHasChanges, agentsToolsScope, loadMcpConfig, loadPluginConfig, pluginConfigScope]);
 
   function changePluginConfigScope(scope: PluginConfigScope) {
     setPluginConfigScope(scope);
@@ -4596,11 +4611,13 @@ export function AppSidebar({
         agents={agents}
         agentsError={agentsError}
          agentsLoading={agentsLoading}
-         agentsToolsHasChanges={agentsToolsHasChanges}
-          availableModels={availableAgentModels}
-          modelOptions={modelOptions.length > 0 ? modelOptions : undefined}
-         availableSkillNames={availableSkillNames}
-         batchUpdateNotice={batchUpdateNotice}
+          agentsToolsHasChanges={agentsToolsHasChanges}
+           availableModels={availableAgentModels}
+           modelOptions={modelOptions.length > 0 ? modelOptions : undefined}
+          availableSkillNames={availableSkillNames}
+          connectedMcpNames={workspaceMcpNames}
+          connectedPluginNames={workspacePluginNames}
+          batchUpdateNotice={batchUpdateNotice}
           commandEditMode={commandEditMode}
           commandConfigMode={commandConfigMode}
           commandDocument={commandDocument}
