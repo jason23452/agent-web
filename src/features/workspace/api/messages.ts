@@ -55,6 +55,14 @@ export function sendSessionPrompt(sessionID: string, directory: string, body: Pr
   })
 }
 
+export function abortSession(sessionID: string, directory: string, config?: ApiRequestConfig) {
+  return apiRequest<boolean>(`/bff/sessions/${encodeURIComponent(sessionID)}/abort`, {
+    ...config,
+    method: "POST",
+    query: { ...config?.query, directory },
+  })
+}
+
 export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): WorkspaceMessage[] {
   return messages.map((message) => {
     const bodyParts = message.parts.flatMap((part) => {
