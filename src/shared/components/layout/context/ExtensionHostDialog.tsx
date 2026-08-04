@@ -114,7 +114,7 @@ export function ExtensionHostDialog({
           editorHandle = await mountEditor(containerRef.current, { projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
           setNotice("外部 Extension 已啟用。");
         } else {
-          setNotice("Extension 已載入，但沒有提供可掛載的 mermind editor。");
+            setNotice("Extension 已載入，但沒有提供可掛載的 XMind editor。");
         }
       } catch (loadError) {
         if (!controller.signal.aborted) {

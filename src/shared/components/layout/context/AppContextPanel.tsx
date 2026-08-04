@@ -177,7 +177,7 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
         <FolderOpenIcon aria-hidden="true" className="size-5 text-muted-foreground" />
         <h2 className="min-w-0 flex-1 truncate font-semibold">Context</h2>
         {onOpenExtension ? (
-          <Button aria-label="開啟外部 mermind Extension" className="bg-background" disabled={!projectActive} onClick={onOpenExtension} size="icon-sm" title="開啟外部 mermind Extension" variant="outline">
+          <Button aria-label="開啟外部 XMind Extension" className="bg-background" disabled={!projectActive} onClick={onOpenExtension} size="icon-sm" title="開啟外部 XMind Extension" variant="outline">
             <GitBranchIcon aria-hidden="true" />
           </Button>
         ) : null}

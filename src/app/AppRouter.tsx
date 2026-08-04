@@ -264,7 +264,7 @@ export function AppRouter() {
       {mainRoute}
       <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} />
       <ExtensionHostDialog
-        extensionId="mermind"
+        extensionId="xmind"
         onClose={() => setExtensionHostOpen(false)}
         open={extensionHostOpen}
         projectName={activeProjectName}
