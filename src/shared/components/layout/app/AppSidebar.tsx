@@ -4456,10 +4456,10 @@ export function AppSidebar({
         npmPackagesError={npmPackagesError}
         npmPackagesLoading={npmPackagesLoading}
         npmPackagesToInstall={npmPackagesToInstall}
-        npmPackagesToDelete={npmPackagesToDelete}
-        npmPackageTarget={npmPackageTarget}
-        onClose={closeUserSettings}
-        onApplyModelSettings={applyModelSettings}
+         npmPackagesToDelete={npmPackagesToDelete}
+         npmPackageTarget={npmPackageTarget}
+         onClose={closeUserSettings}
+         onApplyModelSettings={applyModelSettings}
         onApplyNpmPackageChanges={applyNpmPackageChanges}
         onCancelModelSettings={cancelModelSettings}
         onCancelNpmPackageChanges={cancelNpmPackageChanges}

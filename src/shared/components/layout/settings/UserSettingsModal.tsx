@@ -8,12 +8,14 @@ import { DeploymentPlatformsPanel, PlatformManagementPanel } from "./UserSetting
 import { ModelProvidersPanel } from "./UserSettingsModelProviders";
 import { ModelsPanel } from "./UserSettingsModelsPanel";
 import { NpmPackagesPanel } from "./UserSettingsNpmPackagesPanel";
+import { ExtensionsPanel } from "./UserSettingsExtensionsPanel";
 import { SettingsSidebar } from "./UserSettingsSidebar";
 
 export type UserSettingsSection =
   | "model-providers"
   | "models"
   | "npm-packages"
+  | "extensions"
   | "platform-management"
   | "deployment-platforms";
 
@@ -222,6 +224,8 @@ export function UserSettingsModal({
                 root={npmPackageRoot}
                 target={npmPackageTarget}
               />
+            ) : section === "extensions" ? (
+              <ExtensionsPanel />
             ) : section === "platform-management" ? (
               <PlatformManagementPanel />
             ) : (

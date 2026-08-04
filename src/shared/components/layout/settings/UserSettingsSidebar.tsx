@@ -1,4 +1,4 @@
-import { PackageIcon, RocketIcon, ServerIcon, SettingsIcon, SparklesIcon } from "lucide-react";
+import { PackageIcon, PuzzleIcon, RocketIcon, ServerIcon, SettingsIcon, SparklesIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { UserSettingsSection } from "./UserSettingsModal";
 
@@ -14,7 +14,7 @@ export function SettingsSidebar({
       <div className="mb-6 px-2">
         <h2 className="font-semibold text-base">設定</h2>
         <p className="mt-1 text-muted-foreground text-xs">
-          模型商、平台與部署管理。
+          模型商、平台、部署與擴充套件管理。
         </p>
       </div>
 
@@ -36,6 +36,12 @@ export function SettingsSidebar({
           icon={<PackageIcon aria-hidden="true" className="size-4" />}
           label="NPM 套件"
           onClick={() => onSectionChange("npm-packages")}
+        />
+        <SettingsNavButton
+          active={activeSection === "extensions"}
+          icon={<PuzzleIcon aria-hidden="true" className="size-4" />}
+          label="擴充套件"
+          onClick={() => onSectionChange("extensions")}
         />
         <SettingsNavButton
           active={activeSection === "platform-management"}
