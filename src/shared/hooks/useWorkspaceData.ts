@@ -346,7 +346,7 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
     } catch (error) {
       const message = getApiErrorMessage(error)
       setSessionsError(message)
-      throw new Error(message)
+      throw new Error(message, { cause: error })
     }
   }, [activeProjectPath, openCodeSessions, projectSessions, removeSessionFromHistory])
 
@@ -360,7 +360,7 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
     } catch (error) {
       const message = getApiErrorMessage(error)
       setSessionsError(message)
-      throw new Error(message)
+      throw new Error(message, { cause: error })
     }
   }, [activeProjectPath, openCodeSessions, projectSessions, removeSessionFromHistory])
 
