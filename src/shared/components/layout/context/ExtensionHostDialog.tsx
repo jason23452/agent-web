@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { getApiErrorMessage } from "@/shared/api";
-import { loadPlatformExtensionFrontend } from "@/shared/api/platformExtensions";
+import {
+  listPlatformExtensions,
+  loadPlatformExtensionFrontend,
+  PLATFORM_EXTENSIONS_CHANGED_EVENT,
+  type PlatformExtension,
+} from "@/shared/api/platformExtensions";
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import { createOrUpdateProjectFile, readProjectFileContent } from "@/features/workspace/api/files";
 
@@ -40,10 +45,71 @@ type ExtensionRuntime = {
   contextAction?: {
     mount?: (container: HTMLElement, context: ExtensionActionContext) => Promise<ExtensionActionHandle | void> | ExtensionActionHandle | void;
   };
-  mindMap?: {
-    mountEditor?: (container: HTMLElement, context: unknown) => Promise<{ destroy?: () => void } | void>;
+  editor?: {
+    mount?: (container: HTMLElement, context: unknown) => Promise<{ destroy?: () => void } | void>;
   };
 };
+
+export function ExtensionHostActions({
+  projectName,
+  projectPath,
+}: {
+  projectName?: string;
+  projectPath?: string | null;
+}) {
+  const [activeExtensionId, setActiveExtensionId] = useState<string | null>(null);
+  const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
+
+  useEffect(() => {
+    if (!projectName || !projectPath) return;
+
+    const controller = new AbortController();
+    const refresh = () => {
+      void listPlatformExtensions({ signal: controller.signal })
+        .then((response) => {
+          if (!controller.signal.aborted) setExtensions(response.extensions.filter((extension) => extension.installed));
+        })
+        .catch(() => undefined);
+    };
+
+    refresh();
+    window.addEventListener(PLATFORM_EXTENSIONS_CHANGED_EVENT, refresh);
+
+    return () => {
+      controller.abort();
+      window.removeEventListener(PLATFORM_EXTENSIONS_CHANGED_EVENT, refresh);
+    };
+  }, [projectName, projectPath]);
+
+  const activeExtension = extensions.find((extension) => (extension.extensionId ?? extension.id) === activeExtensionId);
+
+  return (
+    <>
+      {extensions.map((extension) => {
+        const extensionId = extension.extensionId ?? extension.id;
+        return (
+          <ExtensionHostAction
+            extensionId={extensionId}
+            key={`${extensionId}:${extension.installedAt ?? extension.version ?? ""}`}
+            onOpenEditor={() => setActiveExtensionId(extensionId)}
+            projectName={projectName}
+            projectPath={projectPath}
+          />
+        );
+      })}
+      {activeExtensionId && activeExtension ? (
+        <ExtensionHostDialog
+          extensionId={activeExtensionId}
+          key={`${activeExtensionId}:${activeExtension.installedAt ?? activeExtension.version ?? ""}`}
+          onClose={() => setActiveExtensionId(null)}
+          open
+          projectName={projectName}
+          projectPath={projectPath}
+        />
+      ) : null}
+    </>
+  );
+}
 
 export function ExtensionHostAction({
   extensionId,
@@ -176,12 +242,12 @@ export function ExtensionHostDialog({
         runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
-        const mountEditor = runtime?.mindMap?.mountEditor;
+        const mountEditor = runtime?.editor?.mount;
         if (mountEditor && containerRef.current) {
           editorHandle = await mountEditor(containerRef.current, { projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
           setNotice("外部 Extension 已啟用。");
         } else {
-            setNotice("Extension 已載入，但沒有提供可掛載的 XMind editor。");
+            setNotice("Extension 已載入，但沒有提供可掛載的 editor。");
         }
       } catch (loadError) {
         if (!controller.signal.aborted) {

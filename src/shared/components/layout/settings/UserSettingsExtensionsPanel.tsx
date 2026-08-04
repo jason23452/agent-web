@@ -74,10 +74,11 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         project: activeProjectName,
         scope: effectiveScope,
       });
-      setExtensions((current) => {
-        const next = current.filter((extension) => extension.id !== response.extension.id);
-        return [...next, response.extension].sort((first, second) => first.displayName.localeCompare(second.displayName));
-      });
+      const catalog = await listPlatformExtensions().catch(() => null);
+      setExtensions((current) => catalog?.extensions ?? [
+        ...current.filter((extension) => extension.id !== response.extension.id),
+        response.extension,
+      ].sort((first, second) => first.displayName.localeCompare(second.displayName)));
       setNotice(response.workflows?.length
         ? "Workflow JSON 與 Command 已建立並發布到 workspace，可直接使用；後續自訂配置請從 Workflow Command 修改。"
         : "外部 package 已安裝。");

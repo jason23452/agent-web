@@ -1,5 +1,7 @@
 import { apiRequest, apiRequestBlob, apiRequestText, type ApiRequestConfig } from "./client";
 
+export const PLATFORM_EXTENSIONS_CHANGED_EVENT = "agent-system:platform-extensions-changed";
+
 export type PlatformExtensionIcon =
   | "browser"
   | "computer"
@@ -57,18 +59,21 @@ export function listPlatformExtensions(config?: ApiRequestConfig) {
   return apiRequest<PlatformExtensionListResponse>("/bff/extensions", config);
 }
 
-export function installPlatformExtension(file: File, options: ExtensionInstallOptions, config?: ApiRequestConfig) {
+export async function installPlatformExtension(file: File, options: ExtensionInstallOptions, config?: ApiRequestConfig) {
   const form = new FormData();
   form.append("file", file, file.name);
   form.append("scope", options.scope);
   form.append("extend", String(options.extend));
   if (options.project) form.append("project", options.project);
 
-  return apiRequest<PlatformExtensionInstallResponse>("/bff/extensions/install", {
+  const response = await apiRequest<PlatformExtensionInstallResponse>("/bff/extensions/install", {
     ...config,
     body: form,
     method: "POST",
   });
+
+  window.dispatchEvent(new Event(PLATFORM_EXTENSIONS_CHANGED_EVENT));
+  return response;
 }
 
 export async function downloadPlatformExtensionPackage(extensionId: string, config?: ApiRequestConfig) {

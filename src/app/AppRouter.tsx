@@ -4,7 +4,7 @@ import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
 import type { PinContext } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
-import { ExtensionHostAction, ExtensionHostDialog } from "@/shared/components/layout/context/ExtensionHostDialog"
+import { ExtensionHostActions } from "@/shared/components/layout/context/ExtensionHostDialog"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
 import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
@@ -28,13 +28,11 @@ const WorkflowsRoute = lazy(() => import("@/features/workflows/router").then((mo
 export function AppRouter() {
   const { changeProject, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route } = useAppNavigation()
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
-  const [extensionHostOpen, setExtensionHostOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [disabledOpenCodeModelKeys, setDisabledOpenCodeModelKeys] = useState<string[]>([])
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
   const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const openExtensionHost = useCallback(() => setExtensionHostOpen(true), [])
 
   const workflowProjectName = route.name === "workflows" ? route.projectName : undefined
   const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" ? route.projectName ?? null : null
@@ -177,9 +175,8 @@ export function AppRouter() {
             open={contextPanelOpen}
             onClose={() => setContextPanelOpen(false)}
             extensionAction={
-              <ExtensionHostAction
-                extensionId="xmind"
-                onOpenEditor={openExtensionHost}
+              <ExtensionHostActions
+                key={activeProjectName ?? "no-project"}
                 projectName={activeProjectName}
                 projectPath={activeProjectPath}
               />
@@ -271,13 +268,6 @@ export function AppRouter() {
     >
       {mainRoute}
       <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} />
-      <ExtensionHostDialog
-        extensionId="xmind"
-        onClose={() => setExtensionHostOpen(false)}
-        open={extensionHostOpen}
-        projectName={activeProjectName}
-        projectPath={activeProjectPath}
-      />
     </AppShell>
   )
 }

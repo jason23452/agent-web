@@ -125,7 +125,7 @@ export function useWorkspaceChat({
       return {
         id: file.name,
         isImage: file.type.startsWith("image/"),
-        meta: file.name.toLowerCase().endsWith(".xmind") ? `${formatAttachmentSize(file.size)} · XMind tool` : formatAttachmentSize(file.size),
+        meta: formatAttachmentSize(file.size),
         name: file.name,
         path: file.name,
       } satisfies Attachment
@@ -147,9 +147,6 @@ export function useWorkspaceChat({
       text.trim(),
       context ? `\n\nContext: ${context.label}\n${context.text}` : "",
       selectedAttachments.length > 0 ? `\n\nReferenced project files:\n${selectedAttachments.map((attachment) => `- ${attachment.path ?? attachment.name}`).join("\n")}` : "",
-      selectedAttachments.some((attachment) => attachment.name.toLowerCase().endsWith(".xmind"))
-        ? "\n\nXMind conversion: 請使用目前 workspace 已安裝的 XMind tool 讀取上述 .xmind，先產生同名 Markdown artifact，再依 Markdown 內容繼續處理。不要將 .xmind binary 當成純文字讀取。"
-        : "",
     ].filter(Boolean).join("")
     if (!promptText.trim()) return false
 
