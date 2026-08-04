@@ -14,7 +14,7 @@ type ExtensionHost = {
   hostVersion: string;
   api: {
     readProjectFile: (path: string) => Promise<unknown>;
-    writeProjectFile: (input: { content: string; path: string }) => Promise<void>;
+    writeProjectFile: (input: { content: string; encoding?: "base64"; path: string }) => Promise<void>;
     executeSessionCommand: (input: unknown) => Promise<unknown>;
   };
   ui: {
@@ -95,6 +95,7 @@ export function ExtensionHostDialog({
               await createOrUpdateProjectFile({
                 content: input.content,
                 directory: extensionProjectPath,
+                ...(input.encoding ? { encoding: input.encoding } : {}),
                 overwrite: true,
                 path: input.path,
               }, { signal: controller.signal });
