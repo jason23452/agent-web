@@ -25,32 +25,36 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loadedProjectName, setLoadedProjectName] = useState<string | null>(null);
   const [extend, setExtend] = useState(false);
   const [scope, setScope] = useState<"global" | "project">(activeProjectName ? "project" : "global");
   const [installTargetID, setInstallTargetID] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!activeProjectName) return;
+
     const controller = new AbortController();
 
-    const catalogScope = activeProjectName ? "project" : "global";
-    void listPlatformExtensions({ project: activeProjectName, scope: catalogScope }, { signal: controller.signal })
+    void listPlatformExtensions({ project: activeProjectName, scope: "project" }, { signal: controller.signal })
       .then((response) => {
         if (!controller.signal.aborted) {
           setExtensions(response.extensions);
           setError(null);
+          setLoadedProjectName(activeProjectName);
         }
       })
       .catch((requestError: unknown) => {
-        if (!controller.signal.aborted) setError(getApiErrorMessage(requestError));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setExtensions([]);
+          setError(getApiErrorMessage(requestError));
+          setLoadedProjectName(activeProjectName);
+        }
       });
 
     return () => controller.abort();
   }, [activeProjectName]);
 
+  const loading = Boolean(activeProjectName && loadedProjectName !== activeProjectName);
   const effectiveScope = scope === "project" && !activeProjectName ? "global" : scope;
   const installTarget = extensions.find((extension) => extension.id === installTargetID);
 
@@ -64,8 +68,8 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   }
 
   async function installPackage(file: File) {
-    if (effectiveScope === "project" && !activeProjectName) {
-      setError("請先開啟 Project，或改用 Global 安裝。");
+    if (!activeProjectName) {
+      setError("請先開啟一個 project，才能安裝擴充套件。");
       return;
     }
 
@@ -75,11 +79,10 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     try {
       const response = await installPlatformExtension(file, {
         extend,
-        project: effectiveScope === "project" ? activeProjectName : undefined,
+        project: activeProjectName,
         scope: effectiveScope,
       });
-      const catalogScope = activeProjectName ? "project" : "global";
-      const catalog = await listPlatformExtensions({ project: activeProjectName, scope: catalogScope }).catch(() => null);
+      const catalog = await listPlatformExtensions({ project: activeProjectName, scope: "project" }).catch(() => null);
       setExtensions((current) => catalog?.extensions ?? [
         ...current.filter((extension) => extension.id !== response.extension.id),
         response.extension,
@@ -97,8 +100,8 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
 
   async function downloadAndInstallPackage() {
     if (!installTarget) return;
-    if (effectiveScope === "project" && !activeProjectName) {
-      setError("請先開啟 Project，或改用 Global 安裝。");
+    if (!activeProjectName) {
+      setError("請先開啟一個 project，才能安裝擴充套件。");
       return;
     }
 
@@ -106,7 +109,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     setError(null);
     setNotice(null);
     try {
-      const file = await downloadPlatformExtensionPackage(installTarget.id);
+      const file = await downloadPlatformExtensionPackage(installTarget.id, activeProjectName);
       await installPackage(file);
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
@@ -124,10 +127,15 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         </p>
       </div>
 
-      {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs" role="alert">{error}</p>}
-      {notice && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 text-xs" role="status">{notice}</p>}
+      {!activeProjectName ? (
+        <div className="rounded-lg border border-destructive/35 bg-destructive/8 px-4 py-3 text-destructive-foreground text-sm" role="alert">
+          請先開啟專案後再查看擴充套件。
+        </div>
+      ) : null}
+      {activeProjectName && loadedProjectName === activeProjectName && error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs" role="alert">{error}</p>}
+      {activeProjectName && loadedProjectName === activeProjectName && notice && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 text-xs" role="status">{notice}</p>}
 
-      {loading ? (
+      {!activeProjectName ? null : loading ? (
         <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-8 text-center text-muted-foreground text-sm" role="status">正在讀取外部擴充套件市場...</p>
       ) : extensions.length === 0 ? (
         <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-8 text-center text-muted-foreground text-sm">目前沒有可用的外部擴充套件。</p>
@@ -174,7 +182,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         onOpenChange={(open) => {
           if (!open && !installing) setInstallTargetID(null);
         }}
-        open={Boolean(installTargetID)}
+        open={Boolean(activeProjectName && installTargetID)}
         title={installTarget ? `${installTarget.displayName} 安裝設定` : "安裝設定"}
       >
         <label className="grid gap-1 text-muted-foreground text-xs">

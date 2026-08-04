@@ -30,13 +30,13 @@ export type PlatformExtensionListResponse = {
 };
 
 export type PlatformExtensionListOptions = {
-  project?: string;
-  scope: "global" | "project";
+  project: string;
+  scope: "project";
 };
 
 export type ExtensionInstallOptions = {
   extend: boolean;
-  project?: string;
+  project: string;
   scope: "global" | "project";
 };
 
@@ -66,7 +66,7 @@ export function listPlatformExtensions(options: PlatformExtensionListOptions, co
     ...config,
     query: {
       ...config?.query,
-      project: options.scope === "project" ? options.project : undefined,
+      project: options.project,
       scope: options.scope,
     },
   });
@@ -77,7 +77,7 @@ export async function installPlatformExtension(file: File, options: ExtensionIns
   form.append("file", file, file.name);
   form.append("scope", options.scope);
   form.append("extend", String(options.extend));
-  if (options.project) form.append("project", options.project);
+  form.append("project", options.project);
 
   const response = await apiRequest<PlatformExtensionInstallResponse>("/bff/extensions/install", {
     ...config,
@@ -89,8 +89,11 @@ export async function installPlatformExtension(file: File, options: ExtensionIns
   return response;
 }
 
-export async function downloadPlatformExtensionPackage(extensionId: string, config?: ApiRequestConfig) {
-  const blob = await apiRequestBlob(`/bff/extensions/${encodeURIComponent(extensionId)}/package`, config);
+export async function downloadPlatformExtensionPackage(extensionId: string, project: string, config?: ApiRequestConfig) {
+  const blob = await apiRequestBlob(`/bff/extensions/${encodeURIComponent(extensionId)}/package`, {
+    ...config,
+    query: { ...config?.query, project },
+  });
   return new File([blob], `${extensionId}.aicxt`, { type: "application/octet-stream" });
 }
 
