@@ -77,6 +77,7 @@ type UseWorkspaceChatOptions = {
   activeProjectPath: string | null
   activeSessionId: string | null
   emptyAgentId: string
+  onSessionCreated?: (sessionID: string) => void
   reloadContextFileTree: () => void
   selectedModel: ModelOption | null
   selectedThinkingVariant: string
@@ -90,6 +91,7 @@ export function useWorkspaceChat({
   activeProjectPath,
   activeSessionId,
   emptyAgentId,
+  onSessionCreated,
   reloadContextFileTree,
   selectedModel,
   selectedThinkingVariant,
@@ -367,6 +369,24 @@ export function useWorkspaceChat({
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
   }, [])
 
+  const resetConversation = useCallback(() => {
+    promptControllerRef.current?.abort()
+    promptControllerRef.current = null
+    clearSnapshotTimeout()
+    activeSessionRef.current = null
+    eventRevisionRef.current += 1
+    openCodeMessagesRef.current = []
+    sendingSessionRef.current = null
+    cancelledSessionRef.current = null
+    reconciledSessionRef.current = null
+    abortInFlightRef.current = false
+    setAttachments([])
+    setWorkspaceMessages([])
+    setMessagesError(null)
+    setMessagesLoading(false)
+    setMessageSending(false)
+  }, [clearSnapshotTimeout])
+
   const sendMessage = useCallback(async (text: string, selectedAttachments: Attachment[], context: PinContext | null): Promise<boolean> => {
     if (!activeProjectPath) {
       setMessagesError("請先開啟專案後再傳送訊息。")
@@ -399,6 +419,7 @@ export function useWorkspaceChat({
         setOpenCodeSessions((current) => [response, ...current.filter((session) => session.id !== response.id)])
         setProjectSessions((current) => [nextSession, ...current.filter((session) => session.id !== nextSession.id)])
         setActiveSessionId(sessionID)
+        onSessionCreated?.(sessionID)
       }
       sendingSessionRef.current = sessionID
       await sendSessionPrompt(sessionID, activeProjectPath, {
@@ -426,7 +447,7 @@ export function useWorkspaceChat({
       sendInFlightRef.current = false
       if (promptControllerRef.current === controller) promptControllerRef.current = null
     }
-  }, [activeAgent.id, activeProjectPath, activeSessionId, clearSnapshotTimeout, commitMessages, emptyAgentId, loadWorkspaceMessages, selectedModel, selectedThinkingVariant, setActiveSessionId, setOpenCodeSessions, setProjectSessions])
+  }, [activeAgent.id, activeProjectPath, activeSessionId, clearSnapshotTimeout, commitMessages, emptyAgentId, loadWorkspaceMessages, onSessionCreated, selectedModel, selectedThinkingVariant, setActiveSessionId, setOpenCodeSessions, setProjectSessions])
 
   const cancelMessage = useCallback(async () => {
     if (abortInFlightRef.current) return
@@ -459,5 +480,5 @@ export function useWorkspaceChat({
     }
   }, [activeProjectPath, clearSnapshotTimeout, loadWorkspaceMessages])
 
-  return { attachments, cancelMessage, messagesError, messagesLoading, messageSending, removeAttachment, sendMessage, setAttachments, setMessagesError, uploadChatFiles, workspaceMessages }
+  return { attachments, cancelMessage, messagesError, messagesLoading, messageSending, removeAttachment, resetConversation, sendMessage, setAttachments, setMessagesError, uploadChatFiles, workspaceMessages }
 }

@@ -5,7 +5,6 @@ import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shar
 import { deleteProjectSession, getProjectSession, listProjectRootSessions, listProjectSessions, toWorkspaceSession, updateProjectSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
-import { createProjectSession } from "@/features/workspace/api/sessions"
 import { restartOpenCodeRuntime } from "@/shared/api/opencodeRuntime"
 import { getRestartInProgressOperation, waitForOpenCodeRestartOperation, waitForOpenCodeRuntimeReady } from "@/shared/utils/appRouterUtils"
 import type { Agent, ModelRateLimitUsage, Project, Session, TokenUsage } from "@/shared/types/workspace"
@@ -303,19 +302,19 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
     }
   }, [navigateToRoute])
 
-  const createSession = useCallback(async () => {
+  const startNewConversation = useCallback(() => {
     if (!checkedProjectName || !activeProjectPath) {
-      setSessionsError("請先選擇專案後再建立對話。")
+      setSessionsError("請先選擇專案後再開始新對話。")
       navigateToRoute({ name: "workspace" }, { replace: true })
-      return null
+      return false
     }
+
+    routeSessionRef.current = { projectName: checkedProjectName, sessionId: undefined }
     setSessionsError(null)
-    const response = await createProjectSession(activeProjectPath, { title: "新對話" })
-    const nextSession = toWorkspaceSession(response)
-    setOpenCodeSessions((current) => [response, ...current.filter((session) => session.id !== response.id)])
-    setProjectSessions((current) => [nextSession, ...current.filter((session) => session.id !== nextSession.id)])
-    setActiveSessionId(response.id)
-    return response
+    setActiveSessionId(null)
+    setActiveOpenCodeSessionDetail(null)
+    setActiveOpenCodeContextUsage(null)
+    return true
   }, [activeProjectPath, checkedProjectName, navigateToRoute])
 
   const removeSessionFromHistory = useCallback((sessionID: string) => {
@@ -394,9 +393,9 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
 
   return {
     activeAgent, activeAgentId, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId,
-    agentsError, agentsLoading, archiveSession, availableAgents, createProject, createSession, deleteProject, deleteSession, layoutLoading, layoutLoadingLabel,
+    agentsError, agentsLoading, archiveSession, availableAgents, createProject, deleteProject, deleteSession, layoutLoading, layoutLoadingLabel,
     modelRateLimitUsage, openCodeProviderCatalog, openCodeSessions, projectSessions, projects, projectsError, projectsLoading,
-    refreshOpenCodeProviderCatalog, refreshProjects, restartOpenCodeServer, sessionsError, sessionsLoading,
+    refreshOpenCodeProviderCatalog, refreshProjects, restartOpenCodeServer, sessionsError, sessionsLoading, startNewConversation,
     setActiveAgentId, setActiveOpenCodeContextUsage, setActiveOpenCodeSessionDetail, setActiveSessionId, setAgentsError,
     setAgentsLoading, setAvailableAgents, setLayoutLoading, setLayoutLoadingLabel, setModelRateLimitUsage, setOpenCodeProviderCatalog,
     setOpenCodeSessions, setProjectSessions, setProjects, setProjectsError, setProjectsLoading, setSessionsError, setSessionsLoading,

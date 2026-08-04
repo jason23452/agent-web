@@ -268,7 +268,7 @@ export function AppSidebarPanel({
                 <div className={`group/session flex min-w-0 items-center rounded-lg transition-colors hover:bg-accent focus-within:bg-accent ${active ? "bg-accent" : ""}`}>
                   <button
                     aria-current={active ? "page" : undefined}
-                    className="grid min-w-0 flex-1 gap-0.5 rounded-lg py-2 pr-1 pl-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className={`grid min-w-0 flex-1 gap-0.5 rounded-lg py-2 pl-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${session.parentID ? "pr-3" : "pr-1"}`}
                     onClick={() => onSelectSession(session.id)}
                     type="button"
                   >
@@ -280,32 +280,34 @@ export function AppSidebarPanel({
                       {session.meta}
                     </span>
                   </button>
-                  <Menu>
-                    <MenuTrigger
-                      aria-label={`${session.title} 操作`}
-                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      disabled={sessionActionID === session.id}
-                    >
-                      <MoreHorizontalIcon aria-hidden="true" className="size-4" />
-                    </MenuTrigger>
-                    <MenuPopup align="end" className="min-w-36">
-                      <MenuItem onClick={() => void archiveSession(session)}>
-                        <ArchiveIcon aria-hidden="true" />
-                        歸檔
-                      </MenuItem>
-                      <MenuSeparator />
-                      <MenuItem
-                        onClick={() => {
-                          setSessionActionError(null);
-                          setDeleteTarget(session);
-                        }}
-                        variant="destructive"
+                  {!session.parentID && (
+                    <Menu>
+                      <MenuTrigger
+                        aria-label={`${session.title} 操作`}
+                        className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        disabled={sessionActionID === session.id}
                       >
-                        <Trash2Icon aria-hidden="true" />
-                        刪除
-                      </MenuItem>
-                    </MenuPopup>
-                  </Menu>
+                        <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                      </MenuTrigger>
+                      <MenuPopup align="end" className="min-w-36">
+                        <MenuItem onClick={() => void archiveSession(session)}>
+                          <ArchiveIcon aria-hidden="true" />
+                          歸檔
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem
+                          onClick={() => {
+                            setSessionActionError(null);
+                            setDeleteTarget(session);
+                          }}
+                          variant="destructive"
+                        >
+                          <Trash2Icon aria-hidden="true" />
+                          刪除
+                        </MenuItem>
+                      </MenuPopup>
+                    </Menu>
+                  )}
                 </div>
               </li>
             );

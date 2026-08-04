@@ -17,7 +17,7 @@ export type AppSidebarProps = {
   activeSessionId?: string | null;
   onArchiveSession: (sessionId: string) => Promise<void>;
   onCreateProject: (name: string) => Promise<AppSidebarProject>;
-  onCreateSession: () => Promise<void>;
+  onCreateSession: () => Promise<void> | void;
   onDeleteProject: (project: AppSidebarProject) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
   onProjectChange: (path: string) => void;

@@ -38,6 +38,7 @@ export function AppRouter() {
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
   const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [composerRevision, setComposerRevision] = useState(0)
 
   const workflowProjectName = route.name === "workflows" ? route.projectName : undefined
   const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" || route.name === "extension" ? route.projectName ?? null : null
@@ -45,9 +46,9 @@ export function AppRouter() {
   const workspaceData = useWorkspaceData({ checkedProjectName, navigateToRoute, requestedSessionId })
   const {
     activeAgent, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId, archiveSession,
-    agentsError, agentsLoading, availableAgents, createProject, createSession: createWorkspaceSession, deleteProject: deleteWorkspaceProject, layoutLoading, layoutLoadingLabel,
+    agentsError, agentsLoading, availableAgents, createProject, deleteProject: deleteWorkspaceProject, layoutLoading, layoutLoadingLabel,
     deleteSession, modelRateLimitUsage, openCodeProviderCatalog, openCodeSessions, projectSessions, projects, projectsError, projectsLoading, refreshProjects,
-    sessionsError, sessionsLoading, setActiveAgentId, setActiveSessionId, setOpenCodeProviderCatalog, setProjectSessions, setOpenCodeSessions,
+    sessionsError, sessionsLoading, setActiveAgentId, setActiveSessionId, setOpenCodeProviderCatalog, setProjectSessions, setOpenCodeSessions, startNewConversation,
   } = workspaceData
   const {
     contextFileTree,
@@ -68,6 +69,9 @@ export function AppRouter() {
     : openCodeSessions.find((session) => session.id === activeSessionId)
   const activeParentSessionID = activeOpenCodeSession?.parentID
   const activeParentSession = activeParentSessionID ? openCodeSessions.find((session) => session.id === activeParentSessionID) : undefined
+  const syncCreatedSessionRoute = useCallback((sessionID: string) => {
+    if (checkedProjectName) navigateToWorkspaceSession(checkedProjectName, sessionID, { replace: true })
+  }, [checkedProjectName, navigateToWorkspaceSession])
   const disabledOpenCodeModelKeySet = new Set(disabledOpenCodeModelKeys)
   const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
@@ -78,6 +82,7 @@ export function AppRouter() {
     messagesLoading,
     messageSending,
     removeAttachment,
+    resetConversation,
     sendMessage,
     uploadChatFiles,
     workspaceMessages,
@@ -86,6 +91,7 @@ export function AppRouter() {
     activeProjectPath,
     activeSessionId,
     emptyAgentId: "no-primary-agent",
+    onSessionCreated: syncCreatedSessionRoute,
     reloadContextFileTree,
     selectedModel,
     selectedThinkingVariant,
@@ -134,13 +140,15 @@ export function AppRouter() {
     if (route.name === "extension") navigateToWorkspaceProject(route.projectName)
   }, [navigateToWorkspaceProject, route])
 
-  const createSessionAndCloseSurfaces = useCallback(async () => {
-    const response = await createWorkspaceSession()
-    if (!response) return
-    navigateToWorkspaceSession(checkedProjectName ?? "", response.id)
+  const startNewConversationAndCloseSurfaces = useCallback(() => {
+    if (!startNewConversation()) return
+    resetConversation()
+    setPinContext(null)
+    setComposerRevision((current) => current + 1)
+    if (checkedProjectName) navigateToWorkspaceProject(checkedProjectName)
     setSidebarOpen(false)
     setContextPanelOpen(false)
-  }, [checkedProjectName, createWorkspaceSession, navigateToWorkspaceSession])
+  }, [checkedProjectName, navigateToWorkspaceProject, resetConversation, startNewConversation])
 
   function selectSession(sessionId: string) {
     setActiveSessionId(sessionId)
@@ -256,6 +264,7 @@ export function AppRouter() {
           <SubagentComposerNotice onBack={() => selectSession(activeParentSessionID)} parentTitle={activeParentSession?.title ?? "Parent session"} />
         ) : (
           <ChatComposer
+            key={`${activeSessionId ?? "draft"}-${composerRevision}`}
             attachments={chatAttachments}
             disabled={Boolean(activeSessionId && !activeOpenCodeSession)}
             onCancel={cancelMessage}
@@ -281,7 +290,7 @@ export function AppRouter() {
              activeSessionId={activeSessionId}
            onArchiveSession={archiveSession}
           onCreateProject={createProject}
-           onCreateSession={createSessionAndCloseSurfaces}
+           onCreateSession={startNewConversationAndCloseSurfaces}
           onDeleteProject={deleteProject}
           onDeleteSession={deleteSession}
           onClose={() => setSidebarOpen(false)}

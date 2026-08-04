@@ -851,13 +851,25 @@ function skillSnapshotKey(scope: "project" | "global", name: string) {
   return `${scope}:${name}`;
 }
 
-function orderSidebarSessions(sessions: AppSidebarSession[]) {
-  const sessionIDs = new Set(sessions.map((session) => session.id));
+function orderSidebarSessions(sessions: AppSidebarSession[], activeSessionId?: string | null) {
+  const sessionsByID = new Map(sessions.map((session) => [session.id, session]));
+  const activeLineageIDs = new Set<string>();
+  const lineageVisited = new Set<string>();
+  let current = activeSessionId ? sessionsByID.get(activeSessionId) : undefined;
+
+  while (current?.parentID && !lineageVisited.has(current.id)) {
+    lineageVisited.add(current.id);
+    activeLineageIDs.add(current.id);
+    current = sessionsByID.get(current.parentID);
+  }
+
+  const visibleSessions = sessions.filter((session) => !session.parentID || activeLineageIDs.has(session.id));
+  const sessionIDs = new Set(visibleSessions.map((session) => session.id));
   const childrenByParent = new Map<string, AppSidebarSession[]>();
   const ordered: AppSidebarSession[] = [];
   const visited = new Set<string>();
 
-  for (const session of sessions) {
+  for (const session of visibleSessions) {
     if (!session.parentID || !sessionIDs.has(session.parentID)) continue;
     const children = childrenByParent.get(session.parentID) ?? [];
     children.push(session);
@@ -871,10 +883,10 @@ function orderSidebarSessions(sessions: AppSidebarSession[]) {
     for (const child of childrenByParent.get(session.id) ?? []) appendSession(child, depth + 1);
   }
 
-  for (const session of sessions) {
+  for (const session of visibleSessions) {
     if (!session.parentID || !sessionIDs.has(session.parentID)) appendSession(session, 0);
   }
-  for (const session of sessions) appendSession(session, 0);
+  for (const session of visibleSessions) appendSession(session, 0);
   return ordered;
 }
 
@@ -1062,7 +1074,7 @@ export function AppSidebar({
   });
   const projectDialogError = projectActionError ?? projectsError ?? null;
 
-  const filteredSessions = orderSidebarSessions(sessions).filter((session) => {
+  const filteredSessions = orderSidebarSessions(sessions, activeSessionId).filter((session) => {
     const keyword = historySearch.trim().toLowerCase();
     if (!keyword) return true;
     return (
