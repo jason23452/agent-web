@@ -27,7 +27,7 @@ export type PlatformExtensionListResponse = {
 };
 
 export type ExtensionInstallOptions = {
-  overwrite: boolean;
+  extend: boolean;
   project?: string;
   scope: "global" | "project";
 };
@@ -61,7 +61,7 @@ export function installPlatformExtension(file: File, options: ExtensionInstallOp
   const form = new FormData();
   form.append("file", file, file.name);
   form.append("scope", options.scope);
-  form.append("overwrite", String(options.overwrite));
+  form.append("extend", String(options.extend));
   if (options.project) form.append("project", options.project);
 
   return apiRequest<PlatformExtensionInstallResponse>("/bff/extensions/install", {

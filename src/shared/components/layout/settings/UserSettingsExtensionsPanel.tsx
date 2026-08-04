@@ -26,7 +26,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   const [notice, setNotice] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [overwrite, setOverwrite] = useState(false);
+  const [extend, setExtend] = useState(true);
   const [scope, setScope] = useState<"global" | "project">(activeProjectName ? "project" : "global");
   const [installTargetID, setInstallTargetID] = useState<string | null>(null);
 
@@ -70,7 +70,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     setNotice(null);
     try {
       const response = await installPlatformExtension(file, {
-        overwrite,
+        extend,
         project: activeProjectName,
         scope: effectiveScope,
       });
@@ -181,8 +181,8 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
           </select>
         </label>
         <label className="flex items-center gap-2 text-muted-foreground text-xs">
-          <input checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} type="checkbox" />
-          發生同名資源時允許 overwrite
+          <input checked={extend} onChange={(event) => setExtend(event.target.checked)} type="checkbox" />
+          在既有功能上 extend package
         </label>
       </ModalShell>
     </div>
