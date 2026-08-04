@@ -29,7 +29,7 @@ export function ExtensionHostActions({
 
     const controller = new AbortController();
     const refresh = () => {
-      void listPlatformExtensions({ signal: controller.signal })
+      void listPlatformExtensions({ project: projectName, scope: "project" }, { signal: controller.signal })
         .then((response) => {
           if (!controller.signal.aborted) setExtensions(response.extensions.filter((extension) => extension.installed));
         })

@@ -26,14 +26,15 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   const [notice, setNotice] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [extend, setExtend] = useState(true);
+  const [extend, setExtend] = useState(false);
   const [scope, setScope] = useState<"global" | "project">(activeProjectName ? "project" : "global");
   const [installTargetID, setInstallTargetID] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
 
-    void listPlatformExtensions({ signal: controller.signal })
+    const catalogScope = activeProjectName ? "project" : "global";
+    void listPlatformExtensions({ project: activeProjectName, scope: catalogScope }, { signal: controller.signal })
       .then((response) => {
         if (!controller.signal.aborted) {
           setExtensions(response.extensions);
@@ -48,13 +49,16 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
       });
 
     return () => controller.abort();
-  }, []);
+  }, [activeProjectName]);
 
   const effectiveScope = scope === "project" && !activeProjectName ? "global" : scope;
   const installTarget = extensions.find((extension) => extension.id === installTargetID);
 
-  function choosePackage(extensionID: string) {
-    setInstallTargetID(extensionID);
+  function choosePackage(extension: PlatformExtension) {
+    const targetScope = activeProjectName ? "project" : "global";
+    setScope(targetScope);
+    setExtend(Boolean(extension.installedScopes?.includes(targetScope)));
+    setInstallTargetID(extension.id);
     setError(null);
     setNotice(null);
   }
@@ -71,10 +75,11 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     try {
       const response = await installPlatformExtension(file, {
         extend,
-        project: activeProjectName,
+        project: effectiveScope === "project" ? activeProjectName : undefined,
         scope: effectiveScope,
       });
-      const catalog = await listPlatformExtensions().catch(() => null);
+      const catalogScope = activeProjectName ? "project" : "global";
+      const catalog = await listPlatformExtensions({ project: activeProjectName, scope: catalogScope }).catch(() => null);
       setExtensions((current) => catalog?.extensions ?? [
         ...current.filter((extension) => extension.id !== response.extension.id),
         response.extension,
@@ -135,14 +140,16 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
                 <div className="flex min-w-0 items-center gap-2">
                   <h4 className="truncate font-semibold text-sm">{extension.displayName}</h4>
                   {extension.version && <Badge size="sm" variant="outline">v{extension.version}</Badge>}
-                  <Badge size="sm" variant={extension.installed ? "success" : "outline"}>{extension.installed ? "已安裝" : "未安裝"}</Badge>
+                  <Badge size="sm" variant={extension.installed ? "success" : "outline"}>
+                    {extension.installed ? `${extension.effectiveScope === "project" ? "Project" : "Global"} 已安裝` : "未安裝"}
+                  </Badge>
                 </div>
                 <p className="mt-1 truncate text-muted-foreground text-xs">{extension.description ?? "External extension package"}</p>
               </div>
               <Button
                 disabled={installing}
                 loading={installing && installTargetID === extension.id}
-                onClick={() => choosePackage(extension.id)}
+                onClick={() => choosePackage(extension)}
                 size="sm"
                 variant={extension.installed ? "outline" : "default"}
               >
@@ -174,7 +181,11 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
           安裝範圍
           <select
             className="h-9 rounded-lg border border-input bg-background px-2 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onChange={(event) => setScope(event.target.value as "global" | "project")}
+            onChange={(event) => {
+              const nextScope = event.target.value as "global" | "project";
+              setScope(nextScope);
+              setExtend(Boolean(installTarget?.installedScopes?.includes(nextScope)));
+            }}
             value={effectiveScope}
           >
             <option disabled={!activeProjectName} value="project">目前 Project · {activeProjectName ?? "尚未開啟"}</option>

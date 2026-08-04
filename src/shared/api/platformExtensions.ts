@@ -14,6 +14,7 @@ export type PlatformExtensionIcon =
 export type PlatformExtension = {
   description?: string;
   displayName: string;
+  effectiveScope?: "global" | "project";
   extensionId?: string;
   icon?: PlatformExtensionIcon;
   id: string;
@@ -26,6 +27,11 @@ export type PlatformExtension = {
 
 export type PlatformExtensionListResponse = {
   extensions: PlatformExtension[];
+};
+
+export type PlatformExtensionListOptions = {
+  project?: string;
+  scope: "global" | "project";
 };
 
 export type ExtensionInstallOptions = {
@@ -55,8 +61,15 @@ export type PlatformExtensionInstallResponse = {
   }>;
 };
 
-export function listPlatformExtensions(config?: ApiRequestConfig) {
-  return apiRequest<PlatformExtensionListResponse>("/bff/extensions", config);
+export function listPlatformExtensions(options: PlatformExtensionListOptions, config?: ApiRequestConfig) {
+  return apiRequest<PlatformExtensionListResponse>("/bff/extensions", {
+    ...config,
+    query: {
+      ...config?.query,
+      project: options.scope === "project" ? options.project : undefined,
+      scope: options.scope,
+    },
+  });
 }
 
 export async function installPlatformExtension(file: File, options: ExtensionInstallOptions, config?: ApiRequestConfig) {

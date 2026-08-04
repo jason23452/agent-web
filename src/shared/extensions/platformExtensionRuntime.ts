@@ -59,7 +59,7 @@ export async function preparePlatformExtensionAttachment(
   options: { projectName: string; projectPath: string; signal?: AbortSignal },
 ): Promise<{ meta?: string; name: string; path: string } | null> {
   const signal = options.signal ?? new AbortController().signal
-  const catalog = await listPlatformExtensions({ signal })
+  const catalog = await listPlatformExtensions({ project: options.projectName, scope: "project" }, { signal })
 
   for (const extension of catalog.extensions.filter((entry) => entry.installed)) {
     const extensionId = extension.extensionId ?? extension.id
