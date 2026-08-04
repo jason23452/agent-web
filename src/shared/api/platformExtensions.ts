@@ -45,6 +45,12 @@ export type PlatformExtensionInstallResponse = {
     packageSha256: string;
     storePath: string;
   };
+  workflows?: Array<{
+    project?: string;
+    scope: "global" | "project";
+    workflowID: string;
+    workspace: { published: boolean; restartRequested: boolean; target: string; verified: boolean };
+  }>;
 };
 
 export function listPlatformExtensions(config?: ApiRequestConfig) {

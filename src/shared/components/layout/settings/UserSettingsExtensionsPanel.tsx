@@ -21,6 +21,7 @@ import { Button } from "@/shared/components/ui/button";
 export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: string }) {
   const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [overwrite, setOverwrite] = useState(false);
@@ -34,7 +35,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     void listPlatformExtensions({ signal: controller.signal })
       .then((response) => {
         if (!controller.signal.aborted) {
-          setExtensions(response.extensions);
+          setExtensions(response.extensions.filter((extension) => extension.packageFormat === ".aicxt"));
           setError(null);
         }
       })
@@ -53,6 +54,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   function choosePackage(extensionID: string) {
     setInstallTargetID(extensionID);
     setError(null);
+    setNotice(null);
     fileInputRef.current?.click();
   }
 
@@ -64,6 +66,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
 
     setInstalling(true);
     setError(null);
+    setNotice(null);
     try {
       const response = await installPlatformExtension(file, {
         overwrite,
@@ -74,6 +77,9 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         const next = current.filter((extension) => extension.id !== response.extension.id);
         return [...next, response.extension].sort((first, second) => first.displayName.localeCompare(second.displayName));
       });
+      setNotice(response.workflows?.length
+        ? "Workflow JSON 與 Command 已建立並發布到 workspace，可直接使用；後續自訂配置請從 Workflow Command 修改。"
+        : "外部 package 已安裝。");
     } catch (requestError) {
       setError(getApiErrorMessage(requestError));
     } finally {
@@ -95,7 +101,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h4 className="font-semibold text-sm" id="extension-install-title">安裝外部 package</h4>
-            <p className="mt-0.5 text-muted-foreground text-xs">BFF 會驗證 ZIP、manifest、integrity 與資源路徑後再寫入 workspace。</p>
+            <p className="mt-0.5 text-muted-foreground text-xs">Workflow package 會建立 Workflow/Command 並直接發布到 workspace；後續自訂配置請從 Workflow Command 修改。</p>
           </div>
           <label className="grid gap-1 text-muted-foreground text-xs">
             安裝範圍
@@ -125,6 +131,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
           type="file"
         />
         {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs" role="alert">{error}</p>}
+        {notice && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 text-xs" role="status">{notice}</p>}
         {installTargetID && <p aria-live="polite" className="text-muted-foreground text-xs">請選擇 `{installTargetID}` 的 `.aicxt` package。</p>}
       </section>
 
