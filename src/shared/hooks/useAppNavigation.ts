@@ -42,8 +42,8 @@ export function useAppNavigation() {
     navigateToRoute({ name: "workflows", ...(projectName ? { projectName } : {}) }, options)
   }, [navigateToRoute])
 
-  const navigateToExtension = useCallback((projectName: string, extensionId: string, options?: { replace?: boolean }) => {
-    navigateToRoute({ extensionId, name: "extension", projectName }, options)
+  const navigateToExtension = useCallback((projectName: string, extensionId: string, options?: { filePath?: string; replace?: boolean }) => {
+    navigateToRoute({ extensionId, ...(options?.filePath ? { filePath: options.filePath } : {}), name: "extension", projectName }, options)
   }, [navigateToRoute])
 
   return { changeProject, navigateToExtension, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route }

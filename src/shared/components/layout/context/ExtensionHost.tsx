@@ -6,57 +6,12 @@ import {
   PLATFORM_EXTENSIONS_CHANGED_EVENT,
   type PlatformExtension,
 } from "@/shared/api/platformExtensions";
-import { createOrUpdateProjectFile, readProjectFileContent } from "@/features/workspace/api/files";
-import { abortSession, listSessionMessages, sendSessionPrompt } from "@/features/workspace/api/messages";
-import { createProjectSession } from "@/features/workspace/api/sessions";
-
-type ExtensionAgentPromptInput = {
-  agent: string;
-  prompt: string;
-  timeoutMs?: number;
-  title?: string;
-};
-
-type ExtensionModule = {
-  activate?: (host: ExtensionHost) => Promise<ExtensionRuntime>;
-  deactivate?: () => Promise<void>;
-};
-
-type ExtensionActionContext = {
-  openEditor: () => void;
-  projectName: string;
-  projectPath: string;
-};
-
-type ExtensionActionHandle = {
-  destroy?: () => void;
-};
-
-type ExtensionHost = {
-  extensionId: string;
-  hostVersion: string;
-  api: {
-    readProjectFile: (path: string) => Promise<unknown>;
-    writeProjectFile: (input: { content: string; encoding?: "base64"; path: string }) => Promise<void>;
-    executeAgentPrompt: (input: ExtensionAgentPromptInput) => Promise<unknown>;
-  };
-  ui: {
-    announce: (message: string) => void;
-    showError: (message: string) => void;
-  };
-};
-
-type ExtensionRuntime = {
-  extensionId?: string;
-  version?: string;
-  capabilities?: string[];
-  contextAction?: {
-    mount?: (container: HTMLElement, context: ExtensionActionContext) => Promise<ExtensionActionHandle | void> | ExtensionActionHandle | void;
-  };
-  editor?: {
-    mount?: (container: HTMLElement, context: unknown) => Promise<{ destroy?: () => void } | void>;
-  };
-};
+import {
+  createExtensionHost,
+  type ExtensionActionHandle,
+  type ExtensionModule,
+  type ExtensionRuntime,
+} from "@/shared/extensions/platformExtensionRuntime";
 
 export function ExtensionHostActions({
   onOpenExtension,
@@ -186,12 +141,14 @@ export function ExtensionHostAction({
 
 export function ExtensionHostPage({
   extensionId,
+  initialFilePath,
   onBack,
   projectLoading = false,
   projectName,
   projectPath,
 }: {
   extensionId: string;
+  initialFilePath?: string;
   onBack: () => void;
   projectLoading?: boolean;
   projectName?: string;
@@ -237,7 +194,7 @@ export function ExtensionHostPage({
 
         const mountEditor = runtime?.editor?.mount;
         if (mountEditor && containerRef.current) {
-          editorHandle = await mountEditor(containerRef.current, { onBack, projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
+          editorHandle = await mountEditor(containerRef.current, { initialFilePath, onBack, projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
         } else {
           throw new Error("Extension 已載入，但沒有提供可掛載的 editor。");
         }
@@ -260,7 +217,7 @@ export function ExtensionHostPage({
       if (objectURL) URL.revokeObjectURL(objectURL);
       runtime = undefined;
     };
-  }, [extensionId, onBack, projectName, projectPath]);
+  }, [extensionId, initialFilePath, onBack, projectName, projectPath]);
 
   return (
     <main className="h-dvh overflow-hidden bg-background text-foreground">
@@ -276,78 +233,4 @@ export function ExtensionHostPage({
       </section>
     </main>
   );
-}
-
-function createExtensionHost(
-  extensionId: string,
-  projectPath: string,
-  signal: AbortSignal,
-  announce: (message: string) => void,
-  showError: (message: string) => void,
-): ExtensionHost {
-  return {
-    extensionId,
-    hostVersion: "1.0.0",
-    api: {
-      executeAgentPrompt: async (input) => {
-        const agent = input.agent?.trim();
-        const prompt = input.prompt?.trim();
-        if (!agent) throw new Error("Extension agent prompt 缺少 agent。");
-        if (!prompt) throw new Error("Extension agent prompt 缺少 prompt。");
-        const timeoutMs = Math.max(15_000, Math.min(120_000, input.timeoutMs ?? 90_000));
-        const session = await createProjectSession(projectPath, {
-          title: input.title?.trim() || `${extensionId} extension agent`,
-        }, { signal });
-
-        try {
-          await sendSessionPrompt(session.id, projectPath, { agent, text: prompt }, { signal });
-          const deadline = Date.now() + timeoutMs;
-          while (Date.now() <= deadline) {
-            const messages = await listSessionMessages(session.id, projectPath, { signal });
-            const response = [...messages].reverse().find((message) => message.info.role === "assistant");
-            const responseError = response?.info.error?.data?.message;
-            if (responseError) throw new Error(responseError);
-            if (response?.info.time?.completed) return response;
-            await waitForExtensionAgent(750, signal);
-          }
-          throw new Error(`Agent 在 ${Math.round(timeoutMs / 1000)} 秒內未完成。`);
-        } catch (error) {
-          await abortSession(session.id, projectPath).catch(() => undefined);
-          throw error;
-        }
-      },
-      readProjectFile: async (path) => readProjectFileContent(projectPath, path, { signal }),
-      writeProjectFile: async (input) => {
-        await createOrUpdateProjectFile({
-          content: input.content,
-          directory: projectPath,
-          ...(input.encoding ? { encoding: input.encoding } : {}),
-          overwrite: true,
-          path: input.path,
-        }, { signal });
-      },
-    },
-    ui: {
-      announce,
-      showError,
-    },
-  };
-}
-
-function waitForExtensionAgent(delayMs: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new DOMException("The operation was aborted", "AbortError"));
-      return;
-    }
-    const timeoutId = window.setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    }, delayMs);
-    const abort = () => {
-      window.clearTimeout(timeoutId);
-      reject(new DOMException("The operation was aborted", "AbortError"));
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
 }

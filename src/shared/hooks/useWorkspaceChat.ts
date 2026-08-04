@@ -5,7 +5,8 @@ import { createProjectSession, toWorkspaceSession } from "@/features/workspace/a
 import { listSessionMessages, sendSessionPrompt, toWorkspaceMessages } from "@/features/workspace/api/messages"
 import { consumeOpenCodeEvents, type OpenCodeEvent } from "@/shared/api/opencodeEvents"
 import { getApiErrorMessage } from "@/shared/api"
-import { readFileAsBase64 } from "@/shared/utils/appRouterUtils"
+import { getProjectRouteName, readFileAsBase64 } from "@/shared/utils/appRouterUtils"
+import { preparePlatformExtensionAttachment } from "@/shared/extensions/platformExtensionRuntime"
 import type { Agent, Attachment, ModelOption, PinContext, Session, WorkspaceMessage } from "@/shared/types/workspace"
 import type { OpenCodeSession } from "@/features/workspace/api/sessions"
 
@@ -122,12 +123,19 @@ export function useWorkspaceChat({
         overwrite: true,
         path: file.name,
       })
+      const prepared = await preparePlatformExtensionAttachment(file, {
+        projectName: getProjectRouteName(activeProjectPath),
+        projectPath: activeProjectPath,
+      })
+      if (file.name.toLowerCase().endsWith(".xmind") && !prepared) {
+        throw new Error("XMind Extension 未提供 Markdown 轉換處理器。")
+      }
       return {
-        id: file.name,
+        id: prepared?.path ?? file.name,
         isImage: file.type.startsWith("image/"),
-        meta: formatAttachmentSize(file.size),
-        name: file.name,
-        path: file.name,
+        meta: prepared?.meta ?? formatAttachmentSize(file.size),
+        name: prepared?.name ?? file.name,
+        path: prepared?.path ?? file.name,
       } satisfies Attachment
     }))
     setAttachments((current) => [...current.filter((item) => !uploaded.some((next) => next.id === item.id)), ...uploaded])

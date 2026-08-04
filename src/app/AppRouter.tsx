@@ -163,6 +163,7 @@ export function AppRouter() {
     return (
       <ExtensionRoute
         extensionId={route.extensionId}
+        initialFilePath={route.filePath}
         onBack={closeExtension}
         project={route.projectName}
         projectLoading={projectsLoading}
@@ -213,6 +214,9 @@ export function AppRouter() {
               return createContextProjectFolder(directory, itemName)
             }}
             onDeleteNode={deleteContextNode}
+            onOpenExtensionFile={(file) => {
+              if (activeProjectName) navigateToExtension(activeProjectName, "xmind", { filePath: file.path ?? file.name })
+            }}
             onUploadFiles={uploadContextFiles}
             onPreviewFile={openProjectFile}
           />

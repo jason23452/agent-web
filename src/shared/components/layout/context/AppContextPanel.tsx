@@ -22,11 +22,12 @@ type AppContextPanelProps = {
   onCreateFolder?: (directory: string, itemName?: string) => void
   onCreateItem?: (itemType: CreateItemType, directory: string, itemName: string) => Promise<void> | void
   onDeleteNode?: (node: FileTreeNode) => Promise<void> | void
+  onOpenExtensionFile?: (file: FileTreeNode) => void
   onUploadFiles?: (files: readonly File[], targetDirectory: string) => Promise<void> | void
   onPreviewFile: (file: FileTreeNode) => void
 }
 
-export function AppContextPanel({ fileTree, message, loading = false, onClose, extensionAction, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
+export function AppContextPanel({ fileTree, message, loading = false, onClose, extensionAction, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onOpenExtensionFile, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
   const [createItemOpen, setCreateItemOpen] = useState(false)
   const [createItemDirectory, setCreateItemDirectory] = useState(".")
   const [createItemType, setCreateItemType] = useState<CreateItemType>("file")
@@ -168,6 +169,14 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, e
     setDeleteNode(node)
   }
 
+  function previewNode(node: FileTreeNode) {
+    if (node.name.toLowerCase().endsWith(".xmind") && onOpenExtensionFile) {
+      onOpenExtensionFile(node)
+      return
+    }
+    onPreviewFile(node)
+  }
+
   return (
     <Sidebar
       aria-label="Context panel"
@@ -230,7 +239,7 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, e
             onCreateFile={handleCreateFile}
             onCreateFolder={handleCreateFolder}
             onDeleteNode={requestDeleteNode}
-            onPreviewFile={onPreviewFile}
+            onPreviewFile={previewNode}
             onUploadFiles={onUploadFiles}
           />
         )}

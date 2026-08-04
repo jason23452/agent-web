@@ -14,7 +14,7 @@ export type AppRoute =
   | { name: "home" }
   | { name: "workspace" }
   | { name: "workspaceProject"; projectName: string }
-  | { extensionId: string; name: "extension"; projectName: string }
+  | { extensionId: string; filePath?: string; name: "extension"; projectName: string }
   | { name: "workflows"; projectName?: string }
 
 export const OPENCODE_RESTART_WAIT_TIMEOUT_MS = 70_000
@@ -40,7 +40,8 @@ export function readBrowserRoute(): AppRoute {
     try {
       const projectName = decodeURIComponent(encodedProjectName)
       if (segments[1] === EXTENSION_ROUTE_SEGMENT && segments[2]) {
-        return { extensionId: decodeURIComponent(segments[2]), name: "extension", projectName }
+        const filePath = new URLSearchParams(window.location.search).get("file")?.trim()
+        return { extensionId: decodeURIComponent(segments[2]), ...(filePath ? { filePath } : {}), name: "extension", projectName }
       }
       return { name: "workspaceProject", projectName }
     } catch {
@@ -54,7 +55,10 @@ export function readBrowserRoute(): AppRoute {
 export function getRoutePath(route: AppRoute) {
   if (route.name === "workspace") return WORKSPACE_ROUTE_PATH
   if (route.name === "workspaceProject") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}`
-  if (route.name === "extension") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}/${EXTENSION_ROUTE_SEGMENT}/${encodeURIComponent(route.extensionId)}`
+  if (route.name === "extension") {
+    const path = `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}/${EXTENSION_ROUTE_SEGMENT}/${encodeURIComponent(route.extensionId)}`
+    return route.filePath ? `${path}?file=${encodeURIComponent(route.filePath)}` : path
+  }
   if (route.name === "workflows") {
     return route.projectName ? `${WORKFLOWS_ROUTE_PATH}?project=${encodeURIComponent(route.projectName)}` : WORKFLOWS_ROUTE_PATH
   }
