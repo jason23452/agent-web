@@ -61,7 +61,7 @@ export async function runWorkflowSystemCommand(workflowID: string, text: string,
 
 export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID: string, request: string, signal?: AbortSignal, workspace?: string) {
   const text = [
-    "請使用官方 plan Agent 完整規劃後，再由 prompt-writer-agent 為目前 target node 建立可直接回寫的 prompt。",
+    "請先由 coordinator 驗證輸入並整理 planning brief，再委派 prompt-writer-agent 為目前 target node 建立可直接回寫的 prompt。",
     "",
     "使用者需求：",
     request.trim(),

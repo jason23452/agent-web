@@ -102,7 +102,7 @@ function ReferenceResourcePanel({ edges, node, onClose, onUpdateNode }: { edges:
       {node.type === "resource.agent" && (
         <div className="grid gap-2 rounded-lg border border-warning/30 bg-warning/8 p-3 text-warning-foreground text-xs leading-5">
           <strong>Reference Agent 不管理 permission.task</strong>
-          <span>{isDelegationParent ? "目前這個 reference Agent 有 delegation child，請改用 managed coordinator 作為 parent，否則 runtime 可能無法自動委派。" : isOfficialPlan ? "官方 plan 是互動式規劃 Agent；若要接續自訂 subagent，請建立 managed coordinator，再把 plan 作為 child。" : "若要由 Workflow UI 管理 delegation 與 permission.task，請建立 managed draft。"}</span>
+          <span>{isDelegationParent ? "目前這個 reference Agent 有 delegation child，請改用 managed coordinator 作為 parent，否則 runtime 可能無法自動委派。" : isOfficialPlan ? "官方 plan 是 primary Agent，不能由 task 當作 subagent 呼叫；請改用 managed coordinator 內部規劃，或建立專用 managed planner subagent。" : "若要由 Workflow UI 管理 delegation 與 permission.task，請建立 managed draft。"}</span>
         </div>
       )}
       <div className="flex justify-between gap-2"><Button onClick={createManagedDraft} variant="outline">建立 managed draft</Button><Button onClick={onClose} variant="outline">關閉</Button></div>

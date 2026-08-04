@@ -73,7 +73,7 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary/8 text-primary"><SparklesIcon aria-hidden="true" className="size-5" /></span>
             <div className="min-w-0">
               <DialogTitle>用 Prompt Writer 建立提示詞</DialogTitle>
-              <DialogDescription className="mt-1">先執行官方 plan，再由自訂 prompt-writer-agent 產生目前 node 的 prompt。</DialogDescription>
+              <DialogDescription className="mt-1">由 coordinator 驗證並規劃，再委派 prompt-writer-agent 產生目前 node 的 prompt。</DialogDescription>
             </div>
           </div>
           {targetNode && <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]"><Badge variant="info"><BotIcon aria-hidden="true" className="size-3" />Target node</Badge><code className="rounded-md border border-border bg-muted/40 px-2 py-1 text-foreground">{getWorkflowNodeTitle(targetNode)} · {targetNode.id}</code><Badge variant="secondary">/prompt-writer-coordinator</Badge></div>}
@@ -84,8 +84,8 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
               使用者需求
               <Textarea aria-label="Prompt Writer 使用者需求" className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} value={request} />
             </label>
-            <Button disabled={!targetNode || !request.trim()} loading={busy} onClick={() => void generatePrompt()}><SparklesIcon aria-hidden="true" />{busy ? "正在執行兩階段 Agent..." : "執行 /prompt-writer-coordinator"}</Button>
-            {busy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />官方 plan 完成後才會交給 prompt-writer-agent，可能需要一些時間。</div>}
+            <Button disabled={!targetNode || !request.trim()} loading={busy} onClick={() => void generatePrompt()}><SparklesIcon aria-hidden="true" />{busy ? "正在規劃並委派 Writer..." : "執行 /prompt-writer-coordinator"}</Button>
+            {busy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />Coordinator 整理 brief 後會委派 prompt-writer-agent，可能需要一些時間。</div>}
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{error}</div>}
             {result && <section className="grid gap-1.5"><h3 className="font-semibold text-sm">Agent 回應</h3><pre className="max-h-56 overflow-auto rounded-lg border border-border bg-muted/30 p-3 whitespace-pre-wrap break-words font-mono text-[11px] leading-5">{result}</pre></section>}
             <label className="grid gap-1.5 text-muted-foreground text-xs">
