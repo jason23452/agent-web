@@ -27,6 +27,8 @@ export type OpenCodeMessagePart = {
   sessionID?: string
   state?: {
     error?: string
+    input?: Record<string, unknown>
+    metadata?: Record<string, unknown>
     output?: string
     status?: string
     title?: string
@@ -107,13 +109,29 @@ export function applyOpenCodeMessageEvent(messages: OpenCodeSessionMessage[], ev
     && typeof properties.partID === "string"
     && typeof properties.delta === "string"
     && properties.field === "text") {
-    const messageIndex = typeof properties.messageID === "string"
-      ? messages.findIndex((message) => message.info.id === properties.messageID)
+    const messageID = typeof properties.messageID === "string" ? properties.messageID : undefined
+    const messageIndex = messageID
+      ? messages.findIndex((message) => message.info.id === messageID)
       : messages.findIndex((message) => message.parts.some((part) => part.id === properties.partID))
-    if (messageIndex === -1) return messages
+    if (messageIndex === -1) {
+      if (!messageID) return messages
+      return [...messages, {
+        info: {
+          id: messageID,
+          role: "assistant",
+          sessionID: typeof properties.sessionID === "string" ? properties.sessionID : undefined,
+        },
+        parts: [{ id: properties.partID, messageID, text: properties.delta, type: "text" }],
+      }]
+    }
     const message = messages[messageIndex]
     const partIndex = message.parts.findIndex((part) => part.id === properties.partID)
-    if (partIndex === -1) return messages
+    if (partIndex === -1) {
+      return replaceAt(messages, messageIndex, {
+        ...message,
+        parts: [...message.parts, { id: properties.partID, messageID: message.info.id, text: properties.delta, type: "text" }],
+      })
+    }
     const part = message.parts[partIndex]
     const parts = replaceAt(message.parts, partIndex, { ...part, text: `${part.text ?? ""}${properties.delta}` })
     return replaceAt(messages, messageIndex, { ...message, parts })
@@ -136,17 +154,12 @@ export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): Workspa
     const bodyParts = message.parts.flatMap((part) => {
       if (part.type === "text" && part.text?.trim()) return [part.text]
       if (part.type === "reasoning" && part.text?.trim()) return [`思考\n${part.text}`]
-      if (part.type === "tool") {
-        const state = part.state
-        const output = state?.output || state?.error
-        return [`工具 ${part.tool ?? "unknown"}${state?.title ? ` · ${state.title}` : ""}${output ? `\n${output}` : ""}`]
-      }
       if (part.type === "file") return [`檔案：${part.filename ?? part.text ?? "已附加檔案"}`]
       if (part.type === "subtask") return [`子任務：${part.description ?? part.text ?? "已啟動子任務"}`]
       return []
     })
     const errorMessage = message.info.error?.data?.message
-    const body = bodyParts.join("\n\n") || errorMessage || (message.info.role === "assistant" ? "Agent 正在處理..." : "")
+    const body = bodyParts.join("\n\n") || errorMessage || (message.info.role === "assistant" && !message.info.time?.completed ? "Agent 正在處理..." : "")
 
     return {
       body,
@@ -168,9 +181,16 @@ function buildPlan(parts: OpenCodeMessagePart[]): PlanStep[] | undefined {
   if (toolParts.length === 0) return undefined
 
   return toolParts.map((part, index) => ({
+    ...(part.tool === "task" && typeof part.state?.input?.subagent_type === "string"
+      ? { agentLabel: part.state.input.subagent_type }
+      : {}),
+    ...(part.tool === "task" && typeof part.state?.metadata?.sessionId === "string"
+      ? { childSessionId: part.state.metadata.sessionId }
+      : {}),
     id: part.id ?? `${part.tool ?? "tool"}-${index}`,
+    kind: part.tool === "task" ? "task" : "tool",
     label: part.state?.title || part.tool || "工具呼叫",
-    status: part.state?.status === "completed" ? "done" : part.state?.status === "error" ? "pending" : "running",
+    status: part.state?.status === "completed" ? "done" : part.state?.status === "error" ? "error" : part.state?.status === "pending" ? "pending" : "running",
   }))
 }
 

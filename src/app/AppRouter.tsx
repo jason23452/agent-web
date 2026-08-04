@@ -3,6 +3,7 @@ import { HomeRoute } from "@/features/home/router"
 import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
 import { ExtensionRoute } from "@/features/extensions/router/[extensionId]"
+import type { OpenCodeSession } from "@/features/workspace/api/sessions"
 import type { PinContext } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
 import { ExtensionHostActions } from "@/shared/components/layout/context/ExtensionHost"
@@ -10,8 +11,8 @@ import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFile
 import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/app/AppTopbar"
-import { ChatComposer } from "@/shared/components/layout/context/ChatComposer"
-import { getProjectRouteName } from "@/shared/utils/appRouterUtils"
+import { ChatComposer, SubagentComposerNotice } from "@/shared/components/layout/context/ChatComposer"
+import { getProjectRouteName, getRoutePath } from "@/shared/utils/appRouterUtils"
 import { useAppNavigation } from "@/shared/hooks/useAppNavigation"
 import { useProjectContextFiles } from "@/shared/hooks/useProjectContextFiles"
 import { useWorkspaceData } from "@/shared/hooks/useWorkspaceData"
@@ -26,8 +27,29 @@ import {
 
 const WorkflowsRoute = lazy(() => import("@/features/workflows/router").then((module) => ({ default: module.WorkflowsRoute })))
 
+function getRootSessionID(session: OpenCodeSession | undefined, sessions: OpenCodeSession[]) {
+  if (!session) return undefined
+  const visited = new Set<string>()
+  let current = session
+  let rootID = current.id
+
+  while (current.parentID && !visited.has(current.parentID)) {
+    visited.add(current.parentID)
+    rootID = current.parentID
+    const parent = sessions.find((item) => item.id === current.parentID)
+    if (!parent) break
+    current = parent
+  }
+
+  return rootID
+}
+
+function getSubagentSessionTitle(title: string) {
+  return title.replace(/\s+\(@[^)]+ subagent\)\s*$/i, "").trim() || title
+}
+
 export function AppRouter() {
-  const { changeProject, navigateToExtension, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route } = useAppNavigation()
+  const { changeProject, navigateToExtension, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, navigateToWorkspaceSession, route } = useAppNavigation()
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [disabledOpenCodeModelKeys, setDisabledOpenCodeModelKeys] = useState<string[]>([])
@@ -37,7 +59,8 @@ export function AppRouter() {
 
   const workflowProjectName = route.name === "workflows" ? route.projectName : undefined
   const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" || route.name === "extension" ? route.projectName ?? null : null
-  const workspaceData = useWorkspaceData({ checkedProjectName, navigateToRoute })
+  const requestedSessionId = route.name === "workspaceProject" ? route.sessionId : undefined
+  const workspaceData = useWorkspaceData({ checkedProjectName, navigateToRoute, requestedSessionId })
   const {
     activeAgent, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId,
     agentsError, agentsLoading, availableAgents, createProject, createSession: createWorkspaceSession, deleteProject: deleteWorkspaceProject, layoutLoading, layoutLoadingLabel,
@@ -58,7 +81,12 @@ export function AppRouter() {
     uploadContextFiles,
   } = useProjectContextFiles({ activeProjectPath })
 
-  const activeOpenCodeSession = activeOpenCodeSessionDetail ?? openCodeSessions.find((session) => session.id === activeSessionId)
+  const activeOpenCodeSession = activeOpenCodeSessionDetail?.id === activeSessionId
+    ? activeOpenCodeSessionDetail
+    : openCodeSessions.find((session) => session.id === activeSessionId)
+  const activeParentSessionID = activeOpenCodeSession?.parentID
+  const activeParentSession = activeParentSessionID ? openCodeSessions.find((session) => session.id === activeParentSessionID) : undefined
+  const sidebarActiveSessionId = getRootSessionID(activeOpenCodeSession, openCodeSessions) ?? activeSessionId
   const disabledOpenCodeModelKeySet = new Set(disabledOpenCodeModelKeys)
   const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
@@ -128,15 +156,23 @@ export function AppRouter() {
   const createSessionAndCloseSurfaces = useCallback(async () => {
     const response = await createWorkspaceSession()
     if (!response) return
-    navigateToWorkspaceProject(checkedProjectName ?? "")
+    navigateToWorkspaceSession(checkedProjectName ?? "", response.id)
     setSidebarOpen(false)
     setContextPanelOpen(false)
-  }, [checkedProjectName, createWorkspaceSession, navigateToWorkspaceProject])
+  }, [checkedProjectName, createWorkspaceSession, navigateToWorkspaceSession])
 
   function selectSession(sessionId: string) {
     setActiveSessionId(sessionId)
+    if (checkedProjectName) navigateToWorkspaceSession(checkedProjectName, sessionId)
     setSidebarOpen(false)
     setContextPanelOpen(false)
+  }
+
+  function openSubagentSession(sessionId: string) {
+    if (checkedProjectName && route.name === "workspaceProject" && !route.sessionId && activeSessionId) {
+      navigateToWorkspaceSession(checkedProjectName, activeSessionId, { replace: true })
+    }
+    selectSession(sessionId)
   }
 
   function pinPreviewContext(context: PinContext) {
@@ -177,7 +213,18 @@ export function AppRouter() {
     route.name === "workspace" ? (
       <WorkspaceRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
     ) : route.name === "workspaceProject" ? (
-      <WorkspaceProjectRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
+      <WorkspaceProjectRoute
+        error={messagesError}
+        getSessionHref={(sessionId) => getRoutePath({ name: "workspaceProject", projectName: route.projectName, sessionId })}
+        loading={messagesLoading}
+        messages={workspaceMessages}
+        onSelectSession={openSubagentSession}
+        sessionBreadcrumb={activeParentSessionID ? {
+          childTitle: getSubagentSessionTitle(activeOpenCodeSession?.title ?? "Subagent session"),
+          onParentSelect: () => selectSession(activeParentSessionID),
+          parentTitle: activeParentSession?.title ?? "Parent session",
+        } : undefined}
+      />
     ) : (
       <HomeRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
     )
@@ -224,19 +271,24 @@ export function AppRouter() {
         }
       asideOpen={contextPanelOpen}
       composer={
-        <ChatComposer
-          attachments={chatAttachments}
-          onCancel={cancelMessage}
-          onUploadFiles={uploadChatFiles}
-          onClearPin={() => setPinContext(null)}
-          onRemoveAttachment={removeAttachment}
-          onSubmit={sendMessage}
-          onThinkingVariantChange={setSelectedThinkingVariant}
-          pinContext={pinContext}
-          sending={messageSending}
-          selectedThinkingVariant={selectedThinkingVariant}
-          thinkingVariants={thinkingVariants}
-        />
+        activeParentSessionID ? (
+          <SubagentComposerNotice onBack={() => selectSession(activeParentSessionID)} parentTitle={activeParentSession?.title ?? "Parent session"} />
+        ) : (
+          <ChatComposer
+            attachments={chatAttachments}
+            disabled={Boolean(activeSessionId && !activeOpenCodeSession)}
+            onCancel={cancelMessage}
+            onUploadFiles={uploadChatFiles}
+            onClearPin={() => setPinContext(null)}
+            onRemoveAttachment={removeAttachment}
+            onSubmit={sendMessage}
+            onThinkingVariantChange={setSelectedThinkingVariant}
+            pinContext={pinContext}
+            sending={messageSending}
+            selectedThinkingVariant={selectedThinkingVariant}
+            thinkingVariants={thinkingVariants}
+          />
+        )
       }
       loading={layoutLoading}
       loadingLabel={layoutLoadingLabel}
@@ -245,7 +297,7 @@ export function AppRouter() {
         sidebar={
           <AppSidebar
             activeProjectPath={activeProjectPath || ""}
-            activeSessionId={activeSessionId}
+             activeSessionId={sidebarActiveSessionId}
           onCreateProject={createProject}
            onCreateSession={createSessionAndCloseSurfaces}
           onDeleteProject={deleteProject}

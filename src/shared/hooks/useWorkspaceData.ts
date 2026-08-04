@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
 import { getOpenCodeCurrentUsage, getOpenCodeSessionContextUsage } from "@/shared/api/opencodeUsage"
 import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders"
-import { getProjectSession, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
+import { getProjectSession, listProjectRootSessions, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { createProjectSession } from "@/features/workspace/api/sessions"
@@ -18,12 +18,18 @@ const EMPTY_AGENT: Agent = {
   status: "idle",
 }
 
+function mergeSessionLists<T extends { id: string }>(response: T[], current: T[]) {
+  const currentIDs = new Set(current.map((session) => session.id))
+  return [...current, ...response.filter((session) => !currentIDs.has(session.id))]
+}
+
 type UseWorkspaceDataOptions = {
   checkedProjectName: string | null
   navigateToRoute: (route: AppRoute, options?: { replace?: boolean }) => void
+  requestedSessionId?: string
 }
 
-export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWorkspaceDataOptions) {
+export function useWorkspaceData({ checkedProjectName, navigateToRoute, requestedSessionId }: UseWorkspaceDataOptions) {
   const [activeAgentId, setActiveAgentId] = useState("")
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [availableAgents, setAvailableAgents] = useState<Agent[]>([])
@@ -42,6 +48,7 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
   const [projectSessions, setProjectSessions] = useState<Session[]>([])
   const [sessionsError, setSessionsError] = useState<string | null>(null)
   const [sessionsLoading, setSessionsLoading] = useState(false)
+  const routeSessionRef = useRef({ projectName: checkedProjectName, sessionId: requestedSessionId })
 
   const refreshProjects = useCallback(async () => {
     setProjectsLoading(true)
@@ -84,6 +91,11 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
 
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => {
+      setActiveSessionId(null)
+      setActiveOpenCodeSessionDetail(null)
+      setActiveOpenCodeContextUsage(null)
+      setOpenCodeSessions([])
+      setProjectSessions([])
       setSessionsLoading(true)
       setSessionsError(null)
       setAgentsLoading(true)
@@ -96,11 +108,12 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
           const directory = response.project.sdkDirectory || response.project.path
           setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)])
 
-          const [sessionsResponse, agentsResponse, providersResponse] = await Promise.all([
+          const [sessionsResponse, rootSessionsResponse, agentsResponse, providersResponse] = await Promise.all([
             listProjectSessions(directory, { signal: controller.signal }).catch((error) => {
               if (!controller.signal.aborted) setSessionsError(getApiErrorMessage(error))
               return null
             }),
+            listProjectRootSessions(directory, { signal: controller.signal }).catch(() => null),
             listProjectPrimaryAgents(directory, { signal: controller.signal }).catch((error) => {
               if (!controller.signal.aborted) setAgentsError(getApiErrorMessage(error))
               return null
@@ -109,15 +122,15 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
           ])
           if (controller.signal.aborted) return
 
-          if (sessionsResponse) {
-            setOpenCodeSessions(sessionsResponse)
-            setActiveOpenCodeSessionDetail(null)
-            const nextSessions = sessionsResponse.map(toWorkspaceSession)
-            setProjectSessions(nextSessions)
-            setActiveSessionId((current) => current && nextSessions.some((session) => session.id === current) ? current : nextSessions[0]?.id ?? null)
+          if (sessionsResponse || rootSessionsResponse) {
+            const nextOpenCodeSessions = sessionsResponse ?? rootSessionsResponse ?? []
+            const nextSessions = (rootSessionsResponse ?? nextOpenCodeSessions.filter((session) => !session.parentID)).map(toWorkspaceSession)
+            if (rootSessionsResponse) setSessionsError(null)
+            setOpenCodeSessions((current) => mergeSessionLists(nextOpenCodeSessions, current))
+            setProjectSessions((current) => mergeSessionLists(nextSessions, current))
+            setActiveSessionId((current) => current ?? nextSessions[0]?.id ?? null)
           } else {
             setOpenCodeSessions([])
-            setActiveOpenCodeSessionDetail(null)
             setProjectSessions([])
             setActiveSessionId(null)
           }
@@ -157,6 +170,18 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
     }
   }, [checkedProjectName, navigateToRoute])
 
+  useEffect(() => {
+    const previous = routeSessionRef.current
+    routeSessionRef.current = { projectName: checkedProjectName, sessionId: requestedSessionId }
+    if (!checkedProjectName) return
+
+    const nextSessionID = requestedSessionId
+      ?? (previous.projectName === checkedProjectName && previous.sessionId ? projectSessions[0]?.id ?? null : undefined)
+    if (nextSessionID === undefined) return
+    const timeoutId = window.setTimeout(() => setActiveSessionId(nextSessionID), 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [checkedProjectName, projectSessions, requestedSessionId])
+
   const activeProjectPath = checkedProjectName
     ? projects.find((project) => project.id === checkedProjectName || project.name === checkedProjectName)?.path ?? null
     : null
@@ -188,10 +213,21 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
     void Promise.all([
       getProjectSession(activeSessionId, activeProjectPath, { signal: controller.signal }),
       getOpenCodeSessionContextUsage(activeSessionId, activeProjectPath, { signal: controller.signal }).catch(() => null),
-    ]).then(([session, contextUsage]) => {
+    ]).then(async ([session, contextUsage]) => {
       if (controller.signal.aborted) return
       setActiveOpenCodeSessionDetail(session)
       setActiveOpenCodeContextUsage(contextUsage ? [contextUsage] : null)
+      const lineage = [session]
+      const visited = new Set([session.id])
+      let parentID = session.parentID
+      while (parentID && !visited.has(parentID)) {
+        visited.add(parentID)
+        const parent = await getProjectSession(parentID, activeProjectPath, { signal: controller.signal }).catch(() => null)
+        if (!parent || controller.signal.aborted) break
+        lineage.push(parent)
+        parentID = parent.parentID
+      }
+      if (!controller.signal.aborted) setOpenCodeSessions((current) => mergeSessionLists(lineage, current))
     }).catch(() => {
       if (!controller.signal.aborted) {
         setActiveOpenCodeSessionDetail(null)

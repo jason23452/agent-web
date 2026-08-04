@@ -1,4 +1,4 @@
-import { BotIcon, ChevronDownIcon, CommandIcon, FileTextIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, Settings2Icon, SquareIcon, UploadIcon, XIcon } from "lucide-react"
+import { ArrowUpLeftIcon, BotIcon, ChevronDownIcon, CommandIcon, FileTextIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, Settings2Icon, SquareIcon, UploadIcon, XIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ModelSwitcher } from "@/shared/components/layout/app/ModelSwitcher"
 import { ThinkingVariantSwitcher } from "@/shared/components/layout/context/ThinkingVariantSwitcher"
@@ -362,5 +362,22 @@ export function ChatComposer({
         {uploadError ? <p className="text-center text-destructive text-xs">{uploadError}</p> : <p className="text-center text-muted-foreground text-xs">{hint}</p>}
       </div>
     </form>
+  )
+}
+
+export function SubagentComposerNotice({ onBack, parentTitle }: { onBack: () => void; parentTitle: string }) {
+  return (
+    <div className="bg-[linear-gradient(to_top,var(--background)_78%,transparent)] px-[clamp(18px,5vw,64px)] pb-6 pt-3.5">
+      <div className="mx-auto flex min-h-16 max-w-[820px] items-center justify-between gap-4 rounded-2xl border border-border bg-muted/35 px-4 py-3 max-[560px]:items-stretch max-[560px]:flex-col">
+        <div className="min-w-0">
+          <p className="font-medium text-sm">Subagent session 無法直接輸入</p>
+          <p className="mt-0.5 text-muted-foreground text-xs">請回到 parent session，由 task 繼續或恢復這個 subagent。</p>
+        </div>
+        <Button className="min-h-11 shrink-0 max-[560px]:w-full" onClick={onBack} variant="outline">
+          <ArrowUpLeftIcon aria-hidden="true" />
+          <span className="max-w-48 truncate">返回 {parentTitle}</span>
+        </Button>
+      </div>
+    </div>
   )
 }

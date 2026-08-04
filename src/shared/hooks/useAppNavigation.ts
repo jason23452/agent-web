@@ -34,6 +34,10 @@ export function useAppNavigation() {
     navigateToRoute({ name: "workspaceProject", projectName }, options)
   }, [navigateToRoute])
 
+  const navigateToWorkspaceSession = useCallback((projectName: string, sessionId: string, options?: { replace?: boolean }) => {
+    navigateToRoute({ name: "workspaceProject", projectName, sessionId }, options)
+  }, [navigateToRoute])
+
   const changeProject = useCallback((projectPath: string) => {
     navigateToWorkspaceProject(getProjectRouteName(projectPath))
   }, [navigateToWorkspaceProject])
@@ -46,5 +50,5 @@ export function useAppNavigation() {
     navigateToRoute({ extensionId, ...(options?.filePath ? { filePath: options.filePath } : {}), name: "extension", projectName }, options)
   }, [navigateToRoute])
 
-  return { changeProject, navigateToExtension, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route }
+  return { changeProject, navigateToExtension, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, navigateToWorkspaceSession, route }
 }

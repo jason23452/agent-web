@@ -53,7 +53,7 @@ export function AppShell({
       aria-label={ariaLabel}
       aria-busy={loading}
       className={cn(
-        "min-h-dvh bg-muted/40 text-foreground",
+        "h-dvh overflow-hidden bg-muted/40 text-foreground",
         hasSidebar && !hasAside && "min-[761px]:grid min-[761px]:grid-cols-[240px_minmax(0,1fr)]",
         hasSidebar && hasAside && "min-[761px]:grid min-[761px]:grid-cols-[240px_minmax(0,1fr)] min-[1181px]:grid-cols-[260px_minmax(0,1fr)_332px]",
         !hasSidebar && hasAside && "min-[1181px]:grid min-[1181px]:grid-cols-[minmax(0,1fr)_332px]",
@@ -64,7 +64,7 @@ export function AppShell({
       {sidebar}
       <div
         className={cn(
-          "grid min-h-dvh min-w-0 bg-background",
+          "grid h-dvh min-h-0 min-w-0 bg-background",
           mainRows,
           mainClassName,
         )}

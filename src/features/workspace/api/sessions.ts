@@ -2,6 +2,7 @@ import { apiRequest, type ApiRequestConfig } from "@/shared/api";
 import type { Session } from "@/shared/types/workspace";
 
 export type OpenCodeSession = {
+  agent?: string;
   directory: string;
   id: string;
   model?: {
@@ -38,6 +39,13 @@ export function listProjectSessions(directory: string, config?: ApiRequestConfig
   return apiRequest<OpenCodeSession[]>("/bff/opencode-proxy/session", {
     ...config,
     query: { ...config?.query, directory },
+  });
+}
+
+export function listProjectRootSessions(directory: string, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeSession[]>("/bff/opencode-proxy/session", {
+    ...config,
+    query: { ...config?.query, directory, roots: true },
   });
 }
 

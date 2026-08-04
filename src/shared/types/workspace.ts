@@ -46,9 +46,12 @@ export type FileNode = {
 }
 
 export type PlanStep = {
+  agentLabel?: string
+  childSessionId?: string
   id: string
+  kind: "task" | "tool"
   label: string
-  status: "done" | "running" | "pending"
+  status: "done" | "error" | "running" | "pending"
 }
 
 export type WorkspaceMessage = {

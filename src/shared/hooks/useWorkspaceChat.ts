@@ -44,6 +44,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
+function isOpenCodeSession(value: unknown): value is OpenCodeSession {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.directory === "string"
+    && typeof value.projectID === "string"
+    && typeof value.title === "string"
+    && typeof value.version === "string"
+    && isRecord(value.time)
+    && typeof value.time.created === "number"
+    && typeof value.time.updated === "number"
+}
+
 type UseWorkspaceChatOptions = {
   activeAgent: Agent
   activeProjectPath: string | null
@@ -74,7 +86,9 @@ export function useWorkspaceChat({
   const [messagesError, setMessagesError] = useState<string | null>(null)
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageSending, setMessageSending] = useState(false)
+  const activeProjectRef = useRef(activeProjectPath)
   const activeSessionRef = useRef(activeSessionId)
+  const abortInFlightRef = useRef(false)
   const eventRevisionRef = useRef(0)
   const openCodeMessagesRef = useRef<OpenCodeSessionMessage[]>([])
   const promptControllerRef = useRef<AbortController | null>(null)
@@ -87,6 +101,11 @@ export function useWorkspaceChat({
   useEffect(() => {
     activeSessionRef.current = activeSessionId
   }, [activeSessionId])
+
+  useEffect(() => {
+    if (activeProjectRef.current !== activeProjectPath) promptControllerRef.current?.abort()
+    activeProjectRef.current = activeProjectPath
+  }, [activeProjectPath])
 
   const commitMessages = useCallback((messages: OpenCodeSessionMessage[]) => {
     openCodeMessagesRef.current = messages
@@ -103,7 +122,7 @@ export function useWorkspaceChat({
     sessionID: string,
     directory: string,
     signal?: AbortSignal,
-    options?: { authoritative?: boolean; clearError?: boolean; showLoading?: boolean },
+    options?: { authoritative?: boolean; clearError?: boolean; showLoading?: boolean; trackSending?: boolean },
   ) => {
     const showLoading = options?.showLoading !== false
     const eventRevision = eventRevisionRef.current
@@ -115,11 +134,15 @@ export function useWorkspaceChat({
       if (!options?.authoritative && eventRevision !== eventRevisionRef.current) return response
       commitMessages(response)
       const latestMessage = response.at(-1)
-      if (sendingSessionRef.current === sessionID
-        && latestMessage?.info.role === "assistant"
-        && (latestMessage.info.time?.completed || latestMessage.info.error)) {
-        sendingSessionRef.current = null
-        setMessageSending(false)
+      if (options?.trackSending !== false && latestMessage?.info.role === "assistant" && !abortInFlightRef.current) {
+        if (!latestMessage.info.time?.completed && !latestMessage.info.error) {
+          reconciledSessionRef.current = null
+          sendingSessionRef.current = sessionID
+          setMessageSending(true)
+        } else if (sendingSessionRef.current === sessionID) {
+          sendingSessionRef.current = null
+          setMessageSending(false)
+        }
       }
       return response
     } catch (error) {
@@ -176,6 +199,30 @@ export function useWorkspaceChat({
         void loadWorkspaceMessages(currentSessionID, activeProjectPath, undefined, { showLoading: false })
       }
 
+      if ((payload.type === "session.created" || payload.type === "session.updated") && isOpenCodeSession(properties.info)) {
+        const session = properties.info
+        if (session.directory === activeProjectPath) {
+          setOpenCodeSessions((current) => {
+            const index = current.findIndex((item) => item.id === session.id)
+            return index === -1 ? [session, ...current] : current.map((item) => item.id === session.id ? session : item)
+          })
+          const workspaceSession = toWorkspaceSession(session)
+          setProjectSessions((current) => {
+            if (session.parentID) return current.filter((item) => item.id !== workspaceSession.id)
+            const index = current.findIndex((item) => item.id === workspaceSession.id)
+            return index === -1 ? [workspaceSession, ...current] : current.map((item) => item.id === workspaceSession.id ? workspaceSession : item)
+          })
+        }
+      }
+
+      if (payload.type === "session.deleted") {
+        const deletedSessionID = sessionID ?? (isRecord(properties.info) && typeof properties.info.id === "string" ? properties.info.id : undefined)
+        if (deletedSessionID) {
+          setOpenCodeSessions((current) => current.filter((session) => session.id !== deletedSessionID))
+          setProjectSessions((current) => current.filter((session) => session.id !== deletedSessionID))
+        }
+      }
+
       if (sessionID === currentSessionID && payload.type?.startsWith("message.")) {
         const nextMessages = applyOpenCodeMessageEvent(openCodeMessagesRef.current, payload as OpenCodeMessageEvent)
         if (nextMessages !== openCodeMessagesRef.current) {
@@ -201,36 +248,45 @@ export function useWorkspaceChat({
         }
         if (status === "idle") {
           clearSnapshotTimeout()
-          sendingSessionRef.current = null
-          cancelledSessionRef.current = null
-          setMessageSending(false)
+          const aborting = abortInFlightRef.current && cancelledSessionRef.current === sessionID
+          if (!aborting) {
+            sendingSessionRef.current = null
+            cancelledSessionRef.current = null
+            setMessageSending(false)
+          }
           if (reconciledSessionRef.current !== sessionID) {
             reconciledSessionRef.current = sessionID
-            void loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, showLoading: false })
+            void loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, showLoading: false, trackSending: false })
           }
         }
       }
 
       if (payload.type === "session.idle" && sessionID === currentSessionID) {
         clearSnapshotTimeout()
-        sendingSessionRef.current = null
-        cancelledSessionRef.current = null
-        setMessageSending(false)
+        const aborting = abortInFlightRef.current && cancelledSessionRef.current === sessionID
+        if (!aborting) {
+          sendingSessionRef.current = null
+          cancelledSessionRef.current = null
+          setMessageSending(false)
+        }
         if (reconciledSessionRef.current !== sessionID) {
           reconciledSessionRef.current = sessionID
-          void loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, showLoading: false })
+          void loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, showLoading: false, trackSending: false })
         }
       }
 
       if (payload.type === "session.error" && sessionID === currentSessionID) {
         clearSnapshotTimeout()
-        sendingSessionRef.current = null
-        setMessageSending(false)
+        const aborting = abortInFlightRef.current && cancelledSessionRef.current === sessionID
+        if (!aborting) {
+          sendingSessionRef.current = null
+          setMessageSending(false)
+        }
         if (cancelledSessionRef.current === sessionID) setMessagesError(null)
         else setMessagesError(getSessionError(properties) ?? "OpenCode session 發生錯誤。")
         if (reconciledSessionRef.current !== sessionID) {
           reconciledSessionRef.current = sessionID
-          void loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, clearError: false, showLoading: false })
+          void loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, clearError: false, showLoading: false, trackSending: false })
         }
       }
 
@@ -239,7 +295,7 @@ export function useWorkspaceChat({
       if (!controller.signal.aborted) setMessagesError(getApiErrorMessage(error))
     })
     return () => controller.abort()
-  }, [activeProjectPath, clearSnapshotTimeout, commitMessages, loadWorkspaceMessages, reloadContextFileTree])
+  }, [activeProjectPath, clearSnapshotTimeout, commitMessages, loadWorkspaceMessages, reloadContextFileTree, setOpenCodeSessions, setProjectSessions])
 
   useEffect(() => () => {
     promptControllerRef.current?.abort()
@@ -290,7 +346,7 @@ export function useWorkspaceChat({
       selectedAttachments.length > 0 ? `\n\nReferenced project files:\n${selectedAttachments.map((attachment) => `- ${attachment.path ?? attachment.name}`).join("\n")}` : "",
     ].filter(Boolean).join("")
     if (!promptText.trim()) return false
-    if (sendInFlightRef.current || sendingSessionRef.current) return false
+    if (abortInFlightRef.current || sendInFlightRef.current || sendingSessionRef.current) return false
 
     const controller = new AbortController()
     promptControllerRef.current = controller
@@ -308,8 +364,8 @@ export function useWorkspaceChat({
         activeSessionRef.current = sessionID
         eventRevisionRef.current += 1
         commitMessages([])
-        setOpenCodeSessions((current) => [response, ...current])
-        setProjectSessions((current) => [nextSession, ...current])
+        setOpenCodeSessions((current) => [response, ...current.filter((session) => session.id !== response.id)])
+        setProjectSessions((current) => [nextSession, ...current.filter((session) => session.id !== nextSession.id)])
         setActiveSessionId(sessionID)
       }
       sendingSessionRef.current = sessionID
@@ -319,6 +375,7 @@ export function useWorkspaceChat({
         text: promptText,
       }, { signal: controller.signal })
       if (controller.signal.aborted) return false
+      if (activeProjectRef.current !== activeProjectPath || activeSessionRef.current !== sessionID) return false
       setAttachments([])
       clearSnapshotTimeout()
       snapshotTimeoutRef.current = window.setTimeout(() => {
@@ -327,8 +384,10 @@ export function useWorkspaceChat({
       }, 250)
       return true
     } catch (error) {
-      sendingSessionRef.current = null
-      setMessageSending(false)
+      if (!abortInFlightRef.current) {
+        sendingSessionRef.current = null
+        setMessageSending(false)
+      }
       if (!controller.signal.aborted) setMessagesError(getApiErrorMessage(error))
       return false
     } finally {
@@ -338,15 +397,20 @@ export function useWorkspaceChat({
   }, [activeAgent.id, activeProjectPath, activeSessionId, clearSnapshotTimeout, commitMessages, emptyAgentId, loadWorkspaceMessages, selectedModel, selectedThinkingVariant, setActiveSessionId, setOpenCodeSessions, setProjectSessions])
 
   const cancelMessage = useCallback(async () => {
+    if (abortInFlightRef.current) return
+    const sessionID = sendingSessionRef.current
+    abortInFlightRef.current = true
+    cancelledSessionRef.current = sessionID
+    if (sessionID) reconciledSessionRef.current = sessionID
     promptControllerRef.current?.abort()
     clearSnapshotTimeout()
-    const sessionID = sendingSessionRef.current
-    sendingSessionRef.current = null
-    setMessageSending(false)
-    if (!activeProjectPath || !sessionID) return
+    if (!activeProjectPath || !sessionID) {
+      abortInFlightRef.current = false
+      sendingSessionRef.current = null
+      setMessageSending(false)
+      return
+    }
 
-    cancelledSessionRef.current = sessionID
-    reconciledSessionRef.current = sessionID
     let abortFailed = false
     try {
       await abortSession(sessionID, activeProjectPath)
@@ -355,8 +419,11 @@ export function useWorkspaceChat({
       setMessagesError(getApiErrorMessage(error))
     } finally {
       if (activeSessionRef.current === sessionID) {
-        await loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, clearError: !abortFailed, showLoading: false })
+        await loadWorkspaceMessages(sessionID, activeProjectPath, undefined, { authoritative: true, clearError: !abortFailed, showLoading: false, trackSending: false })
       }
+      abortInFlightRef.current = false
+      sendingSessionRef.current = null
+      setMessageSending(false)
     }
   }, [activeProjectPath, clearSnapshotTimeout, loadWorkspaceMessages])
 

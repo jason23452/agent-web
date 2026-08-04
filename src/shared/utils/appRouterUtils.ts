@@ -13,7 +13,7 @@ import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
 export type AppRoute =
   | { name: "home" }
   | { name: "workspace" }
-  | { name: "workspaceProject"; projectName: string }
+  | { name: "workspaceProject"; projectName: string; sessionId?: string }
   | { extensionId: string; filePath?: string; name: "extension"; projectName: string }
   | { name: "workflows"; projectName?: string }
 
@@ -43,6 +43,9 @@ export function readBrowserRoute(): AppRoute {
         const filePath = new URLSearchParams(window.location.search).get("file")?.trim()
         return { extensionId: decodeURIComponent(segments[2]), ...(filePath ? { filePath } : {}), name: "extension", projectName }
       }
+      if (segments[1] === "session" && segments[2]) {
+        return { name: "workspaceProject", projectName, sessionId: decodeURIComponent(segments[2]) }
+      }
       return { name: "workspaceProject", projectName }
     } catch {
       return { name: "workspace" }
@@ -54,7 +57,10 @@ export function readBrowserRoute(): AppRoute {
 
 export function getRoutePath(route: AppRoute) {
   if (route.name === "workspace") return WORKSPACE_ROUTE_PATH
-  if (route.name === "workspaceProject") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}`
+  if (route.name === "workspaceProject") {
+    const projectPath = `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}`
+    return route.sessionId ? `${projectPath}/session/${encodeURIComponent(route.sessionId)}` : projectPath
+  }
   if (route.name === "extension") {
     const path = `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}/${EXTENSION_ROUTE_SEGMENT}/${encodeURIComponent(route.extensionId)}`
     return route.filePath ? `${path}?file=${encodeURIComponent(route.filePath)}` : path
