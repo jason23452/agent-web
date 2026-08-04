@@ -12,10 +12,10 @@ import { agentToYaml, getToolPermissionKey } from "@/shared/utils/app-sidebar"
 import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/workflows/types"
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentModelKeys, buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
-import { resolveWorkflowAgentRoles } from "@/features/workflows/workflowUtils"
+import { createManagedResourceData, resolveWorkflowAgentRoles } from "@/features/workflows/workflowUtils"
 
 const DEFAULT_PERMISSION: Record<string, PermissionAction> = {
-  edit: "allow",
+  edit: "ask",
   bash: "ask",
   read: "allow",
   grep: "allow",
@@ -40,10 +40,12 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
   const workflowAgents = nodes.filter((item): item is WorkflowAgentNode => item.type === "resource.agent")
   const roles = resolveWorkflowAgentRoles({ nodes, edges })
   const derivedMode: AgentDefinition["mode"] = roles.primaryIDs.has(node.id) ? "primary" : "subagent"
+  const defaultContent = createManagedResourceData("resource.agent", data.name, data.scope, derivedMode).content ?? ""
+  const agentContent = data.content?.trim() ? data.content : defaultContent
   const delegatedAgentNodes = edges
     .filter((edge) => edge.kind === "delegation" && edge.source === node.id)
     .flatMap((edge) => workflowAgents.filter((candidate) => candidate.id === edge.target))
-  const initialForm = mergeConnectedCapabilities(agentFormFromContent(data.content ?? "", data.name, data.scope), {
+  const initialForm = mergeConnectedCapabilities(agentFormFromContent(agentContent, data.name, data.scope), {
     tool: connectedCapabilityNames(node, edges, nodes, "resource.tool"),
     skill: connectedCapabilityNames(node, edges, nodes, "resource.skill"),
   })
@@ -90,9 +92,7 @@ export function WorkflowAgentConfigPanel({ edges, modelOptions = [], node, nodes
   const availableModels = [...new Set([...buildAgentModelKeys(modelOptions), initialForm.model].filter(Boolean))]
   const [agentConfigMode, setAgentConfigMode] = useState<AgentConfigMode>("interface")
   const [agentForm, setAgentForm] = useState<AgentForm>(initialFormWithDelegations)
-  const [agentYaml, setAgentYaml] = useState(() =>
-    data.content?.trim() ? data.content : agentToYaml(agentFromForm(initialFormWithDelegations, node)),
-  )
+  const [agentYaml, setAgentYaml] = useState(agentContent)
   const [toolToAdd, setToolToAdd] = useState(toolDefinitions[0]?.name ?? "")
   const [skillToAdd, setSkillToAdd] = useState(availableSkillNames[0] ?? "")
   const [subagentToAdd, setSubagentToAdd] = useState("")

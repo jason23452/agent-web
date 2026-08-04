@@ -23,6 +23,7 @@ import type { ResourceNodeData, WorkflowEdge, WorkflowNode } from "@/features/wo
 import type { ModelOption } from "@/shared/types/workspace"
 import { buildAgentVariantOptions } from "@/shared/utils/openCodeModelUtils"
 import { WorkflowAgentConfigPanel } from "@/features/workflows/components/WorkflowAgentConfigPanel"
+import { createManagedResourceData, DEFAULT_WORKFLOW_COMMAND_PROMPT } from "@/features/workflows/workflowUtils"
 
 type WorkflowResourceConfigPanelProps = {
   availableModels?: string[]
@@ -73,10 +74,17 @@ function ReferenceResourcePanel({ edges, node, onClose, onUpdateNode }: { edges:
   const isOfficialPlan = node.type === "resource.agent" && data.name === "plan"
 
   function createManagedDraft() {
-    const content = data.content ?? (node.type === "resource.agent"
-      ? `---\nname: ${data.name}\ndescription: Managed workflow agent\nmode: subagent\n---\n\nDescribe this workflow Agent's responsibility.\n`
-      : "")
-    onUpdateNode({ ...node, data: { ...data, mode: "managed", content } } as WorkflowNode)
+    if (!node.type.startsWith("resource.")) return
+    const agentMode = node.type === "resource.agent" && edges.some((edge) => edge.kind === "capability" && edge.target === node.id && edge.targetHandle === "agent")
+      ? "primary"
+      : "subagent"
+    const managed = createManagedResourceData(
+      node.type as Extract<WorkflowNode["type"], `resource.${string}`>,
+      data.name,
+      data.scope,
+      agentMode,
+    )
+    onUpdateNode({ ...node, data: managed } as WorkflowNode)
   }
 
   return (
@@ -180,9 +188,11 @@ function WorkflowToolConfigPanel({ node, onUpdateNode, project }: Pick<WorkflowR
 
 function WorkflowCommandConfigPanel({ availableModels, modelOptions, node, onOpenPromptWriter, onUpdateNode }: Pick<WorkflowResourceConfigPanelProps, "availableModels" | "modelOptions" | "node" | "onUpdateNode"> & { onOpenPromptWriter?: () => void }) {
   const data = resourceData(node)
+  const defaultContent = createManagedResourceData("resource.command", data.name, data.scope).content ?? ""
+  const initialContent = data.content?.trim() ? data.content : defaultContent
   const [commandConfigMode, setCommandConfigMode] = useState<CommandConfigMode>("interface")
-  const [commandForm, setCommandForm] = useState<CommandForm>(() => commandFormFromDocument(data.content ?? "", data.name, data.scope))
-  const [commandDocument, setCommandDocument] = useState(() => data.content?.trim() ? data.content : commandFormToMarkdown(commandFormFromDocument("", data.name, data.scope)))
+  const [commandForm, setCommandForm] = useState<CommandForm>(() => commandFormFromDocument(initialContent, data.name, data.scope))
+  const [commandDocument, setCommandDocument] = useState(initialContent)
   const variantOptions = [...new Set([...buildAgentVariantOptions(commandForm.model, modelOptions ?? []), commandForm.variant ?? ""])]
 
   function updateCommandForm(update: SetStateAction<CommandForm>) {
@@ -255,13 +265,7 @@ function WorkflowPluginConfigPanel({ node, onClose, onUpdateNode, project }: Pic
       nextData.content = pluginForm.code
       delete nextData.config
     } else {
-      nextData.config = {
-        ...data.config,
-        entry: name,
-        method: "npm",
-        description: pluginForm.description,
-        useInProject: pluginForm.useInProject,
-      }
+      nextData.config = { entry: name }
       delete nextData.content
     }
     onUpdateNode({ ...node, data: nextData } as WorkflowNode)
@@ -285,12 +289,12 @@ function WorkflowSkillConfigPanel({ node, onClose, onUpdateNode }: Pick<Workflow
   const data = resourceData(node)
   const [skillName, setSkillName] = useState(data.name)
   const [skillScope, setSkillScope] = useState(data.scope)
-  const [skillDocument, setSkillDocument] = useState(() => data.content ?? createWorkflowSkillContent(data.name))
+  const [skillDocument, setSkillDocument] = useState(() => data.content ?? createWorkflowSkillContent(data.name, data.scope))
   const editorName = skillName.trim() || data.name.trim() || "new-skill"
   const skillFile = `${editorName}/SKILL.md`
 
   function submit() {
-    const content = skillContentWithName(skillDocument.trim() || createWorkflowSkillContent(editorName), editorName)
+    const content = skillContentWithName(skillDocument.trim() || createWorkflowSkillContent(editorName, skillScope), editorName)
     updateResourceNode(node, onUpdateNode, {
       name: editorName,
       scope: skillScope,
@@ -407,6 +411,7 @@ function updateResourceNode(node: WorkflowNode, onUpdateNode: (node: WorkflowNod
 
 function toolFormFromNode(data: ResourceNodeData): ToolForm {
   const config = data.config ?? {}
+  const defaultContent = createManagedResourceData("resource.tool", data.name, data.scope).content ?? emptyToolForm.code
   return {
     ...emptyToolForm,
     name: data.name,
@@ -415,7 +420,7 @@ function toolFormFromNode(data: ResourceNodeData): ToolForm {
     installTarget: data.scope,
     entry: stringValue(config.entry) || toolEntry(data.name, data.scope),
     runtime: stringValue(config.runtime) === "js-ts" ? "js-ts" : "js-ts",
-    code: data.content ?? emptyToolForm.code,
+    code: data.content ?? defaultContent,
     testInput: stringValue(config.testInput) || emptyToolForm.testInput,
   }
 }
@@ -437,7 +442,7 @@ function commandFormFromDocument(content: string, fallbackName: string, scope: R
     model: values.model ?? "",
     variant: values.variant ?? "",
     subtask: values.subtask === "true",
-    template: (match?.[2] ?? content).trim() || emptyCommandForm.template,
+    template: (match?.[2] ?? content).trim() || DEFAULT_WORKFLOW_COMMAND_PROMPT,
   }
 }
 
@@ -456,6 +461,7 @@ function pluginFormFromNode(data: ResourceNodeData): PluginForm {
   const config = data.config ?? {}
   const entry = stringValue(config.entry)
   const method = stringValue(config.method) === "npm" || (entry && !entry.includes("/plugins/")) ? "npm" : "local"
+  const defaultContent = createManagedResourceData("resource.plugin", data.name, data.scope).content ?? emptyPluginForm.code
   return {
     ...emptyPluginForm,
     method,
@@ -463,18 +469,19 @@ function pluginFormFromNode(data: ResourceNodeData): PluginForm {
     description: stringValue(config.description),
     entry,
     installTarget: data.scope,
-    code: data.content ?? emptyPluginForm.code,
+    code: data.content ?? defaultContent,
     customPluginEnabled: method === "local",
     useInProject: config.useInProject !== false,
   }
 }
 
 function mcpFormFromNode(data: ResourceNodeData) {
-  return mcpFormFromConfig(data.name, data.config ?? {})
+  const defaultConfig = createManagedResourceData("resource.mcp", data.name, data.scope).config ?? {}
+  return mcpFormFromConfig(data.name, data.config ?? defaultConfig)
 }
 
-function createWorkflowSkillContent(name: string) {
-  return `---\nname: ${name}\ndescription: Managed workflow skill\n---\n\n# Instructions\n\nDescribe the skill here.\n`
+function createWorkflowSkillContent(name: string, scope: ResourceNodeData["scope"]) {
+  return createManagedResourceData("resource.skill", name, scope).content ?? ""
 }
 
 function skillContentWithName(content: string, name: string) {

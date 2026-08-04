@@ -10,7 +10,7 @@ import { validateWorkflow } from "@/features/workflows/api/workflows"
 import type { ResourceNodeData, WorkflowV1 } from "@/features/workflows/types"
 import { issueMessage } from "@/features/workflows/workflowUtils"
 
-const DEFAULT_REQUEST = "請建立一個可由使用者描述需求後執行的 Workflow，包含合理的 Command、Agent、delegation、capability resources 與完整 V3 graph。"
+const DEFAULT_REQUEST = "請建立一個可直接驗證與發布的 Workflow V3：只包含一個 Command 與一個 entry primary Agent；只有在職責可明確拆分時才新增 delegated subagent，只有在需求確實需要時才新增 Skill、Tool、Plugin 或 MCP。所有 managed resources 必須有完整內容、採最小權限、不得綁定未確認可用的 model，並定義清楚的輸入、輸出、完成條件與失敗處理。"
 
 export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, project }: {
   onCreateWorkflow: (workflow: WorkflowV1) => Promise<void>

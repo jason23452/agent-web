@@ -16,7 +16,7 @@ export type PlannedResource = {
   config?: Record<string, unknown>
 }
 
-const DEFAULT_REQUEST = "請依目前 node 的角色與 Workflow graph，規劃一份可直接套用的資源內容或設定，保留使用者需求並列出驗證問題。"
+const DEFAULT_REQUEST = "請依 target node 類型與 Workflow graph 產出可直接套用的單一資源。預設保留目前 name 與 scope，內容必須符合對應 registry 契約，只使用直接連接的能力並採最小權限；不得加入未確認的 model、依賴或秘密。請同時檢查 frontmatter、輸入輸出、完成條件、安全限制與可執行驗證，資訊不足時明確回傳 validation.valid=false。"
 
 export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyResource: (resource: PlannedResource) => void

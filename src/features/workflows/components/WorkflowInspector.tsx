@@ -15,6 +15,7 @@ import type {
   WorkflowTarget,
 } from "@/features/workflows/types"
 import {
+  createManagedResourceData,
   getEdgeLabel,
   getWorkflowNodeTitle,
   resolveConnectionKind,
@@ -232,11 +233,17 @@ function ResourceInspector({
           className="workflow-select"
           onChange={(event) => {
             const mode = event.target.value as ResourceNodeData["mode"]
+            const agentMode = node.type === "resource.agent" && edges.some((edge) => edge.kind === "capability" && edge.target === node.id && edge.targetHandle === "agent")
+              ? "primary"
+              : "subagent"
             const nextData: ResourceNodeData = mode === "reference"
               ? { mode, name: data.name, scope: data.scope }
-              : node.type === "resource.mcp"
-                ? { mode, name: data.name, scope: data.scope, config: data.config ?? { type: "remote", url: "https://example.com/mcp", enabled: false } }
-                : { mode, name: data.name, scope: data.scope, content: data.content ?? "" }
+              : createManagedResourceData(
+                  node.type as Extract<WorkflowNode["type"], `resource.${string}`>,
+                  data.name,
+                  data.scope,
+                  agentMode,
+                )
             setConfigDraft(JSON.stringify(nextData.config ?? {}, null, 2))
             onUpdateNode({ ...node, data: nextData } as WorkflowNode)
           }}

@@ -9,7 +9,7 @@ import { runPromptWriterForNode } from "@/features/workflows/api/workflowTestCha
 import type { WorkflowNode, WorkflowV1 } from "@/features/workflows/types"
 import { getWorkflowNodeTitle } from "@/features/workflows/workflowUtils"
 
-const DEFAULT_REQUEST = "請建立或改寫目前 target node 的 prompt，保留使用者目標、connected resources 與 Agent relationship 規則，並輸出可直接回寫的完整內容。"
+const DEFAULT_REQUEST = "請依目前 Workflow graph 改寫 target node 的完整 content。保留有效的 name、mode、agent、permission 與工具設定，只使用 current Agent 直接連接的 capabilities 和 delegation；補齊角色、目標、輸入、執行步驟、輸出契約、完成條件、限制與失敗處理。不得新增未連接資源、綁定未確認可用的 model 或放寬權限，結果必須可直接取代目前 node 的 content。"
 
 export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyPrompt: (content: string) => void

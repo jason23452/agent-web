@@ -89,7 +89,7 @@ export function createWorkflowDraft(project?: string, input?: Partial<Pick<Workf
   const now = new Date().toISOString()
   const scope = input?.scope ?? (project ? "project" : "global")
   const name = input?.name?.trim() || "未命名 Workflow"
-  const agentData = createManagedResourceData("resource.agent", "new-agent", scope)
+  const agentData = createManagedResourceData("resource.agent", "new-agent", scope, "primary")
   const commandData = createManagedResourceData("resource.command", "new-command", scope)
   return {
     schemaVersion: WORKFLOW_SCHEMA_VERSION,
@@ -764,20 +764,178 @@ function uniqueID(base: string, existing: Set<string>) {
   return `${base}-${index}`
 }
 
-function createManagedResourceData(
+export const DEFAULT_WORKFLOW_COMMAND_PROMPT = `處理以下使用者需求：
+
+$ARGUMENTS
+
+執行要求：
+1. 先確認目標、限制、必要輸入與完成條件。
+2. 只使用此 Workflow graph 直接提供的 Agent 與 capabilities。
+3. 對可驗證的結果執行檢查，不得把未執行的動作描述成已完成。
+4. 若資訊不足或執行受阻，明確指出缺少內容、已完成部分與可採取的下一步。
+
+輸出必須包含完成狀態、主要結果、驗證結果，以及必要的風險或限制。`
+
+export function createManagedResourceData(
   type: Extract<WorkflowNodeType, `resource.${string}`>,
   name: string,
   scope: WorkflowScope,
+  agentMode: WorkflowAgentRole = "subagent",
 ): ResourceNodeData {
   if (type === "resource.mcp") {
-    return { mode: "managed", name, scope, config: { type: "remote", url: "https://example.com/mcp", enabled: false } }
+    return {
+      mode: "managed",
+      name,
+      scope,
+      config: {
+        type: "remote",
+        enabled: false,
+        url: "https://example.invalid/mcp",
+        oauth: false,
+        timeout: 5000,
+      },
+    }
   }
   if (type === "resource.skill") {
-    return { mode: "managed", name, scope, content: `---\nname: ${name}\ndescription: Managed workflow skill\n---\n\n# Instructions\n\nDescribe the skill here.\n` }
+    return {
+      mode: "managed",
+      name,
+      scope,
+      content: `---
+name: ${name}
+description: 在符合此技能用途的任務中，提供一致、可驗證且安全的執行流程
+---
+
+# Purpose
+
+使用此 Skill 將明確需求轉換成可重複執行的結果，同時保留使用者限制與既有專案慣例。
+
+## Required Input
+
+- 使用者目標與預期輸出。
+- 必須遵守的技術、範圍與安全限制。
+- 可用的檔案、工具或 Workflow context。
+
+## Procedure
+
+1. 檢查輸入是否足以安全執行；不足時先列出缺少資訊。
+2. 依目前 context 擬定最小且可驗證的執行步驟。
+3. 只使用已提供或已連接的能力，不捏造資源或執行結果。
+4. 完成後執行適用的驗證，並記錄未能驗證的部分。
+
+## Output Contract
+
+- 主要結果或具體變更。
+- 已執行的驗證及其結果。
+- 尚存風險、限制或後續步驟。
+
+## Constraints
+
+- 不得嵌入秘密、越過指定 scope，或進行未授權的破壞性操作。
+- 不確定時明確標示假設，不得把推測當成事實。
+`,
+    }
   }
-  if (type === "resource.agent" || type === "resource.command") {
-    const mode = type === "resource.agent" ? "mode: primary\n" : ""
-    return { mode: "managed", name, scope, content: `---\ndescription: Managed workflow ${type.split(".")[1]}\n${mode}---\n\nDescribe the instructions here.\n` }
+  if (type === "resource.agent") {
+    const role = agentMode === "primary"
+      ? "你是此 Workflow 的 entry primary Agent，負責理解 command 輸入、協調直接連接的能力並回傳最終結果。"
+      : "你是此 Workflow 的專責 subagent，只處理 parent Agent 明確委派的工作並回傳可整合的結果。"
+    return {
+      mode: "managed",
+      name,
+      scope,
+      content: `---
+name: ${name}
+description: 執行明確的 Workflow 任務，使用已連接能力並回傳可驗證結果
+mode: ${agentMode}
+temperature: 0.3
+top_p: 1
+tools:
+  read: true
+  grep: true
+  glob: true
+permission:
+  task:
+    "*": deny
+  edit: ask
+  bash: ask
+  read: allow
+  grep: allow
+  glob: allow
+---
+${role}
+
+## Objective
+
+保留使用者真正目標，以最小、正確且可驗證的方式完成目前任務。
+
+## Execution
+
+1. 先確認輸入、限制、可用 capabilities 與完成條件。
+2. 只使用 graph 直接連接的 Skill、Tool、MCP、Plugin 或 delegated Agent。
+3. 執行前辨識高風險或不可逆操作，依 permission 規則取得核准。
+4. 完成後執行適用驗證；若受阻，清楚說明原因與已完成部分。
+
+## Output
+
+回傳精簡結果、關鍵變更、驗證狀態，以及必要的風險或下一步。不得宣稱未實際執行的動作已完成。
+`,
+    }
   }
-  return { mode: "managed", name, scope, content: "export default {}\n" }
+  if (type === "resource.command") {
+    return {
+      mode: "managed",
+      name,
+      scope,
+      content: `---
+description: 將使用者需求交給此 Workflow 的 entry Agent，並要求回傳可驗證結果
+---
+${DEFAULT_WORKFLOW_COMMAND_PROMPT}
+`,
+    }
+  }
+  if (type === "resource.tool") {
+    return {
+      mode: "managed",
+      name,
+      scope,
+      content: `import { tool } from "@opencode-ai/plugin";
+
+export default tool({
+  description: "Validate and return a bounded text input for the workflow.",
+  args: {
+    input: tool.schema.string().describe("Non-empty text to validate and process"),
+  },
+  async execute(args, context) {
+    const input = args.input.trim();
+    if (!input) throw new Error("input must not be empty");
+    context.metadata({ title: "Workflow input validated" });
+    return { title: "Validated workflow input", output: input };
+  },
+});
+`,
+    }
+  }
+  return {
+    mode: "managed",
+    name,
+    scope,
+    content: `import type { Plugin } from "@opencode-ai/plugin";
+
+export const WorkflowPlugin: Plugin = async ({ client, directory }) => {
+  await client.app.log({
+    body: {
+      service: "workflow-plugin",
+      level: "info",
+      message: "Workflow plugin initialized",
+      extra: { directory },
+    },
+  });
+
+  return {};
+};
+
+export default WorkflowPlugin;
+`,
+  }
 }
