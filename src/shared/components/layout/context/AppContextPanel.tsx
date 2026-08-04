@@ -1,4 +1,4 @@
-import { FileIcon, FolderPlusIcon, FolderOpenIcon, PlusIcon, XIcon } from "lucide-react"
+import { FileIcon, FolderPlusIcon, FolderOpenIcon, GitBranchIcon, PlusIcon, XIcon } from "lucide-react"
 import { useState } from "react"
 import { FileTree, type FileTreeNode } from "@/shared/components/layout/context/FileTree"
 import { Sidebar } from "@/shared/components/layout/app/Sidebar"
@@ -16,6 +16,7 @@ type AppContextPanelProps = {
   loading?: boolean
   message?: string | null
   onClose: () => void
+  onOpenExtension?: () => void
   onCreateFile?: (directory: string, itemName?: string) => void
   onCreateFolder?: (directory: string, itemName?: string) => void
   onCreateItem?: (itemType: CreateItemType, directory: string, itemName: string) => Promise<void> | void
@@ -24,7 +25,7 @@ type AppContextPanelProps = {
   onPreviewFile: (file: FileTreeNode) => void
 }
 
-export function AppContextPanel({ fileTree, message, loading = false, onClose, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
+export function AppContextPanel({ fileTree, message, loading = false, onClose, onOpenExtension, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
   const [createItemOpen, setCreateItemOpen] = useState(false)
   const [createItemDirectory, setCreateItemDirectory] = useState(".")
   const [createItemType, setCreateItemType] = useState<CreateItemType>("file")
@@ -175,6 +176,11 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, o
       <div className="flex h-16 items-center gap-2 border-border/70 border-b px-4">
         <FolderOpenIcon aria-hidden="true" className="size-5 text-muted-foreground" />
         <h2 className="min-w-0 flex-1 truncate font-semibold">Context</h2>
+        {onOpenExtension ? (
+          <Button aria-label="開啟外部 mermind Extension" className="bg-background" disabled={!projectActive} onClick={onOpenExtension} size="icon-sm" title="開啟外部 mermind Extension" variant="outline">
+            <GitBranchIcon aria-hidden="true" />
+          </Button>
+        ) : null}
         <Button aria-label="Close context panel" className="bg-background min-[1181px]:hidden" onClick={onClose} size="icon" variant="outline">
           <XIcon aria-hidden="true" />
         </Button>

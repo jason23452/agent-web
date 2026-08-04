@@ -225,7 +225,7 @@ export function UserSettingsModal({
                 target={npmPackageTarget}
               />
             ) : section === "extensions" ? (
-              <ExtensionsPanel />
+              <ExtensionsPanel activeProjectName={activeProjectName} />
             ) : section === "platform-management" ? (
               <PlatformManagementPanel />
             ) : (

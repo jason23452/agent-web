@@ -78,6 +78,39 @@ export async function apiRequest<TResponse>(endpoint: string, config: ApiRequest
   return data as TResponse;
 }
 
+export async function apiRequestText(endpoint: string, config: ApiRequestConfig = {}): Promise<string> {
+  const response = await fetch(buildApiUrl(endpoint, config.query), {
+    body: config.body === undefined
+      ? undefined
+      : config.body instanceof FormData
+        ? config.body
+        : JSON.stringify(config.body),
+    headers: buildHeaders(config),
+    method: config.method ?? "GET",
+    signal: config.signal,
+  });
+  const text = await response.text();
+
+  if (!response.ok) {
+    let payload: ApiErrorPayload | undefined;
+    try {
+      payload = text ? JSON.parse(text) as ApiErrorPayload : undefined;
+    } catch {
+      payload = undefined;
+    }
+    const error = payload?.error;
+
+    throw new ApiError({
+      code: error?.code ?? payload?.code ?? "API_ERROR",
+      details: error?.details ?? payload,
+      message: error?.message ?? payload?.message ?? response.statusText,
+      status: response.status,
+    });
+  }
+
+  return text;
+}
+
 export function buildApiUrl(endpoint: string, query?: QueryParams): string {
   const baseUrl = resolveApiBaseUrl();
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;

@@ -222,7 +222,7 @@ export function ChatComposer({
                     <UploadIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
                     <span className="grid min-w-0 gap-0.5 leading-none">
                       <strong className="truncate font-semibold leading-5">上傳至專案</strong>
-                      <span className="text-muted-foreground text-xs leading-5">將檔案寫入目前專案並附加到訊息。</span>
+                      <span className="text-muted-foreground text-xs leading-5">XMind 會交由 workspace 的 mermind tool 轉成 Markdown。</span>
                     </span>
                   </button>
                   <button

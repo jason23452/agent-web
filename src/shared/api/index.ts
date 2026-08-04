@@ -1,2 +1,2 @@
-export { ApiError, apiRequest, getApiErrorMessage } from "./client";
+export { ApiError, apiRequest, apiRequestText, getApiErrorMessage } from "./client";
 export type { ApiRequestConfig, QueryParams } from "./client";
