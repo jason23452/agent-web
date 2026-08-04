@@ -4,7 +4,7 @@ import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
 import type { PinContext } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
-import { ExtensionHostDialog } from "@/shared/components/layout/context/ExtensionHostDialog"
+import { ExtensionHostAction, ExtensionHostDialog } from "@/shared/components/layout/context/ExtensionHostDialog"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
 import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
@@ -34,6 +34,7 @@ export function AppRouter() {
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
   const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const openExtensionHost = useCallback(() => setExtensionHostOpen(true), [])
 
   const workflowProjectName = route.name === "workflows" ? route.projectName : undefined
   const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" ? route.projectName ?? null : null
@@ -175,7 +176,14 @@ export function AppRouter() {
             projectActive={Boolean(activeProjectPath)}
             open={contextPanelOpen}
             onClose={() => setContextPanelOpen(false)}
-            onOpenExtension={() => setExtensionHostOpen(true)}
+            extensionAction={
+              <ExtensionHostAction
+                extensionId="xmind"
+                onOpenEditor={openExtensionHost}
+                projectName={activeProjectName}
+                projectPath={activeProjectPath}
+              />
+            }
             onCreateFile={createContextProjectFile}
             onCreateFolder={createContextProjectFolder}
             onCreateItem={(itemType, directory, itemName) => {

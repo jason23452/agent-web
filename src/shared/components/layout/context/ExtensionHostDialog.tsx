@@ -9,6 +9,16 @@ type ExtensionModule = {
   deactivate?: () => Promise<void>;
 };
 
+type ExtensionActionContext = {
+  openEditor: () => void;
+  projectName: string;
+  projectPath: string;
+};
+
+type ExtensionActionHandle = {
+  destroy?: () => void;
+};
+
 type ExtensionHost = {
   extensionId: string;
   hostVersion: string;
@@ -27,10 +37,89 @@ type ExtensionRuntime = {
   extensionId?: string;
   version?: string;
   capabilities?: string[];
+  contextAction?: {
+    mount?: (container: HTMLElement, context: ExtensionActionContext) => Promise<ExtensionActionHandle | void> | ExtensionActionHandle | void;
+  };
   mindMap?: {
     mountEditor?: (container: HTMLElement, context: unknown) => Promise<{ destroy?: () => void } | void>;
   };
 };
+
+export function ExtensionHostAction({
+  extensionId,
+  onOpenEditor,
+  projectName,
+  projectPath,
+}: {
+  extensionId: string;
+  onOpenEditor: () => void;
+  projectName?: string;
+  projectPath?: string | null;
+}) {
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!projectPath || !projectName) {
+      containerRef.current?.replaceChildren();
+      return;
+    }
+    const actionContainer = containerRef.current;
+    if (!actionContainer) return;
+    const stableActionContainer: HTMLSpanElement = actionContainer;
+
+    const controller = new AbortController();
+    const extensionProjectName = projectName;
+    const extensionProjectPath = projectPath;
+    let module: ExtensionModule | undefined;
+    let objectURL: string | undefined;
+    let actionHandle: ExtensionActionHandle | undefined;
+    let disposed = false;
+
+    async function loadAction() {
+      try {
+        const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
+        if (controller.signal.aborted || disposed) return;
+
+        objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+        module = await import(/* @vite-ignore */ objectURL) as ExtensionModule;
+        if (controller.signal.aborted || disposed) return;
+        if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
+
+        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined);
+        const runtime = await module.activate(host);
+        if (controller.signal.aborted || disposed) return;
+
+        const mountAction = runtime?.contextAction?.mount;
+        if (!mountAction) return;
+        const mounted = await mountAction(stableActionContainer, {
+          openEditor: onOpenEditor,
+          projectName: extensionProjectName,
+          projectPath: extensionProjectPath,
+        });
+        if (controller.signal.aborted || disposed) {
+          mounted?.destroy?.();
+          return;
+        }
+        actionHandle = mounted ?? undefined;
+      } catch {
+        if (!controller.signal.aborted && !disposed) stableActionContainer.replaceChildren();
+      }
+    }
+
+    void loadAction();
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      actionHandle?.destroy?.();
+      void module?.deactivate?.();
+      if (objectURL) URL.revokeObjectURL(objectURL);
+      stableActionContainer.replaceChildren();
+    };
+  }, [extensionId, onOpenEditor, projectName, projectPath]);
+
+  return <span className="inline-flex" ref={containerRef} />;
+}
 
 export function ExtensionHostDialog({
   extensionId,
@@ -83,29 +172,7 @@ export function ExtensionHostDialog({
         if (controller.signal.aborted || disposed) return;
         if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
 
-        const host: ExtensionHost = {
-          extensionId,
-          hostVersion: "1.0.0",
-          api: {
-            executeSessionCommand: async () => {
-              throw new Error("Extension Host 尚未連接 session command API。");
-            },
-            readProjectFile: async (path) => readProjectFileContent(extensionProjectPath, path, { signal: controller.signal }),
-            writeProjectFile: async (input) => {
-              await createOrUpdateProjectFile({
-                content: input.content,
-                directory: extensionProjectPath,
-                ...(input.encoding ? { encoding: input.encoding } : {}),
-                overwrite: true,
-                path: input.path,
-              }, { signal: controller.signal });
-            },
-          },
-          ui: {
-            announce: setNotice,
-            showError: setError,
-          },
-        };
+        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, setNotice, setError);
         runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
@@ -162,4 +229,36 @@ export function ExtensionHostDialog({
       />
     </ModalShell>
   );
+}
+
+function createExtensionHost(
+  extensionId: string,
+  projectPath: string,
+  signal: AbortSignal,
+  announce: (message: string) => void,
+  showError: (message: string) => void,
+): ExtensionHost {
+  return {
+    extensionId,
+    hostVersion: "1.0.0",
+    api: {
+      executeSessionCommand: async () => {
+        throw new Error("Extension Host 尚未連接 session command API。");
+      },
+      readProjectFile: async (path) => readProjectFileContent(projectPath, path, { signal }),
+      writeProjectFile: async (input) => {
+        await createOrUpdateProjectFile({
+          content: input.content,
+          directory: projectPath,
+          ...(input.encoding ? { encoding: input.encoding } : {}),
+          overwrite: true,
+          path: input.path,
+        }, { signal });
+      },
+    },
+    ui: {
+      announce,
+      showError,
+    },
+  };
 }
