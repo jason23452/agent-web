@@ -64,6 +64,7 @@ export function AppRouter() {
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
   const {
     attachments: chatAttachments,
+    cancelMessage,
     messagesError,
     messagesLoading,
     messageSending,
@@ -225,6 +226,7 @@ export function AppRouter() {
       composer={
         <ChatComposer
           attachments={chatAttachments}
+          onCancel={cancelMessage}
           onUploadFiles={uploadChatFiles}
           onClearPin={() => setPinContext(null)}
           onRemoveAttachment={removeAttachment}

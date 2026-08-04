@@ -6,7 +6,10 @@ export type OpenCodeMessageInfo = {
   error?: { data?: { message?: string }; name?: string }
   id: string
   model?: { modelID?: string; providerID?: string; variant?: string }
+  modelID?: string
+  providerID?: string
   role: "assistant" | "user"
+  sessionID?: string
   time?: { completed?: number; created?: number }
   tokens?: {
     cache?: { read?: number; write?: number }
@@ -17,6 +20,11 @@ export type OpenCodeMessageInfo = {
 }
 
 export type OpenCodeMessagePart = {
+  description?: string
+  filename?: string
+  id?: string
+  messageID?: string
+  sessionID?: string
   state?: {
     error?: string
     output?: string
@@ -31,6 +39,11 @@ export type OpenCodeMessagePart = {
 export type OpenCodeSessionMessage = {
   info: OpenCodeMessageInfo
   parts: OpenCodeMessagePart[]
+}
+
+export type OpenCodeMessageEvent = {
+  properties?: Record<string, unknown>
+  type?: string
 }
 
 export type PromptBody = {
@@ -63,18 +76,73 @@ export function abortSession(sessionID: string, directory: string, config?: ApiR
   })
 }
 
+export function applyOpenCodeMessageEvent(messages: OpenCodeSessionMessage[], event: OpenCodeMessageEvent): OpenCodeSessionMessage[] {
+  const properties = event.properties
+  if (!properties) return messages
+
+  if (event.type === "message.updated") {
+    const info = properties.info
+    if (!isOpenCodeMessageInfo(info)) return messages
+    const messageIndex = messages.findIndex((message) => message.info.id === info.id)
+    if (messageIndex === -1) return [...messages, { info, parts: [] }]
+    return replaceAt(messages, messageIndex, { ...messages[messageIndex], info })
+  }
+
+  if (event.type === "message.removed" && typeof properties.messageID === "string") {
+    return messages.filter((message) => message.info.id !== properties.messageID)
+  }
+
+  if (event.type === "message.part.updated") {
+    const part = properties.part
+    if (!isOpenCodeMessagePart(part)) return messages
+    const messageIndex = messages.findIndex((message) => message.info.id === part.messageID)
+    if (messageIndex === -1) return messages
+    const message = messages[messageIndex]
+    const partIndex = message.parts.findIndex((currentPart) => currentPart.id === part.id)
+    const parts = partIndex === -1 ? [...message.parts, part] : replaceAt(message.parts, partIndex, part)
+    return replaceAt(messages, messageIndex, { ...message, parts })
+  }
+
+  if (event.type === "message.part.delta"
+    && typeof properties.partID === "string"
+    && typeof properties.delta === "string"
+    && properties.field === "text") {
+    const messageIndex = typeof properties.messageID === "string"
+      ? messages.findIndex((message) => message.info.id === properties.messageID)
+      : messages.findIndex((message) => message.parts.some((part) => part.id === properties.partID))
+    if (messageIndex === -1) return messages
+    const message = messages[messageIndex]
+    const partIndex = message.parts.findIndex((part) => part.id === properties.partID)
+    if (partIndex === -1) return messages
+    const part = message.parts[partIndex]
+    const parts = replaceAt(message.parts, partIndex, { ...part, text: `${part.text ?? ""}${properties.delta}` })
+    return replaceAt(messages, messageIndex, { ...message, parts })
+  }
+
+  if (event.type === "message.part.removed" && typeof properties.partID === "string") {
+    const messageIndex = typeof properties.messageID === "string"
+      ? messages.findIndex((message) => message.info.id === properties.messageID)
+      : messages.findIndex((message) => message.parts.some((part) => part.id === properties.partID))
+    if (messageIndex === -1) return messages
+    const message = messages[messageIndex]
+    return replaceAt(messages, messageIndex, { ...message, parts: message.parts.filter((part) => part.id !== properties.partID) })
+  }
+
+  return messages
+}
+
 export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): WorkspaceMessage[] {
   return messages.map((message) => {
     const bodyParts = message.parts.flatMap((part) => {
-      if (part.type === "text" && part.text?.trim()) return [part.text.trim()]
-      if (part.type === "reasoning" && part.text?.trim()) return [`思考\n${part.text.trim()}`]
+      if (part.type === "text" && part.text?.trim()) return [part.text]
+      if (part.type === "reasoning" && part.text?.trim()) return [`思考\n${part.text}`]
       if (part.type === "tool") {
         const state = part.state
         const output = state?.output || state?.error
         return [`工具 ${part.tool ?? "unknown"}${state?.title ? ` · ${state.title}` : ""}${output ? `\n${output}` : ""}`]
       }
-      if (part.type === "file") return [`檔案：${part.text ?? "已附加檔案"}`]
-      if (part.type === "subtask") return [`子任務：${part.text ?? "已啟動子任務"}`]
+      if (part.type === "file") return [`檔案：${part.filename ?? part.text ?? "已附加檔案"}`]
+      if (part.type === "subtask") return [`子任務：${part.description ?? part.text ?? "已啟動子任務"}`]
       return []
     })
     const errorMessage = message.info.error?.data?.message
@@ -84,12 +152,12 @@ export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): Workspa
       body,
       createdAt: message.info.time?.created,
       id: message.info.id,
-      modelLabel: message.info.model?.providerID && message.info.model.modelID
-        ? `${message.info.model.providerID}/${message.info.model.modelID}`
+      modelLabel: (message.info.providerID ?? message.info.model?.providerID) && (message.info.modelID ?? message.info.model?.modelID)
+        ? `${message.info.providerID ?? message.info.model?.providerID}/${message.info.modelID ?? message.info.model?.modelID}`
         : undefined,
       plan: buildPlan(message.parts),
       role: message.info.role === "assistant" ? "agent" : "user",
-      status: errorMessage ? "error" : message.info.time?.completed ? "complete" : "streaming",
+      status: message.info.role === "user" ? "complete" : errorMessage ? "error" : message.info.time?.completed ? "complete" : "streaming",
       title: message.info.role === "user" ? undefined : message.info.agent ?? "OpenCode agent",
     }
   })
@@ -100,8 +168,26 @@ function buildPlan(parts: OpenCodeMessagePart[]): PlanStep[] | undefined {
   if (toolParts.length === 0) return undefined
 
   return toolParts.map((part, index) => ({
-    id: `${part.tool ?? "tool"}-${index}`,
+    id: part.id ?? `${part.tool ?? "tool"}-${index}`,
     label: part.state?.title || part.tool || "工具呼叫",
     status: part.state?.status === "completed" ? "done" : part.state?.status === "error" ? "pending" : "running",
   }))
+}
+
+function isOpenCodeMessageInfo(value: unknown): value is OpenCodeMessageInfo {
+  if (!isRecord(value)) return false
+  return typeof value.id === "string" && (value.role === "assistant" || value.role === "user")
+}
+
+function isOpenCodeMessagePart(value: unknown): value is OpenCodeMessagePart & { id: string; messageID: string } {
+  if (!isRecord(value)) return false
+  return typeof value.id === "string" && typeof value.messageID === "string" && typeof value.type === "string"
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function replaceAt<T>(items: T[], index: number, value: T): T[] {
+  return [...items.slice(0, index), value, ...items.slice(index + 1)]
 }

@@ -1,4 +1,4 @@
-import { BotIcon, ChevronDownIcon, CommandIcon, FileTextIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, Settings2Icon, UploadIcon, XIcon } from "lucide-react"
+import { BotIcon, ChevronDownIcon, CommandIcon, FileTextIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, Settings2Icon, SquareIcon, UploadIcon, XIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { ModelSwitcher } from "@/shared/components/layout/app/ModelSwitcher"
 import { ThinkingVariantSwitcher } from "@/shared/components/layout/context/ThinkingVariantSwitcher"
@@ -55,6 +55,7 @@ type ChatComposerProps = {
   modelLabel?: string
   modelOptions?: ModelOption[]
   onClearPin: () => void
+  onCancel?: () => Promise<void> | void
   onRemoveAttachment: (id: string) => void
   onSubmit: (text: string, attachments: Attachment[], pinContext: PinContext | null) => Promise<boolean> | boolean
   onUploadFiles: (files: readonly File[]) => Promise<void>
@@ -79,6 +80,7 @@ export function ChatComposer({
   modelLabel,
   modelOptions,
   onClearPin,
+  onCancel,
   onRemoveAttachment,
   onSubmit,
   onUploadFiles,
@@ -344,9 +346,15 @@ export function ChatComposer({
               <Button aria-label="語音輸入" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" disabled={disabled} size="icon" variant="ghost">
                 <MicIcon aria-hidden="true" />
               </Button>
-              <Button aria-label="送出訊息" className="size-11 min-h-11 min-w-11 rounded-full border-primary bg-primary text-primary-foreground shadow-none before:hidden hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-35" disabled={(!value.trim() && !pinContext) || sending || disabled} loading={sending} size="icon" type="submit">
-                <SendIcon aria-hidden="true" />
-              </Button>
+              {sending && onCancel ? (
+                <Button aria-label="停止產生" className="size-11 min-h-11 min-w-11 rounded-full shadow-none before:hidden" disabled={disabled} onClick={() => void onCancel()} size="icon" title="停止產生" type="button" variant="destructive">
+                  <SquareIcon aria-hidden="true" className="size-4 fill-current" />
+                </Button>
+              ) : (
+                <Button aria-label="送出訊息" className="size-11 min-h-11 min-w-11 rounded-full border-primary bg-primary text-primary-foreground shadow-none before:hidden hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-35" disabled={(!value.trim() && !pinContext) || sending || disabled} loading={sending} size="icon" type="submit">
+                  <SendIcon aria-hidden="true" />
+                </Button>
+              )}
             </div>
           </div>
           
