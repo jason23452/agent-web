@@ -8,15 +8,17 @@ import {
   PuzzleIcon,
   Table2Icon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getApiErrorMessage } from "@/shared/api";
 import {
+  downloadPlatformExtensionPackage,
   installPlatformExtension,
   listPlatformExtensions,
   type PlatformExtension,
 } from "@/shared/api/platformExtensions";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
+import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 
 export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: string }) {
   const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
@@ -27,7 +29,6 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   const [overwrite, setOverwrite] = useState(false);
   const [scope, setScope] = useState<"global" | "project">(activeProjectName ? "project" : "global");
   const [installTargetID, setInstallTargetID] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -35,7 +36,7 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     void listPlatformExtensions({ signal: controller.signal })
       .then((response) => {
         if (!controller.signal.aborted) {
-          setExtensions(response.extensions.filter((extension) => extension.packageFormat === ".aicxt"));
+          setExtensions(response.extensions);
           setError(null);
         }
       })
@@ -50,12 +51,12 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   }, []);
 
   const effectiveScope = scope === "project" && !activeProjectName ? "global" : scope;
+  const installTarget = extensions.find((extension) => extension.id === installTargetID);
 
   function choosePackage(extensionID: string) {
     setInstallTargetID(extensionID);
     setError(null);
     setNotice(null);
-    fileInputRef.current?.click();
   }
 
   async function installPackage(file: File) {
@@ -88,6 +89,26 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
     }
   }
 
+  async function downloadAndInstallPackage() {
+    if (!installTarget) return;
+    if (effectiveScope === "project" && !activeProjectName) {
+      setError("請先開啟 Project，或改用 Global 安裝。");
+      return;
+    }
+
+    setInstalling(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const file = await downloadPlatformExtensionPackage(installTarget.id);
+      await installPackage(file);
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError));
+      setInstalling(false);
+      setInstallTargetID(null);
+    }
+  }
+
   return (
     <div className="mx-auto grid max-w-[720px] gap-6 pr-8 max-sm:pr-0">
       <div className="grid gap-1">
@@ -97,59 +118,25 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         </p>
       </div>
 
-      <section className="grid gap-3 rounded-xl bg-muted/45 p-4" aria-labelledby="extension-install-title">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h4 className="font-semibold text-sm" id="extension-install-title">安裝外部 package</h4>
-            <p className="mt-0.5 text-muted-foreground text-xs">Workflow package 會建立 Workflow/Command 並直接發布到 workspace；後續自訂配置請從 Workflow Command 修改。</p>
-          </div>
-          <label className="grid gap-1 text-muted-foreground text-xs">
-            安裝範圍
-            <select
-              className="h-8 rounded-lg border border-input bg-background px-2 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onChange={(event) => setScope(event.target.value as "global" | "project")}
-              value={effectiveScope}
-            >
-              {activeProjectName && <option value="project">目前 Project · {activeProjectName}</option>}
-              <option value="global">Global</option>
-            </select>
-          </label>
-        </div>
-        <label className="flex items-center gap-2 text-muted-foreground text-xs">
-          <input checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} type="checkbox" />
-          發生同名資源時允許 overwrite
-        </label>
-        <input
-          accept=".aicxt,application/zip"
-          className="sr-only"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void installPackage(file);
-          }}
-          ref={fileInputRef}
-          type="file"
-        />
-        {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs" role="alert">{error}</p>}
-        {notice && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 text-xs" role="status">{notice}</p>}
-        {installTargetID && <p aria-live="polite" className="text-muted-foreground text-xs">請選擇 `{installTargetID}` 的 `.aicxt` package。</p>}
-      </section>
+      {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700 text-xs" role="alert">{error}</p>}
+      {notice && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 text-xs" role="status">{notice}</p>}
 
       {loading ? (
         <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-8 text-center text-muted-foreground text-sm" role="status">正在讀取外部擴充套件市場...</p>
       ) : extensions.length === 0 ? (
         <p className="rounded-lg border border-dashed bg-muted/35 px-3 py-8 text-center text-muted-foreground text-sm">目前沒有可用的外部擴充套件。</p>
       ) : (
-        <ul className="grid grid-cols-1 border-border/70 border-t sm:grid-cols-2 sm:gap-x-10">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {extensions.map((extension) => (
-            <li className="flex min-w-0 items-center gap-3 border-border/70 border-b py-4" key={extension.id}>
+            <li className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card p-4 shadow-sm" key={extension.id}>
               <ExtensionIcon extension={extension} />
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <h4 className="truncate font-semibold text-sm">{extension.displayName}</h4>
                   {extension.version && <Badge size="sm" variant="outline">v{extension.version}</Badge>}
+                  <Badge size="sm" variant={extension.installed ? "success" : "outline"}>{extension.installed ? "已安裝" : "未安裝"}</Badge>
                 </div>
-                <p className="mt-1 truncate text-muted-foreground text-xs">{extension.description ?? "External AICaht Extension package"}</p>
+                <p className="mt-1 truncate text-muted-foreground text-xs">{extension.description ?? "External extension package"}</p>
               </div>
               <Button
                 disabled={installing}
@@ -164,13 +151,47 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
           ))}
         </ul>
       )}
+
+      <ModalShell
+        ariaLabel="安裝外部 package"
+        bodyClassName="grid gap-4 p-5"
+        closeAriaLabel="取消安裝"
+        description="選擇安裝範圍後，從 marketplace API 下載並安裝 package。"
+        footer={(
+          <div className="flex w-full justify-end gap-2">
+            <Button disabled={installing} onClick={() => setInstallTargetID(null)} size="sm" variant="ghost">取消</Button>
+            <Button disabled={installing || !installTarget} loading={installing} onClick={() => void downloadAndInstallPackage()} size="sm">下載並安裝</Button>
+          </div>
+        )}
+        onOpenChange={(open) => {
+          if (!open && !installing) setInstallTargetID(null);
+        }}
+        open={Boolean(installTargetID)}
+        title={installTarget ? `${installTarget.displayName} 安裝設定` : "安裝設定"}
+      >
+        <label className="grid gap-1 text-muted-foreground text-xs">
+          安裝範圍
+          <select
+            className="h-9 rounded-lg border border-input bg-background px-2 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onChange={(event) => setScope(event.target.value as "global" | "project")}
+            value={effectiveScope}
+          >
+            <option disabled={!activeProjectName} value="project">目前 Project · {activeProjectName ?? "尚未開啟"}</option>
+            <option value="global">Global</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-muted-foreground text-xs">
+          <input checked={overwrite} onChange={(event) => setOverwrite(event.target.checked)} type="checkbox" />
+          發生同名資源時允許 overwrite
+        </label>
+      </ModalShell>
     </div>
   );
 }
 
 function ExtensionIcon({ extension }: { extension: PlatformExtension }) {
   const iconClassName = "size-5";
-  const icon = extension.icon ?? (extension.id === "mermind" ? "mindmap" : undefined);
+  const icon = extension.icon ?? (extension.packageFormat === ".aicxt" ? "mindmap" : undefined);
 
   if (icon === "browser") return <ExtensionIconShell className="border border-border bg-background text-foreground"><GlobeIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
   if (icon === "computer") return <ExtensionIconShell className="bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white"><MonitorIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;

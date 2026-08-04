@@ -111,6 +111,39 @@ export async function apiRequestText(endpoint: string, config: ApiRequestConfig 
   return text;
 }
 
+export async function apiRequestBlob(endpoint: string, config: ApiRequestConfig = {}): Promise<Blob> {
+  const response = await fetch(buildApiUrl(endpoint, config.query), {
+    body: config.body === undefined
+      ? undefined
+      : config.body instanceof FormData
+        ? config.body
+        : JSON.stringify(config.body),
+    headers: buildHeaders(config, "application/octet-stream"),
+    method: config.method ?? "GET",
+    signal: config.signal,
+  });
+  const blob = await response.blob();
+
+  if (!response.ok) {
+    let payload: ApiErrorPayload | undefined;
+    try {
+      payload = JSON.parse(await blob.text()) as ApiErrorPayload;
+    } catch {
+      payload = undefined;
+    }
+    const error = payload?.error;
+
+    throw new ApiError({
+      code: error?.code ?? payload?.code ?? "API_ERROR",
+      details: error?.details ?? payload,
+      message: error?.message ?? payload?.message ?? response.statusText,
+      status: response.status,
+    });
+  }
+
+  return blob;
+}
+
 export function buildApiUrl(endpoint: string, query?: QueryParams): string {
   const baseUrl = resolveApiBaseUrl();
   const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
@@ -124,9 +157,9 @@ export function buildApiUrl(endpoint: string, query?: QueryParams): string {
   return url.toString();
 }
 
-function buildHeaders(config: ApiRequestConfig): Headers {
+function buildHeaders(config: ApiRequestConfig, accept = "application/json"): Headers {
   const headers = new Headers(config.headers);
-  headers.set("Accept", "application/json");
+  headers.set("Accept", accept);
 
   if (config.body !== undefined && !(config.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

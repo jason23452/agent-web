@@ -1,4 +1,4 @@
-import { apiRequest, apiRequestText, type ApiRequestConfig } from "./client";
+import { apiRequest, apiRequestBlob, apiRequestText, type ApiRequestConfig } from "./client";
 
 export type PlatformExtensionIcon =
   | "browser"
@@ -69,6 +69,11 @@ export function installPlatformExtension(file: File, options: ExtensionInstallOp
     body: form,
     method: "POST",
   });
+}
+
+export async function downloadPlatformExtensionPackage(extensionId: string, config?: ApiRequestConfig) {
+  const blob = await apiRequestBlob(`/bff/extensions/${encodeURIComponent(extensionId)}/package`, config);
+  return new File([blob], `${extensionId}.aicxt`, { type: "application/octet-stream" });
 }
 
 export function loadPlatformExtensionFrontend(
