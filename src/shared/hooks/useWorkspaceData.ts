@@ -242,7 +242,7 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute }: UseWor
     await deleteManagedProject(project.name)
     setProjects((current) => current.filter((item) => item.id !== project.id))
     setProjectsError(null)
-    if (currentRoute.name === "workspaceProject" && (currentRoute.projectName === project.name || currentRoute.projectName === deletedRouteName)) {
+    if ("projectName" in currentRoute && (currentRoute.projectName === project.name || currentRoute.projectName === deletedRouteName)) {
       navigateToRoute({ name: "workspace" }, { replace: true })
     }
   }, [navigateToRoute])

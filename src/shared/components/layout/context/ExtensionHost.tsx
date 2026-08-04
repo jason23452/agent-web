@@ -6,7 +6,6 @@ import {
   PLATFORM_EXTENSIONS_CHANGED_EVENT,
   type PlatformExtension,
 } from "@/shared/api/platformExtensions";
-import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 import { createOrUpdateProjectFile, readProjectFileContent } from "@/features/workspace/api/files";
 import { abortSession, listSessionMessages, sendSessionPrompt } from "@/features/workspace/api/messages";
 import { createProjectSession } from "@/features/workspace/api/sessions";
@@ -60,13 +59,14 @@ type ExtensionRuntime = {
 };
 
 export function ExtensionHostActions({
+  onOpenExtension,
   projectName,
   projectPath,
 }: {
+  onOpenExtension: (extensionId: string) => void;
   projectName?: string;
   projectPath?: string | null;
 }) {
-  const [activeExtensionId, setActiveExtensionId] = useState<string | null>(null);
   const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
 
   useEffect(() => {
@@ -90,8 +90,6 @@ export function ExtensionHostActions({
     };
   }, [projectName, projectPath]);
 
-  const activeExtension = extensions.find((extension) => (extension.extensionId ?? extension.id) === activeExtensionId);
-
   return (
     <>
       {extensions.map((extension) => {
@@ -100,22 +98,12 @@ export function ExtensionHostActions({
           <ExtensionHostAction
             extensionId={extensionId}
             key={`${extensionId}:${extension.installedAt ?? extension.version ?? ""}`}
-            onOpenEditor={() => setActiveExtensionId(extensionId)}
+            onOpenEditor={() => onOpenExtension(extensionId)}
             projectName={projectName}
             projectPath={projectPath}
           />
         );
       })}
-      {activeExtensionId && activeExtension ? (
-        <ExtensionHostDialog
-          extensionId={activeExtensionId}
-          key={`${activeExtensionId}:${activeExtension.installedAt ?? activeExtension.version ?? ""}`}
-          onClose={() => setActiveExtensionId(null)}
-          open
-          projectName={projectName}
-          projectPath={projectPath}
-        />
-      ) : null}
     </>
   );
 }
@@ -196,30 +184,27 @@ export function ExtensionHostAction({
   return <span className="inline-flex" ref={containerRef} />;
 }
 
-export function ExtensionHostDialog({
+export function ExtensionHostPage({
   extensionId,
-  onClose,
-  open,
+  onBack,
+  projectLoading = false,
   projectName,
   projectPath,
 }: {
   extensionId: string;
-  onClose: () => void;
-  open: boolean;
+  onBack: () => void;
+  projectLoading?: boolean;
   projectName?: string;
   projectPath?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState("尚未載入外部 Extension。");
-  const projectError = open && (!projectPath || !projectName)
+  const projectError = !projectLoading && (!projectPath || !projectName)
     ? "請先開啟 Project，才能載入外部 Extension。"
     : null;
 
   useEffect(() => {
-    if (!open) return;
-
     if (!projectPath || !projectName) {
       return;
     }
@@ -236,7 +221,6 @@ export function ExtensionHostDialog({
     async function loadExtension() {
       setLoading(true);
       setError(null);
-      setNotice("正在載入外部 Extension frontend...");
 
       try {
         const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
@@ -247,21 +231,19 @@ export function ExtensionHostDialog({
         if (controller.signal.aborted || disposed) return;
         if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
 
-        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, setNotice, setError);
+        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, setError);
         runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
         const mountEditor = runtime?.editor?.mount;
         if (mountEditor && containerRef.current) {
-          editorHandle = await mountEditor(containerRef.current, { projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
-          setNotice("外部 Extension 已啟用。");
+          editorHandle = await mountEditor(containerRef.current, { onBack, projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
         } else {
-            setNotice("Extension 已載入，但沒有提供可掛載的 editor。");
+          throw new Error("Extension 已載入，但沒有提供可掛載的 editor。");
         }
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setError(getApiErrorMessage(loadError));
-          setNotice("");
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -278,31 +260,21 @@ export function ExtensionHostDialog({
       if (objectURL) URL.revokeObjectURL(objectURL);
       runtime = undefined;
     };
-  }, [extensionId, open, projectName, projectPath]);
+  }, [extensionId, onBack, projectName, projectPath]);
 
   return (
-    <ModalShell
-      ariaLabel={`${extensionId} Extension`}
-      bodyClassName="grid min-h-0 gap-3 p-3"
-      closeAriaLabel="關閉 Extension"
-      maxWidth="max-w-[min(96vw,1440px)]"
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) onClose();
-      }}
-      open={open}
-      panelClassName="h-[min(92dvh,900px)]"
-      title={extensionId}
-    >
-      {(projectError ?? error) && <p className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{projectError ?? error}</p>}
-      {!projectError && notice && <p aria-live="polite" className="rounded-lg bg-info/8 px-3 py-2 text-info-foreground text-xs">{notice}</p>}
-      {loading && <p className="text-muted-foreground text-xs" role="status">載入中...</p>}
-      <div
-        aria-label={`${extensionId} editor host`}
-        className="grid min-h-0 flex-1 place-items-stretch overflow-auto rounded-xl border border-border bg-muted/20"
-        ref={containerRef}
-        tabIndex={0}
-      />
-    </ModalShell>
+    <main className="h-dvh overflow-hidden bg-background text-foreground">
+      <section className="relative h-full min-h-0 overflow-auto">
+        {(projectError ?? error) ? <p className="mb-2 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{projectError ?? error}</p> : null}
+        {loading || projectLoading ? <p className="absolute inset-0 z-10 grid place-items-center bg-background/70 text-muted-foreground text-sm backdrop-blur-sm" role="status">正在載入 Extension...</p> : null}
+        <div
+          aria-label={`${extensionId} editor host`}
+          className="grid h-full min-h-[640px] place-items-stretch overflow-hidden bg-background"
+          ref={containerRef}
+          tabIndex={0}
+        />
+      </section>
+    </main>
   );
 }
 

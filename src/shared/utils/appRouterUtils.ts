@@ -3,6 +3,7 @@ import { WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[nam
 import { HOME_ROUTE_PATH } from "@/features/home/router"
 import { WORKSPACE_ROUTE_PATH } from "@/features/workspace/router"
 import { WORKFLOWS_ROUTE_PATH } from "@/features/workflows/constants"
+import { EXTENSION_ROUTE_SEGMENT } from "@/features/extensions/constants"
 import { getFileTypeByName, listProjectFiles } from "@/features/workspace/api/files"
 import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus } from "@/shared/api/opencodeRuntime"
 import type { OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
@@ -13,6 +14,7 @@ export type AppRoute =
   | { name: "home" }
   | { name: "workspace" }
   | { name: "workspaceProject"; projectName: string }
+  | { extensionId: string; name: "extension"; projectName: string }
   | { name: "workflows"; projectName?: string }
 
 export const OPENCODE_RESTART_WAIT_TIMEOUT_MS = 70_000
@@ -31,11 +33,16 @@ export function readBrowserRoute(): AppRoute {
   }
 
   if (pathname.startsWith(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`)) {
-    const encodedProjectName = pathname.slice(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`.length).split("/")[0]
+    const segments = pathname.slice(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`.length).split("/")
+    const encodedProjectName = segments[0]
     if (!encodedProjectName) return { name: "workspace" }
 
     try {
-      return { name: "workspaceProject", projectName: decodeURIComponent(encodedProjectName) }
+      const projectName = decodeURIComponent(encodedProjectName)
+      if (segments[1] === EXTENSION_ROUTE_SEGMENT && segments[2]) {
+        return { extensionId: decodeURIComponent(segments[2]), name: "extension", projectName }
+      }
+      return { name: "workspaceProject", projectName }
     } catch {
       return { name: "workspace" }
     }
@@ -47,6 +54,7 @@ export function readBrowserRoute(): AppRoute {
 export function getRoutePath(route: AppRoute) {
   if (route.name === "workspace") return WORKSPACE_ROUTE_PATH
   if (route.name === "workspaceProject") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}`
+  if (route.name === "extension") return `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}/${EXTENSION_ROUTE_SEGMENT}/${encodeURIComponent(route.extensionId)}`
   if (route.name === "workflows") {
     return route.projectName ? `${WORKFLOWS_ROUTE_PATH}?project=${encodeURIComponent(route.projectName)}` : WORKFLOWS_ROUTE_PATH
   }

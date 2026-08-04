@@ -1,5 +1,5 @@
 export * from './AppContextPanel';
 export * from './ChatComposer';
-export * from './ExtensionHostDialog';
+export * from './ExtensionHost';
 export * from './ContextMeter';
 export * from './FileTree';

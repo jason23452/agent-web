@@ -2,9 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { HomeRoute } from "@/features/home/router"
 import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
+import { ExtensionRoute } from "@/features/extensions/router/[extensionId]"
 import type { PinContext } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
-import { ExtensionHostActions } from "@/shared/components/layout/context/ExtensionHostDialog"
+import { ExtensionHostActions } from "@/shared/components/layout/context/ExtensionHost"
 import { AppFilePreviewDialog } from "@/shared/components/layout/dialogs/AppFilePreviewDialog"
 import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
@@ -26,7 +27,7 @@ import {
 const WorkflowsRoute = lazy(() => import("@/features/workflows/router").then((module) => ({ default: module.WorkflowsRoute })))
 
 export function AppRouter() {
-  const { changeProject, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route } = useAppNavigation()
+  const { changeProject, navigateToExtension, navigateToRoute, navigateToWorkflows, navigateToWorkspaceProject, route } = useAppNavigation()
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [disabledOpenCodeModelKeys, setDisabledOpenCodeModelKeys] = useState<string[]>([])
@@ -35,7 +36,7 @@ export function AppRouter() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const workflowProjectName = route.name === "workflows" ? route.projectName : undefined
-  const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" ? route.projectName ?? null : null
+  const checkedProjectName = route.name === "workspaceProject" || route.name === "workflows" || route.name === "extension" ? route.projectName ?? null : null
   const workspaceData = useWorkspaceData({ checkedProjectName, navigateToRoute })
   const {
     activeAgent, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId,
@@ -115,6 +116,14 @@ export function AppRouter() {
     return deleteWorkspaceProject(project, getProjectRouteName(project.path), route)
   }, [deleteWorkspaceProject, route])
 
+  const openExtension = useCallback((extensionId: string) => {
+    if (checkedProjectName) navigateToExtension(checkedProjectName, extensionId)
+  }, [checkedProjectName, navigateToExtension])
+
+  const closeExtension = useCallback(() => {
+    if (route.name === "extension") navigateToWorkspaceProject(route.projectName)
+  }, [navigateToWorkspaceProject, route])
+
   const createSessionAndCloseSurfaces = useCallback(async () => {
     const response = await createWorkspaceSession()
     if (!response) return
@@ -150,6 +159,18 @@ export function AppRouter() {
     )
   }
 
+  if (route.name === "extension") {
+    return (
+      <ExtensionRoute
+        extensionId={route.extensionId}
+        onBack={closeExtension}
+        project={route.projectName}
+        projectLoading={projectsLoading}
+        projectPath={activeProjectPath}
+      />
+    )
+  }
+
   const mainRoute =
     route.name === "workspace" ? (
       <WorkspaceRoute messages={workspaceMessages} loading={messagesLoading} error={messagesError} />
@@ -177,6 +198,7 @@ export function AppRouter() {
             extensionAction={
               <ExtensionHostActions
                 key={activeProjectName ?? "no-project"}
+                onOpenExtension={openExtension}
                 projectName={activeProjectName}
                 projectPath={activeProjectPath}
               />
