@@ -3,7 +3,6 @@ import { HomeRoute } from "@/features/home/router"
 import { WorkspaceProjectRoute } from "@/features/workspace/router/[name]"
 import { WorkspaceRoute } from "@/features/workspace/router"
 import { ExtensionRoute } from "@/features/extensions/router/[extensionId]"
-import type { OpenCodeSession } from "@/features/workspace/api/sessions"
 import type { PinContext } from "@/shared/types/workspace"
 import { AppContextPanel } from "@/shared/components/layout/context/AppContextPanel"
 import { ExtensionHostActions } from "@/shared/components/layout/context/ExtensionHost"
@@ -27,23 +26,6 @@ import {
 
 const WorkflowsRoute = lazy(() => import("@/features/workflows/router").then((module) => ({ default: module.WorkflowsRoute })))
 
-function getRootSessionID(session: OpenCodeSession | undefined, sessions: OpenCodeSession[]) {
-  if (!session) return undefined
-  const visited = new Set<string>()
-  let current = session
-  let rootID = current.id
-
-  while (current.parentID && !visited.has(current.parentID)) {
-    visited.add(current.parentID)
-    rootID = current.parentID
-    const parent = sessions.find((item) => item.id === current.parentID)
-    if (!parent) break
-    current = parent
-  }
-
-  return rootID
-}
-
 function getSubagentSessionTitle(title: string) {
   return title.replace(/\s+\(@[^)]+ subagent\)\s*$/i, "").trim() || title
 }
@@ -62,9 +44,9 @@ export function AppRouter() {
   const requestedSessionId = route.name === "workspaceProject" ? route.sessionId : undefined
   const workspaceData = useWorkspaceData({ checkedProjectName, navigateToRoute, requestedSessionId })
   const {
-    activeAgent, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId,
+    activeAgent, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId, archiveSession,
     agentsError, agentsLoading, availableAgents, createProject, createSession: createWorkspaceSession, deleteProject: deleteWorkspaceProject, layoutLoading, layoutLoadingLabel,
-    modelRateLimitUsage, openCodeProviderCatalog, openCodeSessions, projectSessions, projects, projectsError, projectsLoading, refreshProjects,
+    deleteSession, modelRateLimitUsage, openCodeProviderCatalog, openCodeSessions, projectSessions, projects, projectsError, projectsLoading, refreshProjects,
     sessionsError, sessionsLoading, setActiveAgentId, setActiveSessionId, setOpenCodeProviderCatalog, setProjectSessions, setOpenCodeSessions,
   } = workspaceData
   const {
@@ -86,7 +68,6 @@ export function AppRouter() {
     : openCodeSessions.find((session) => session.id === activeSessionId)
   const activeParentSessionID = activeOpenCodeSession?.parentID
   const activeParentSession = activeParentSessionID ? openCodeSessions.find((session) => session.id === activeParentSessionID) : undefined
-  const sidebarActiveSessionId = getRootSessionID(activeOpenCodeSession, openCodeSessions) ?? activeSessionId
   const disabledOpenCodeModelKeySet = new Set(disabledOpenCodeModelKeys)
   const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
@@ -297,10 +278,12 @@ export function AppRouter() {
         sidebar={
           <AppSidebar
             activeProjectPath={activeProjectPath || ""}
-             activeSessionId={sidebarActiveSessionId}
+             activeSessionId={activeSessionId}
+           onArchiveSession={archiveSession}
           onCreateProject={createProject}
            onCreateSession={createSessionAndCloseSurfaces}
           onDeleteProject={deleteProject}
+          onDeleteSession={deleteSession}
           onClose={() => setSidebarOpen(false)}
            onOpenCodeDisabledModelsChange={setDisabledOpenCodeModelKeys}
            onOpenCodeProviderCatalogChange={setOpenCodeProviderCatalog}

@@ -23,6 +23,7 @@ export type OpenCodeSession = {
   };
   title: string;
   time: {
+    archived?: number;
     compacting?: number;
     created: number;
     updated: number;
@@ -65,7 +66,12 @@ export function createProjectSession(directory: string, body: CreateProjectSessi
   });
 }
 
-export function updateProjectSession(sessionID: string, directory: string, body: { title?: string }, config?: ApiRequestConfig) {
+export type UpdateProjectSessionInput = {
+  time?: { archived?: number };
+  title?: string;
+};
+
+export function updateProjectSession(sessionID: string, directory: string, body: UpdateProjectSessionInput, config?: ApiRequestConfig) {
   return apiRequest<OpenCodeSession>(`/bff/opencode-proxy/session/${encodeURIComponent(sessionID)}`, {
     ...config,
     body,
@@ -74,11 +80,27 @@ export function updateProjectSession(sessionID: string, directory: string, body:
   })
 }
 
+export function deleteProjectSession(sessionID: string, directory: string, config?: ApiRequestConfig) {
+  return apiRequest<boolean>(`/bff/opencode-proxy/session/${encodeURIComponent(sessionID)}`, {
+    ...config,
+    method: "DELETE",
+    query: { ...config?.query, directory },
+  });
+}
+
 export function toWorkspaceSession(session: OpenCodeSession): Session {
+  const subagentMatch = session.title.match(/\s+\(@([^)\s]+)\s+subagent\)\s*$/i);
+  const agent = session.agent ?? subagentMatch?.[1];
+  const title = session.parentID
+    ? session.title.replace(/\s+\(@[^)]+\s+subagent\)\s*$/i, "").trim()
+    : session.title.trim();
+
   return {
+    agent,
     id: session.id,
-    meta: formatSessionMeta(session),
-    title: session.title || "未命名對話",
+    meta: `${formatSessionMeta(session)}${session.parentID && agent ? ` · @${agent}` : ""}`,
+    parentID: session.parentID,
+    title: title || "未命名對話",
   };
 }
 

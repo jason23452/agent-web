@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { ApiError, getApiErrorMessage } from "@/shared/api"
 import { getOpenCodeCurrentUsage, getOpenCodeSessionContextUsage } from "@/shared/api/opencodeUsage"
 import { listOpenCodeProviders, type OpenCodeProviderListResponse } from "@/shared/api/opencodeProviders"
-import { getProjectSession, listProjectRootSessions, listProjectSessions, toWorkspaceSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
+import { deleteProjectSession, getProjectSession, listProjectRootSessions, listProjectSessions, toWorkspaceSession, updateProjectSession, type OpenCodeSession } from "@/features/workspace/api/sessions"
 import { listProjectPrimaryAgents } from "@/features/workspace/api/agents"
 import { createManagedProject, deleteManagedProject, getManagedProjectStatus, listManagedProjects, toWorkspaceProject } from "@/features/workspace/api/projects"
 import { createProjectSession } from "@/features/workspace/api/sessions"
@@ -21,6 +21,22 @@ const EMPTY_AGENT: Agent = {
 function mergeSessionLists<T extends { id: string }>(response: T[], current: T[]) {
   const currentIDs = new Set(current.map((session) => session.id))
   return [...current, ...response.filter((session) => !currentIDs.has(session.id))]
+}
+
+function getSessionTreeIDs(sessionID: string, sessions: Array<{ id: string; parentID?: string }>) {
+  const sessionIDs = new Set([sessionID])
+  let foundChild = true
+
+  while (foundChild) {
+    foundChild = false
+    for (const session of sessions) {
+      if (!session.parentID || !sessionIDs.has(session.parentID) || sessionIDs.has(session.id)) continue
+      sessionIDs.add(session.id)
+      foundChild = true
+    }
+  }
+
+  return sessionIDs
 }
 
 type UseWorkspaceDataOptions = {
@@ -123,12 +139,13 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
           if (controller.signal.aborted) return
 
           if (sessionsResponse || rootSessionsResponse) {
-            const nextOpenCodeSessions = sessionsResponse ?? rootSessionsResponse ?? []
-            const nextSessions = (rootSessionsResponse ?? nextOpenCodeSessions.filter((session) => !session.parentID)).map(toWorkspaceSession)
+            const nextOpenCodeSessions = (sessionsResponse ?? rootSessionsResponse ?? []).filter((session) => !session.time.archived)
+            const nextRootSessions = (rootSessionsResponse ?? nextOpenCodeSessions.filter((session) => !session.parentID)).filter((session) => !session.time.archived)
+            const nextSessions = nextOpenCodeSessions.map(toWorkspaceSession)
             if (rootSessionsResponse) setSessionsError(null)
             setOpenCodeSessions((current) => mergeSessionLists(nextOpenCodeSessions, current))
             setProjectSessions((current) => mergeSessionLists(nextSessions, current))
-            setActiveSessionId((current) => current ?? nextSessions[0]?.id ?? null)
+            setActiveSessionId((current) => current ?? nextRootSessions[0]?.id ?? nextSessions[0]?.id ?? null)
           } else {
             setOpenCodeSessions([])
             setProjectSessions([])
@@ -227,7 +244,10 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
         lineage.push(parent)
         parentID = parent.parentID
       }
-      if (!controller.signal.aborted) setOpenCodeSessions((current) => mergeSessionLists(lineage, current))
+      if (!controller.signal.aborted) {
+        setOpenCodeSessions((current) => mergeSessionLists(lineage, current))
+        setProjectSessions((current) => mergeSessionLists(lineage.filter((item) => !item.time.archived).map(toWorkspaceSession), current))
+      }
     }).catch(() => {
       if (!controller.signal.aborted) {
         setActiveOpenCodeSessionDetail(null)
@@ -298,6 +318,53 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
     return response
   }, [activeProjectPath, checkedProjectName, navigateToRoute])
 
+  const removeSessionFromHistory = useCallback((sessionID: string) => {
+    const sessionTreeIDs = getSessionTreeIDs(sessionID, [...openCodeSessions, ...projectSessions])
+    const nextProjectSessions = projectSessions.filter((session) => !sessionTreeIDs.has(session.id))
+    setOpenCodeSessions((current) => current.filter((session) => !sessionTreeIDs.has(session.id)))
+    setProjectSessions(nextProjectSessions)
+
+    if (!activeSessionId || !sessionTreeIDs.has(activeSessionId)) return
+    const nextSessionID = nextProjectSessions.find((session) => !session.parentID)?.id ?? nextProjectSessions[0]?.id ?? null
+    setActiveSessionId(nextSessionID)
+    if (checkedProjectName) {
+      navigateToRoute({
+        name: "workspaceProject",
+        projectName: checkedProjectName,
+        ...(nextSessionID ? { sessionId: nextSessionID } : {}),
+      }, { replace: true })
+    }
+  }, [activeSessionId, checkedProjectName, navigateToRoute, openCodeSessions, projectSessions])
+
+  const archiveSession = useCallback(async (sessionID: string) => {
+    if (!activeProjectPath) throw new Error("請先開啟專案後再歸檔對話。")
+    setSessionsError(null)
+    try {
+      const sessionTreeIDs = getSessionTreeIDs(sessionID, [...openCodeSessions, ...projectSessions])
+      const archived = Date.now()
+      await Promise.all(Array.from(sessionTreeIDs, (id) => updateProjectSession(id, activeProjectPath, { time: { archived } })))
+      removeSessionFromHistory(sessionID)
+    } catch (error) {
+      const message = getApiErrorMessage(error)
+      setSessionsError(message)
+      throw new Error(message)
+    }
+  }, [activeProjectPath, openCodeSessions, projectSessions, removeSessionFromHistory])
+
+  const deleteSession = useCallback(async (sessionID: string) => {
+    if (!activeProjectPath) throw new Error("請先開啟專案後再刪除對話。")
+    setSessionsError(null)
+    try {
+      const sessionTreeIDs = Array.from(getSessionTreeIDs(sessionID, [...openCodeSessions, ...projectSessions])).reverse()
+      for (const id of sessionTreeIDs) await deleteProjectSession(id, activeProjectPath)
+      removeSessionFromHistory(sessionID)
+    } catch (error) {
+      const message = getApiErrorMessage(error)
+      setSessionsError(message)
+      throw new Error(message)
+    }
+  }, [activeProjectPath, openCodeSessions, projectSessions, removeSessionFromHistory])
+
   const restartOpenCodeServer = useCallback(async (reason: string) => {
     setLayoutLoadingLabel("正在重新啟動 OpenCode server...")
     setLayoutLoading(true)
@@ -327,7 +394,7 @@ export function useWorkspaceData({ checkedProjectName, navigateToRoute, requeste
 
   return {
     activeAgent, activeAgentId, activeOpenCodeContextUsage, activeOpenCodeSessionDetail, activeProjectPath, activeSessionId,
-    agentsError, agentsLoading, availableAgents, createProject, createSession, deleteProject, layoutLoading, layoutLoadingLabel,
+    agentsError, agentsLoading, archiveSession, availableAgents, createProject, createSession, deleteProject, deleteSession, layoutLoading, layoutLoadingLabel,
     modelRateLimitUsage, openCodeProviderCatalog, openCodeSessions, projectSessions, projects, projectsError, projectsLoading,
     refreshOpenCodeProviderCatalog, refreshProjects, restartOpenCodeServer, sessionsError, sessionsLoading,
     setActiveAgentId, setActiveOpenCodeContextUsage, setActiveOpenCodeSessionDetail, setActiveSessionId, setAgentsError,

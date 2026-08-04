@@ -44,6 +44,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
+function getSessionTreeIDs(sessionID: string, sessions: Array<{ id: string; parentID?: string }>) {
+  const sessionIDs = new Set([sessionID])
+  let foundChild = true
+
+  while (foundChild) {
+    foundChild = false
+    for (const session of sessions) {
+      if (!session.parentID || !sessionIDs.has(session.parentID) || sessionIDs.has(session.id)) continue
+      sessionIDs.add(session.id)
+      foundChild = true
+    }
+  }
+
+  return sessionIDs
+}
+
 function isOpenCodeSession(value: unknown): value is OpenCodeSession {
   return isRecord(value)
     && typeof value.id === "string"
@@ -202,13 +218,23 @@ export function useWorkspaceChat({
       if ((payload.type === "session.created" || payload.type === "session.updated") && isOpenCodeSession(properties.info)) {
         const session = properties.info
         if (session.directory === activeProjectPath) {
+          if (session.time.archived) {
+            setOpenCodeSessions((current) => {
+              const archivedSessionIDs = getSessionTreeIDs(session.id, current)
+              return current.filter((item) => !archivedSessionIDs.has(item.id))
+            })
+            setProjectSessions((current) => {
+              const archivedSessionIDs = getSessionTreeIDs(session.id, current)
+              return current.filter((item) => !archivedSessionIDs.has(item.id))
+            })
+            return
+          }
           setOpenCodeSessions((current) => {
             const index = current.findIndex((item) => item.id === session.id)
             return index === -1 ? [session, ...current] : current.map((item) => item.id === session.id ? session : item)
           })
           const workspaceSession = toWorkspaceSession(session)
           setProjectSessions((current) => {
-            if (session.parentID) return current.filter((item) => item.id !== workspaceSession.id)
             const index = current.findIndex((item) => item.id === workspaceSession.id)
             return index === -1 ? [workspaceSession, ...current] : current.map((item) => item.id === workspaceSession.id ? workspaceSession : item)
           })
@@ -218,8 +244,14 @@ export function useWorkspaceChat({
       if (payload.type === "session.deleted") {
         const deletedSessionID = sessionID ?? (isRecord(properties.info) && typeof properties.info.id === "string" ? properties.info.id : undefined)
         if (deletedSessionID) {
-          setOpenCodeSessions((current) => current.filter((session) => session.id !== deletedSessionID))
-          setProjectSessions((current) => current.filter((session) => session.id !== deletedSessionID))
+          setOpenCodeSessions((current) => {
+            const deletedSessionIDs = getSessionTreeIDs(deletedSessionID, current)
+            return current.filter((session) => !deletedSessionIDs.has(session.id))
+          })
+          setProjectSessions((current) => {
+            const deletedSessionIDs = getSessionTreeIDs(deletedSessionID, current)
+            return current.filter((session) => !deletedSessionIDs.has(session.id))
+          })
         }
       }
 

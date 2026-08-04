@@ -4,17 +4,22 @@ import type { OpenCodeProviderListResponse } from "@/shared/api/opencodeProvider
 export type AppSidebarProject = Pick<Project, "description" | "displayName" | "id" | "name" | "path">;
 
 export type AppSidebarSession = {
+  agent?: Session["agent"];
+  depth?: number;
   id: Session["id"];
-  title: Session["title"];
   meta: Session["meta"];
+  parentID?: Session["parentID"];
+  title: Session["title"];
 };
 
 export type AppSidebarProps = {
   activeProjectPath: string;
   activeSessionId?: string | null;
+  onArchiveSession: (sessionId: string) => Promise<void>;
   onCreateProject: (name: string) => Promise<AppSidebarProject>;
   onCreateSession: () => Promise<void>;
   onDeleteProject: (project: AppSidebarProject) => Promise<void>;
+  onDeleteSession: (sessionId: string) => Promise<void>;
   onProjectChange: (path: string) => void;
   onOpenCodeProviderCatalogChange?: (catalog: OpenCodeProviderListResponse | null) => void;
   onOpenCodeDisabledModelsChange?: (disabledModelKeys: string[]) => void;

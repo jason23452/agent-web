@@ -1,15 +1,29 @@
 import {
+  ArchiveIcon,
+  CornerDownRightIcon,
   HatGlasses,
   GitBranchIcon,
   HistoryIcon,
+  MoreHorizontalIcon,
   PanelLeftCloseIcon,
   PlugZapIcon,
   SearchIcon,
   ServerIcon,
   SettingsIcon,
   SparklesIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "@/shared/components/ui/alert-dialog";
 import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import {
@@ -24,6 +38,7 @@ import {
   InputGroupAddon,
   InputGroupInput,
 } from "@/shared/components/ui/input-group";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "@/shared/components/ui/menu";
 import { Sidebar } from "@/shared/components/layout/app/Sidebar";
 import type { AppSidebarSession } from "@/shared/types/app-sidebar";
 
@@ -42,8 +57,10 @@ type AppSidebarPanelProps = {
   historySearch: string;
   historySearchOpen: boolean;
   onAgentsOpen: () => void;
+  onArchiveSession: (sessionId: string) => Promise<void>;
   onClose: () => void;
   onCreateSession: () => void;
+  onDeleteSession: (sessionId: string) => Promise<void>;
   onHistorySearchChange: (value: string) => void;
   onHistorySearchToggle: () => void;
   onMcpOpen: () => void;
@@ -64,8 +81,10 @@ export function AppSidebarPanel({
   historySearch,
   historySearchOpen,
   onAgentsOpen,
+  onArchiveSession,
   onClose,
   onCreateSession,
+  onDeleteSession,
   onHistorySearchChange,
   onHistorySearchToggle,
   onMcpOpen,
@@ -79,6 +98,37 @@ export function AppSidebarPanel({
   sessionsLoading = false,
   workspaceActive,
 }: AppSidebarPanelProps) {
+  const [deleteTarget, setDeleteTarget] = useState<AppSidebarSession | null>(null);
+  const [sessionActionError, setSessionActionError] = useState<string | null>(null);
+  const [sessionActionID, setSessionActionID] = useState<string | null>(null);
+  const displayedSessionsError = sessionActionError ?? sessionsError;
+
+  async function archiveSession(session: AppSidebarSession) {
+    setSessionActionError(null);
+    setSessionActionID(session.id);
+    try {
+      await onArchiveSession(session.id);
+    } catch (error) {
+      setSessionActionError(error instanceof Error ? error.message : "歸檔對話失敗。");
+    } finally {
+      setSessionActionID(null);
+    }
+  }
+
+  async function deleteSession() {
+    if (!deleteTarget) return;
+    setSessionActionError(null);
+    setSessionActionID(deleteTarget.id);
+    try {
+      await onDeleteSession(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (error) {
+      setSessionActionError(error instanceof Error ? error.message : "刪除對話失敗。");
+    } finally {
+      setSessionActionID(null);
+    }
+  }
+
   return (
     <Sidebar
       className={`z-40 grid min-h-dvh min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-4 border-border border-r bg-background px-2.5 py-4 transition-transform max-[760px]:fixed max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:w-[min(300px,88vw)] max-[760px]:shadow-[20px_0_50px_rgb(15_23_42_/_12%)] min-[761px]:static min-[761px]:translate-x-0 ${open ? "max-[760px]:translate-x-0" : "max-[760px]:-translate-x-full"}`}
@@ -151,12 +201,12 @@ export function AppSidebarPanel({
             </div>
           </div>
 
-          {sessionsError && (
+          {displayedSessionsError && (
             <div
               className="rounded-md border border-destructive/30 bg-destructive/8 px-2 py-1.5 text-destructive-foreground text-[11px]"
               role="alert"
             >
-              {sessionsError}
+              {displayedSessionsError}
             </div>
           )}
 
@@ -204,20 +254,62 @@ export function AppSidebarPanel({
           )}
         </div>
         <ul className="grid min-h-0 auto-rows-max content-start gap-1 overflow-y-auto pr-1 pb-2">
-          {filteredSessions.map((session) => (
-            <li key={session.id}>
-              <button
-                className={`grid w-full gap-0.5 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${activeSessionId === session.id ? "bg-accent" : ""}`}
-                onClick={() => onSelectSession(session.id)}
-                type="button"
+          {filteredSessions.map((session) => {
+            const depth = Math.min(session.depth ?? 0, 3);
+            const childSession = depth > 0;
+            const active = activeSessionId === session.id;
+
+            return (
+              <li
+                className="min-w-0"
+                key={session.id}
+                style={depth > 0 ? { paddingInlineStart: `${depth * 12}px` } : undefined}
               >
-                <span className="truncate text-sm">{session.title}</span>
-                <span className="font-mono text-muted-foreground text-xs">
-                  {session.meta}
-                </span>
-              </button>
-            </li>
-          ))}
+                <div className={`group/session flex min-w-0 items-center rounded-lg transition-colors hover:bg-accent focus-within:bg-accent ${active ? "bg-accent" : ""}`}>
+                  <button
+                    aria-current={active ? "page" : undefined}
+                    className="grid min-w-0 flex-1 gap-0.5 rounded-lg py-2 pr-1 pl-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => onSelectSession(session.id)}
+                    type="button"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 text-sm">
+                      {childSession && <CornerDownRightIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />}
+                      <span className="truncate">{session.title}</span>
+                    </span>
+                    <span className="truncate font-mono text-muted-foreground text-xs">
+                      {session.meta}
+                    </span>
+                  </button>
+                  <Menu>
+                    <MenuTrigger
+                      aria-label={`${session.title} 操作`}
+                      className="mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      disabled={sessionActionID === session.id}
+                    >
+                      <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                    </MenuTrigger>
+                    <MenuPopup align="end" className="min-w-36">
+                      <MenuItem onClick={() => void archiveSession(session)}>
+                        <ArchiveIcon aria-hidden="true" />
+                        歸檔
+                      </MenuItem>
+                      <MenuSeparator />
+                      <MenuItem
+                        onClick={() => {
+                          setSessionActionError(null);
+                          setDeleteTarget(session);
+                        }}
+                        variant="destructive"
+                      >
+                        <Trash2Icon aria-hidden="true" />
+                        刪除
+                      </MenuItem>
+                    </MenuPopup>
+                  </Menu>
+                </div>
+              </li>
+            );
+          })}
           {sessionsLoading && filteredSessions.length === 0 && (
             <li className="px-3 py-6 text-center text-muted-foreground text-xs">
               正在讀取專案對話...
@@ -265,6 +357,29 @@ export function AppSidebarPanel({
           />
         </button>
       </div>
+
+      <AlertDialog
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !sessionActionID) setDeleteTarget(null);
+        }}
+        open={Boolean(deleteTarget)}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>永久刪除對話？</AlertDialogTitle>
+            <AlertDialogDescription>
+              「{deleteTarget?.title}」的訊息與歷史紀錄將永久刪除且無法復原{deleteTarget && !deleteTarget.parentID ? "，其子 agent 對話也會一併刪除" : ""}。
+            </AlertDialogDescription>
+            {sessionActionError && <p className="text-destructive text-sm" role="alert">{sessionActionError}</p>}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button disabled={Boolean(sessionActionID)} variant="outline" />}>取消</AlertDialogClose>
+            <Button loading={sessionActionID === deleteTarget?.id} onClick={() => void deleteSession()} variant="destructive">
+              確認刪除
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </Sidebar>
   );
 }

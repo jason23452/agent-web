@@ -14,9 +14,11 @@ export type Agent = {
 }
 
 export type Session = {
+  agent?: string
   id: string
-  title: string
   meta: string
+  parentID?: string
+  title: string
 }
 
 export type Project = {

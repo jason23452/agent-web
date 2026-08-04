@@ -91,6 +91,7 @@ import type {
   AgentToolTab,
   AppSidebarProject,
   AppSidebarProps,
+  AppSidebarSession,
   InstallResult,
   McpConfigMode,
   McpForm,
@@ -850,12 +851,41 @@ function skillSnapshotKey(scope: "project" | "global", name: string) {
   return `${scope}:${name}`;
 }
 
+function orderSidebarSessions(sessions: AppSidebarSession[]) {
+  const sessionIDs = new Set(sessions.map((session) => session.id));
+  const childrenByParent = new Map<string, AppSidebarSession[]>();
+  const ordered: AppSidebarSession[] = [];
+  const visited = new Set<string>();
+
+  for (const session of sessions) {
+    if (!session.parentID || !sessionIDs.has(session.parentID)) continue;
+    const children = childrenByParent.get(session.parentID) ?? [];
+    children.push(session);
+    childrenByParent.set(session.parentID, children);
+  }
+
+  function appendSession(session: AppSidebarSession, depth: number) {
+    if (visited.has(session.id)) return;
+    visited.add(session.id);
+    ordered.push({ ...session, depth });
+    for (const child of childrenByParent.get(session.id) ?? []) appendSession(child, depth + 1);
+  }
+
+  for (const session of sessions) {
+    if (!session.parentID || !sessionIDs.has(session.parentID)) appendSession(session, 0);
+  }
+  for (const session of sessions) appendSession(session, 0);
+  return ordered;
+}
+
 export function AppSidebar({
   activeProjectPath,
   activeSessionId,
+  onArchiveSession,
   onCreateProject,
   onCreateSession,
   onDeleteProject,
+  onDeleteSession,
   onOpenCodeDisabledModelsChange,
   onOpenCodeProviderCatalogChange,
   onProjectChange,
@@ -1032,12 +1062,13 @@ export function AppSidebar({
   });
   const projectDialogError = projectActionError ?? projectsError ?? null;
 
-  const filteredSessions = sessions.filter((session) => {
+  const filteredSessions = orderSidebarSessions(sessions).filter((session) => {
     const keyword = historySearch.trim().toLowerCase();
     if (!keyword) return true;
     return (
       session.title.toLowerCase().includes(keyword) ||
-      session.meta.toLowerCase().includes(keyword)
+      session.meta.toLowerCase().includes(keyword) ||
+      session.agent?.toLowerCase().includes(keyword)
     );
   });
 
@@ -4386,8 +4417,10 @@ export function AppSidebar({
         historySearch={historySearch}
          historySearchOpen={historySearchOpen}
          onAgentsOpen={openAgentsList}
+        onArchiveSession={onArchiveSession}
         onClose={onClose}
         onCreateSession={() => void onCreateSession()}
+        onDeleteSession={onDeleteSession}
         onHistorySearchChange={setHistorySearch}
         onHistorySearchToggle={() =>
           setHistorySearchOpen((current) => !current)
