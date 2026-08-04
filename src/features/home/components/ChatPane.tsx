@@ -19,8 +19,8 @@ export function ChatPane({ error, getSessionHref, loading = false, messages, onS
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background" data-region="chat-main">
       {sessionBreadcrumb && (
-        <nav aria-label="Subagent session 路徑" className="shrink-0 border-border/70 border-b bg-background/95 px-4 py-2.5 backdrop-blur-sm sm:px-8">
-          <div className="mx-auto flex max-w-3xl items-center gap-1.5 text-sm">
+        <nav aria-label="Subagent session 路徑" className="shrink-0 border-border/70 border-b bg-background/95 px-3 py-2.5 backdrop-blur-sm sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[820px] items-center gap-1.5 text-sm">
             <button className="min-w-0 truncate rounded-md px-1.5 py-1 font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={sessionBreadcrumb.onParentSelect} type="button">
               {sessionBreadcrumb.parentTitle}
             </button>

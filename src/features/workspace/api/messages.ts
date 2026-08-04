@@ -153,11 +153,15 @@ export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): Workspa
   return messages.map((message) => {
     const bodyParts = message.parts.flatMap((part) => {
       if (part.type === "text" && part.text?.trim()) return [part.text]
-      if (part.type === "reasoning" && part.text?.trim()) return [`思考\n${part.text}`]
       if (part.type === "file") return [`檔案：${part.filename ?? part.text ?? "已附加檔案"}`]
       if (part.type === "subtask") return [`子任務：${part.description ?? part.text ?? "已啟動子任務"}`]
       return []
     })
+    const reasoning = message.parts
+      .filter((part) => part.type === "reasoning" && part.text?.trim())
+      .map((part) => part.text?.trim())
+      .filter((text): text is string => Boolean(text))
+      .join("\n\n") || undefined
     const errorMessage = message.info.error?.data?.message
     const body = bodyParts.join("\n\n") || errorMessage || (message.info.role === "assistant" && !message.info.time?.completed ? "Agent 正在處理..." : "")
 
@@ -169,6 +173,7 @@ export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): Workspa
         ? `${message.info.providerID ?? message.info.model?.providerID}/${message.info.modelID ?? message.info.model?.modelID}`
         : undefined,
       plan: buildPlan(message.parts),
+      reasoning,
       role: message.info.role === "assistant" ? "agent" : "user",
       status: message.info.role === "user" ? "complete" : errorMessage ? "error" : message.info.time?.completed ? "complete" : "streaming",
       title: message.info.role === "user" ? undefined : message.info.agent ?? "OpenCode agent",

@@ -136,7 +136,7 @@ export function ChatComposer({
 
   return (
     <form
-      className="bg-[linear-gradient(to_top,var(--background)_78%,transparent)] px-[clamp(18px,5vw,64px)] pb-6 pt-3.5"
+      className="w-full min-w-0 bg-[linear-gradient(to_top,var(--background)_78%,transparent)] px-3 pt-2 pb-3 sm:px-6 sm:pt-3.5 sm:pb-6 lg:px-8"
       onSubmit={(event) => {
         event.preventDefault()
         if ((!value.trim() && !pinContext) || sending || disabled) return
@@ -145,8 +145,8 @@ export function ChatComposer({
         })
       }}
     >
-      <div className="mx-auto grid max-w-[820px] gap-2">
-        <div className="relative flex flex-col gap-0 rounded-[26px] border border-border bg-background py-2 pr-2 pl-3.5 shadow-[0_14px_40px_color-mix(in_oklch,var(--foreground)_10%,transparent)] transition-colors focus-within:border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] max-[760px]:rounded-[22px]">
+      <div className="mx-auto grid w-full max-w-[820px] min-w-0 gap-2">
+        <div className="relative flex min-w-0 flex-col gap-0 rounded-[26px] border border-border bg-background py-2 pr-2 pl-3.5 shadow-[0_14px_40px_color-mix(in_oklch,var(--foreground)_10%,transparent)] transition-colors focus-within:border-[color-mix(in_oklch,var(--primary)_35%,var(--border))] max-[760px]:rounded-[22px] max-[760px]:px-2.5">
           {completionOptions.length > 0 && completionContext && (
             <div aria-label={completionContext.kind === "command" ? "可用 Command" : "可用 subagent"} className="absolute inset-x-0 bottom-[calc(100%+0.65rem)] z-30 max-h-72 overflow-y-auto rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-[0_14px_40px_color-mix(in_oklch,var(--foreground)_12%,transparent)]" id="chat-composer-completions" role="listbox">
               {completionOptions.map((option, index) => (
@@ -205,8 +205,8 @@ export function ChatComposer({
             </div>
           )}
 
-          <div className="flex min-w-0 items-end gap-2">
-            <span className="relative grid size-10 shrink-0 place-items-center self-end">
+          <div className="flex min-w-0 items-end gap-2 max-[760px]:grid max-[760px]:grid-cols-[auto_minmax(0,1fr)_auto]">
+            <span className="relative grid size-10 shrink-0 place-items-center self-end max-[760px]:col-start-1 max-[760px]:row-start-2">
               <Button aria-label="加入檔案" className="grid size-10 min-h-10 min-w-10 place-items-center rounded-full border-0 bg-transparent p-0 shadow-none before:hidden hover:bg-muted [&_svg]:mx-0 [&_svg]:size-5" disabled={disabled} onClick={() => setUploadOpen((current) => !current)} size="icon" variant="ghost">
                 <PaperclipIcon aria-hidden="true" />
               </Button>
@@ -270,7 +270,7 @@ export function ChatComposer({
               aria-expanded={completionOptions.length > 0}
               aria-haspopup="listbox"
               aria-label="詢問 AICaht"
-              className="min-h-11 max-h-[140px] min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-[11px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground/70"
+              className="min-h-11 max-h-[140px] min-w-0 flex-1 resize-none overflow-y-auto whitespace-pre-wrap break-words border-0 bg-transparent px-1 py-[11px] leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground/70 max-[760px]:col-span-3 max-[760px]:col-start-1 max-[760px]:row-start-1 max-[760px]:w-full max-[760px]:px-1.5"
               disabled={disabled}
               onKeyDown={(event) => {
                 if (completionOptions.length > 0 && event.key === "ArrowDown") {
@@ -309,32 +309,34 @@ export function ChatComposer({
               rows={1}
               value={value}
             />
-            {commandLabel && (
-              <span className="inline-flex h-8 max-w-32 shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-muted-foreground text-xs max-[760px]:hidden" title={`目前 Command /${commandLabel}`}>
-                <CommandIcon aria-hidden="true" className="size-3.5 shrink-0" />
-                <span className="truncate">/{commandLabel}</span>
-              </span>
-            )}
-            {modelOptions && onModelChange && modelOptions.length > 0 ? (
-              <span className="max-[760px]:hidden">
-                <ModelSwitcher
-                  activeModelKey={selectedModelKey ?? null}
-                  disabled={disabled}
-                  loading={modelLoading}
-                  models={modelOptions}
-                  onModelChange={onModelChange}
-                  variant="composer"
-                />
-              </span>
-            ) : modelLabel && (
-              <span className="inline-flex h-8 max-w-36 shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-muted-foreground text-xs max-[760px]:hidden" title={`目前 Model ${modelLabel}`}>
-                <Settings2Icon aria-hidden="true" className="size-3.5 shrink-0" />
-                <span className="truncate">{modelLabel}</span>
-                <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0" />
-              </span>
+            {(commandLabel || modelLabel || (modelOptions && onModelChange && modelOptions.length > 0)) && (
+              <div className="hidden shrink-0 items-center gap-1.5 min-[761px]:flex">
+                {commandLabel && (
+                  <span className="inline-flex h-8 max-w-32 shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-muted-foreground text-xs" title={`目前 Command /${commandLabel}`}>
+                    <CommandIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                    <span className="truncate">/{commandLabel}</span>
+                  </span>
+                )}
+                {modelOptions && onModelChange && modelOptions.length > 0 ? (
+                  <ModelSwitcher
+                    activeModelKey={selectedModelKey ?? null}
+                    disabled={disabled}
+                    loading={modelLoading}
+                    models={modelOptions}
+                    onModelChange={onModelChange}
+                    variant="composer"
+                  />
+                ) : modelLabel && (
+                  <span className="inline-flex h-8 max-w-36 shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 text-muted-foreground text-xs" title={`目前 Model ${modelLabel}`}>
+                    <Settings2Icon aria-hidden="true" className="size-3.5 shrink-0" />
+                    <span className="truncate">{modelLabel}</span>
+                    <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0" />
+                  </span>
+                )}
+              </div>
             )}
             {onThinkingVariantChange && thinkingVariants.length > 0 && (
-              <div className="flex shrink-0 items-center self-end pb-1.5">
+              <div className="flex min-w-0 shrink-0 items-center self-end pb-1.5 max-[760px]:col-start-2 max-[760px]:row-start-2 max-[760px]:max-w-full max-[760px]:justify-self-end max-[760px]:pb-1">
                 <ThinkingVariantSwitcher
                   activeVariantKey={selectedThinkingVariant}
                   onVariantChange={onThinkingVariantChange}
@@ -342,7 +344,7 @@ export function ChatComposer({
                 />
               </div>
             )}
-            <div className="flex shrink-0 items-center gap-1 self-end">
+            <div className="flex shrink-0 items-center gap-1 self-end max-[760px]:col-start-3 max-[760px]:row-start-2">
               <Button aria-label="語音輸入" className="size-10 min-h-10 min-w-10 rounded-full border-0 bg-transparent shadow-none before:hidden hover:bg-muted" disabled={disabled} size="icon" variant="ghost">
                 <MicIcon aria-hidden="true" />
               </Button>
@@ -367,7 +369,7 @@ export function ChatComposer({
 
 export function SubagentComposerNotice({ onBack, parentTitle }: { onBack: () => void; parentTitle: string }) {
   return (
-    <div className="bg-[linear-gradient(to_top,var(--background)_78%,transparent)] px-[clamp(18px,5vw,64px)] pb-6 pt-3.5">
+    <div className="w-full min-w-0 bg-[linear-gradient(to_top,var(--background)_78%,transparent)] px-3 pt-2 pb-3 sm:px-6 sm:pt-3.5 sm:pb-6 lg:px-8">
       <div className="mx-auto flex min-h-16 max-w-[820px] items-center justify-between gap-4 rounded-2xl border border-border bg-muted/35 px-4 py-3 max-[560px]:items-stretch max-[560px]:flex-col">
         <div className="min-w-0">
           <p className="font-medium text-sm">Subagent session 無法直接輸入</p>

@@ -59,6 +59,7 @@ export type WorkspaceMessage = {
   role: "user" | "agent"
   title?: string
   body: string
+  reasoning?: string
   plan?: PlanStep[]
   createdAt?: number
   modelLabel?: string
