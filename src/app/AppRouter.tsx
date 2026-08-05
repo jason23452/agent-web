@@ -11,6 +11,7 @@ import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/app/AppTopbar"
 import { ChatComposer, SubagentComposerNotice } from "@/shared/components/layout/context/ChatComposer"
+import { listOpenCodeCommands, type OpenCodeRuntimeCommand } from "@/shared/api/opencodeCommands"
 import { getProjectRouteName, getRoutePath } from "@/shared/utils/appRouterUtils"
 import { useAppNavigation } from "@/shared/hooks/useAppNavigation"
 import { useProjectContextFiles } from "@/shared/hooks/useProjectContextFiles"
@@ -35,6 +36,7 @@ export function AppRouter() {
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
   const [pinContext, setPinContext] = useState<PinContext | null>(null)
   const [disabledOpenCodeModelKeys, setDisabledOpenCodeModelKeys] = useState<string[]>([])
+  const [openCodeCommandState, setOpenCodeCommandState] = useState<{ commands: OpenCodeRuntimeCommand[]; directory: string } | null>(null)
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null)
   const [selectedThinkingVariant, setSelectedThinkingVariant] = useState("default")
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -75,6 +77,7 @@ export function AppRouter() {
   const disabledOpenCodeModelKeySet = new Set(disabledOpenCodeModelKeys)
   const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
+  const openCodeCommands = openCodeCommandState?.directory === activeProjectPath ? openCodeCommandState.commands : []
   const {
     attachments: chatAttachments,
     cancelMessage,
@@ -90,6 +93,7 @@ export function AppRouter() {
     activeAgent,
     activeProjectPath,
     activeSessionId,
+    commands: openCodeCommands,
     emptyAgentId: "no-primary-agent",
     onSessionCreated: syncCreatedSessionRoute,
     reloadContextFileTree,
@@ -99,6 +103,22 @@ export function AppRouter() {
     setOpenCodeSessions,
     setProjectSessions,
   })
+  useEffect(() => {
+    const controller = new AbortController()
+    if (!activeProjectPath) return () => controller.abort()
+
+    void listOpenCodeCommands(activeProjectPath, { signal: controller.signal })
+      .then((commands) => {
+        if (!controller.signal.aborted) setOpenCodeCommandState({ commands, directory: activeProjectPath })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setOpenCodeCommandState({ commands: [], directory: activeProjectPath })
+      })
+
+    return () => controller.abort()
+  }, [activeProjectPath])
+
+  const commandCompletionOptions = openCodeCommands.map(({ description, name }) => ({ description, name }))
   const thinkingVariants = buildThinkingVariantOptions(selectedModel)
   const thinkingVariantKeys = thinkingVariants.map((variant) => variant.key).join("\n")
   const selectedThinkingVariantIsAvailable = thinkingVariants.some((variant) => variant.key === selectedThinkingVariant)
@@ -266,6 +286,7 @@ export function AppRouter() {
           <ChatComposer
             key={`${activeSessionId ?? "draft"}-${composerRevision}`}
             attachments={chatAttachments}
+            commands={commandCompletionOptions}
             disabled={Boolean(activeSessionId && !activeOpenCodeSession)}
             onCancel={cancelMessage}
             onUploadFiles={uploadChatFiles}

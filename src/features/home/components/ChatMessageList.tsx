@@ -1,8 +1,8 @@
-import { ArrowUpRightIcon, BotIcon, ChevronRightIcon, CircleAlertIcon, LoaderCircleIcon, WrenchIcon } from "lucide-react"
+import { ArrowUpRightIcon, BotIcon, ChevronRightIcon, CircleAlertIcon, CommandIcon, LoaderCircleIcon, WrenchIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import type { PlanStep, WorkspaceMessage } from "@/shared/types/workspace"
+import type { PlanStep, WorkspaceCommand, WorkspaceMessage } from "@/shared/types/workspace"
 import { cn } from "@/shared/utils/cn"
 
 type ChatMessageListProps = {
@@ -75,13 +75,33 @@ function MessageTools({ getSessionHref, onSelectSession, steps }: { getSessionHr
           ) : (
             <div className="flex min-h-9 min-w-0 max-w-full items-center gap-2 rounded-lg px-2 text-muted-foreground text-xs">
               <WrenchIcon aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{step.label}</span>
+              <span className="grid min-w-0 flex-1 gap-0.5">
+                <span className="truncate">{step.label}</span>
+                {step.command && <code className="truncate font-mono text-[11px] text-foreground/80" title={step.command}>{step.command}</code>}
+              </span>
               <span className={cn("shrink-0", step.status === "error" && "text-destructive")}>{getStepStatus(step)}</span>
             </div>
           )}
         </li>
       ))}
     </ul>
+  )
+}
+
+function CommandExecutionCard({ command }: { command: WorkspaceCommand }) {
+  const argumentsText = command.arguments.trim()
+  const display = `/${command.name}${argumentsText ? ` ${argumentsText}` : ""}`
+
+  return (
+    <div aria-label={`已執行 Command ${display}`} className="mb-3 flex min-w-0 max-w-full items-start gap-2 rounded-xl border border-border/70 bg-muted/30 px-3 py-2.5 text-xs" data-component="command-execution-card">
+      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-md bg-background text-foreground shadow-xs/5">
+        <CommandIcon aria-hidden="true" className="size-3.5" />
+      </span>
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="font-medium text-muted-foreground">Command</span>
+        <code className="max-h-16 min-w-0 overflow-hidden whitespace-pre-wrap break-words font-mono text-foreground" title={display}>{display}</code>
+      </span>
+    </div>
   )
 }
 
@@ -187,6 +207,7 @@ export function ChatMessageList({ error, getSessionHref, loading, messages, onSe
                   {message.status === "error" && <span className="shrink-0 text-destructive">失敗</span>}
                   {message.modelLabel && <span className="ml-auto hidden truncate font-mono text-muted-foreground sm:block">{message.modelLabel}</span>}
                 </header>
+                {message.command && <CommandExecutionCard command={message.command} />}
                 {message.reasoning && <ReasoningDetails content={message.reasoning} streaming={message.status === "streaming"} />}
                 {message.body && <MarkdownMessage className="text-foreground">{message.body}</MarkdownMessage>}
                 {message.plan && message.plan.length > 0 && <MessageTools getSessionHref={getSessionHref} onSelectSession={onSelectSession} steps={message.plan} />}

@@ -50,10 +50,16 @@ export type FileNode = {
 export type PlanStep = {
   agentLabel?: string
   childSessionId?: string
+  command?: string
   id: string
   kind: "task" | "tool"
   label: string
   status: "done" | "error" | "running" | "pending"
+}
+
+export type WorkspaceCommand = {
+  arguments: string
+  name: string
 }
 
 export type WorkspaceMessage = {
@@ -63,6 +69,7 @@ export type WorkspaceMessage = {
   body: string
   reasoning?: string
   plan?: PlanStep[]
+  command?: WorkspaceCommand
   createdAt?: number
   modelLabel?: string
   status?: "complete" | "error" | "streaming"

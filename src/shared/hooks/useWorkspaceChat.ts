@@ -2,13 +2,14 @@ import { startTransition, useCallback, useEffect, useRef, useState } from "react
 import type { Dispatch, SetStateAction } from "react"
 import { createOrUpdateProjectFile } from "@/features/workspace/api/files"
 import { createProjectSession, toWorkspaceSession } from "@/features/workspace/api/sessions"
-import { abortSession, applyOpenCodeMessageEvent, listSessionMessages, sendSessionPrompt, toWorkspaceMessages } from "@/features/workspace/api/messages"
+import { abortSession, applyOpenCodeMessageEvent, listSessionMessages, parseSessionCommand, sendSessionCommand, sendSessionPrompt, toWorkspaceMessages } from "@/features/workspace/api/messages"
 import type { OpenCodeMessageEvent, OpenCodeSessionMessage } from "@/features/workspace/api/messages"
 import { consumeOpenCodeEvents, type OpenCodeEvent } from "@/shared/api/opencodeEvents"
+import type { OpenCodeRuntimeCommand } from "@/shared/api/opencodeCommands"
 import { getApiErrorMessage } from "@/shared/api"
 import { getProjectRouteName, readFileAsBase64 } from "@/shared/utils/appRouterUtils"
 import { preparePlatformExtensionAttachment } from "@/shared/extensions/platformExtensionRuntime"
-import type { Agent, Attachment, ModelOption, PinContext, Session, WorkspaceMessage } from "@/shared/types/workspace"
+import type { Agent, Attachment, ModelOption, PinContext, Session, WorkspaceCommand, WorkspaceMessage } from "@/shared/types/workspace"
 import type { OpenCodeSession } from "@/features/workspace/api/sessions"
 
 function formatAttachmentSize(size: number) {
@@ -38,6 +39,17 @@ function getSessionError(properties: Record<string, unknown>) {
   if (!isRecord(error) || !("data" in error)) return undefined
   const data = error.data
   return isRecord(data) && typeof data.message === "string" ? data.message : undefined
+}
+
+function getCommandExecution(properties: Record<string, unknown>) {
+  if (typeof properties.messageID !== "string" || typeof properties.name !== "string" || typeof properties.arguments !== "string") return null
+  return {
+    messageID: properties.messageID,
+    command: {
+      arguments: properties.arguments,
+      name: properties.name,
+    } satisfies WorkspaceCommand,
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,6 +88,7 @@ type UseWorkspaceChatOptions = {
   activeAgent: Agent
   activeProjectPath: string | null
   activeSessionId: string | null
+  commands: OpenCodeRuntimeCommand[]
   emptyAgentId: string
   onSessionCreated?: (sessionID: string) => void
   reloadContextFileTree: () => void
@@ -90,6 +103,7 @@ export function useWorkspaceChat({
   activeAgent,
   activeProjectPath,
   activeSessionId,
+  commands,
   emptyAgentId,
   onSessionCreated,
   reloadContextFileTree,
@@ -109,6 +123,7 @@ export function useWorkspaceChat({
   const abortInFlightRef = useRef(false)
   const eventRevisionRef = useRef(0)
   const openCodeMessagesRef = useRef<OpenCodeSessionMessage[]>([])
+  const commandExecutionsRef = useRef(new Map<string, WorkspaceCommand>())
   const promptControllerRef = useRef<AbortController | null>(null)
   const sendingSessionRef = useRef<string | null>(null)
   const cancelledSessionRef = useRef<string | null>(null)
@@ -127,7 +142,7 @@ export function useWorkspaceChat({
 
   const commitMessages = useCallback((messages: OpenCodeSessionMessage[]) => {
     openCodeMessagesRef.current = messages
-    startTransition(() => setWorkspaceMessages(toWorkspaceMessages(messages)))
+    startTransition(() => setWorkspaceMessages(toWorkspaceMessages(messages, commandExecutionsRef.current)))
   }, [])
 
   const clearSnapshotTimeout = useCallback(() => {
@@ -273,6 +288,14 @@ export function useWorkspaceChat({
         }
       }
 
+      if (sessionID === currentSessionID && payload.type === "command.executed") {
+        const execution = getCommandExecution(properties)
+        if (execution) {
+          commandExecutionsRef.current.set(execution.messageID, execution.command)
+          commitMessages(openCodeMessagesRef.current)
+        }
+      }
+
       if (payload.type === "session.status" && sessionID === currentSessionID) {
         const status = getSessionStatus(properties)
         if (status && status !== "idle") {
@@ -376,6 +399,7 @@ export function useWorkspaceChat({
     activeSessionRef.current = null
     eventRevisionRef.current += 1
     openCodeMessagesRef.current = []
+    commandExecutionsRef.current.clear()
     sendingSessionRef.current = null
     cancelledSessionRef.current = null
     reconciledSessionRef.current = null
@@ -398,6 +422,14 @@ export function useWorkspaceChat({
       selectedAttachments.length > 0 ? `\n\nReferenced project files:\n${selectedAttachments.map((attachment) => `- ${attachment.path ?? attachment.name}`).join("\n")}` : "",
     ].filter(Boolean).join("")
     if (!promptText.trim()) return false
+    const command = parseSessionCommand(text.trim(), commands)
+    const commandArguments = command
+      ? [
+          command.arguments,
+          context ? `Context: ${context.label}\n${context.text}` : "",
+          selectedAttachments.length > 0 ? `Referenced project files:\n${selectedAttachments.map((attachment) => `- ${attachment.path ?? attachment.name}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")
+      : ""
     if (abortInFlightRef.current || sendInFlightRef.current || sendingSessionRef.current) return false
 
     const controller = new AbortController()
@@ -422,11 +454,28 @@ export function useWorkspaceChat({
         onSessionCreated?.(sessionID)
       }
       sendingSessionRef.current = sessionID
-      await sendSessionPrompt(sessionID, activeProjectPath, {
-        agent: activeAgent.id === emptyAgentId ? undefined : activeAgent.id,
-        model: selectedModel ? { modelID: selectedModel.id, providerID: selectedModel.providerID, ...(selectedThinkingVariant !== "default" ? { variant: selectedThinkingVariant } : {}) } : undefined,
-        text: promptText,
-      }, { signal: controller.signal })
+      if (command) {
+        const response = await sendSessionCommand(sessionID, activeProjectPath, {
+          agent: activeAgent.id === emptyAgentId ? undefined : activeAgent.id,
+          arguments: commandArguments,
+          command: command.name,
+          model: selectedModel ? `${selectedModel.providerID}/${selectedModel.id}` : undefined,
+          variant: selectedThinkingVariant !== "default" ? selectedThinkingVariant : undefined,
+        }, { signal: controller.signal })
+        if (response.info.id) {
+          commandExecutionsRef.current.set(response.info.id, {
+            arguments: commandArguments,
+            name: command.name,
+          })
+          commitMessages(openCodeMessagesRef.current)
+        }
+      } else {
+        await sendSessionPrompt(sessionID, activeProjectPath, {
+          agent: activeAgent.id === emptyAgentId ? undefined : activeAgent.id,
+          model: selectedModel ? { modelID: selectedModel.id, providerID: selectedModel.providerID, ...(selectedThinkingVariant !== "default" ? { variant: selectedThinkingVariant } : {}) } : undefined,
+          text: promptText,
+        }, { signal: controller.signal })
+      }
       if (controller.signal.aborted) return false
       if (activeProjectRef.current !== activeProjectPath || activeSessionRef.current !== sessionID) return false
       setAttachments([])
@@ -447,7 +496,7 @@ export function useWorkspaceChat({
       sendInFlightRef.current = false
       if (promptControllerRef.current === controller) promptControllerRef.current = null
     }
-  }, [activeAgent.id, activeProjectPath, activeSessionId, clearSnapshotTimeout, commitMessages, emptyAgentId, loadWorkspaceMessages, onSessionCreated, selectedModel, selectedThinkingVariant, setActiveSessionId, setOpenCodeSessions, setProjectSessions])
+  }, [activeAgent.id, activeProjectPath, activeSessionId, clearSnapshotTimeout, commands, commitMessages, emptyAgentId, loadWorkspaceMessages, onSessionCreated, selectedModel, selectedThinkingVariant, setActiveSessionId, setOpenCodeSessions, setProjectSessions])
 
   const cancelMessage = useCallback(async () => {
     if (abortInFlightRef.current) return

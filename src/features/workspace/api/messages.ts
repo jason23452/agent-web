@@ -1,5 +1,5 @@
 import { apiRequest, type ApiRequestConfig } from "@/shared/api"
-import type { PlanStep, WorkspaceMessage } from "@/shared/types/workspace"
+import type { PlanStep, WorkspaceCommand, WorkspaceMessage } from "@/shared/types/workspace"
 
 export type OpenCodeMessageInfo = {
   agent?: string
@@ -54,6 +54,14 @@ export type PromptBody = {
   text: string
 }
 
+export type CommandBody = {
+  agent?: string
+  arguments: string
+  command: string
+  model?: string
+  variant?: string
+}
+
 export function listSessionMessages(sessionID: string, directory: string, config?: ApiRequestConfig) {
   return apiRequest<OpenCodeSessionMessage[]>(`/bff/sessions/${encodeURIComponent(sessionID)}/messages`, {
     ...config,
@@ -68,6 +76,30 @@ export function sendSessionPrompt(sessionID: string, directory: string, body: Pr
     method: "POST",
     query: { ...config?.query, directory },
   })
+}
+
+export function sendSessionCommand(sessionID: string, directory: string, body: CommandBody, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeSessionMessage>(`/bff/sessions/${encodeURIComponent(sessionID)}/command`, {
+    ...config,
+    body,
+    method: "POST",
+    query: { ...config?.query, directory },
+  })
+}
+
+export function parseSessionCommand(text: string, commands: ReadonlyArray<{ name: string }>): WorkspaceCommand | null {
+  const firstLineEnd = text.indexOf("\n")
+  const firstLine = firstLineEnd === -1 ? text : text.slice(0, firstLineEnd)
+  const match = /^\/([^\s]+)(?:[ \t]+(.*))?$/.exec(firstLine)
+  const name = match?.[1]
+  if (!name || !commands.some((command) => command.name === name)) return null
+
+  const firstLineArguments = match[2]?.trim() ?? ""
+  const rest = firstLineEnd === -1 ? "" : text.slice(firstLineEnd + 1).trim()
+  return {
+    arguments: [firstLineArguments, rest].filter(Boolean).join("\n"),
+    name,
+  }
 }
 
 export function abortSession(sessionID: string, directory: string, config?: ApiRequestConfig) {
@@ -149,7 +181,7 @@ export function applyOpenCodeMessageEvent(messages: OpenCodeSessionMessage[], ev
   return messages
 }
 
-export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): WorkspaceMessage[] {
+export function toWorkspaceMessages(messages: OpenCodeSessionMessage[], commandExecutions: ReadonlyMap<string, WorkspaceCommand> = new Map()): WorkspaceMessage[] {
   return messages.map((message) => {
     const bodyParts = message.parts.flatMap((part) => {
       if (part.type === "text" && part.text?.trim()) return [part.text]
@@ -167,6 +199,7 @@ export function toWorkspaceMessages(messages: OpenCodeSessionMessage[]): Workspa
 
     return {
       body,
+      command: commandExecutions.get(message.info.id),
       createdAt: message.info.time?.created,
       id: message.info.id,
       modelLabel: (message.info.providerID ?? message.info.model?.providerID) && (message.info.modelID ?? message.info.model?.modelID)
@@ -192,6 +225,11 @@ function buildPlan(parts: OpenCodeMessagePart[]): PlanStep[] | undefined {
     ...(part.tool === "task" && typeof part.state?.metadata?.sessionId === "string"
       ? { childSessionId: part.state.metadata.sessionId }
       : {}),
+    ...(typeof part.state?.input?.command === "string"
+      ? { command: part.state.input.command }
+      : typeof part.state?.metadata?.command === "string"
+        ? { command: part.state.metadata.command }
+        : {}),
     id: part.id ?? `${part.tool ?? "tool"}-${index}`,
     kind: part.tool === "task" ? "task" : "tool",
     label: part.state?.title || part.tool || "工具呼叫",
