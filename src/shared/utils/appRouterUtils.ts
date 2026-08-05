@@ -4,7 +4,7 @@ import { HOME_ROUTE_PATH } from "@/features/home/router"
 import { WORKSPACE_ROUTE_PATH } from "@/features/workspace/router"
 import { WORKFLOWS_ROUTE_PATH } from "@/features/workflows/constants"
 import { EXTENSION_ROUTE_SEGMENT } from "@/features/extensions/constants"
-import { getFileTypeByName, listProjectFiles } from "@/features/workspace/api/files"
+import { getFileTypeByName, listProjectFileTree } from "@/features/workspace/api/files"
 import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus } from "@/shared/api/opencodeRuntime"
 import type { OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
 import { type OpenCodeProjectFileNode } from "@/features/workspace/api/files"
@@ -165,55 +165,28 @@ function sortWorkspaceFiles(first: OpenCodeProjectFileNode, second: OpenCodeProj
 }
 
 export async function buildWorkspaceFileTree(directory: string, signal: AbortSignal): Promise<FileTreeNode[]> {
-  const cache = new Map<string, OpenCodeProjectFileNode[]>()
+  const entries = await listProjectFileTree(directory, { signal })
 
-  async function listDirectory(path: string) {
-    const normalizedPath = normalizeDirectoryInput(path)
-
-    if (cache.has(normalizedPath)) return cache.get(normalizedPath) ?? []
-
-    const next = await listProjectFiles(directory, normalizedPath, { signal })
-    const filtered = next
+  function buildNodes(items: OpenCodeProjectFileNode[]): FileTreeNode[] {
+    return items
       .filter((item) => !item.ignored)
       .slice()
       .sort(sortWorkspaceFiles)
-
-    cache.set(normalizedPath, filtered)
-
-    return filtered
-  }
-
-  async function buildNodes(path: string): Promise<FileTreeNode[]> {
-    const entries = await listDirectory(path)
-
-    return Promise.all(
-      entries.map(async (entry) => {
-        const candidatePath = entry.path || entry.absolute || (path === "." ? entry.name : `${path}/${entry.name}`)
-        const queryPath = toRelativePath(directory, candidatePath)
-
-        if (entry.type === "directory") {
-          const children = await buildNodes(queryPath)
-
-          return {
-            id: toFileTreeId(directory, entry, queryPath),
-            name: entry.name,
-            type: "folder",
-            path: queryPath,
-            children,
-          } satisfies FileTreeNode
-        }
+      .map((entry) => {
+        const candidatePath = entry.path || entry.absolute || entry.name
+        const queryPath = normalizeDirectoryInput(toRelativePath(directory, candidatePath))
 
         return {
           id: toFileTreeId(directory, entry, queryPath),
           name: entry.name,
           path: queryPath,
-          type: getFileTypeByName(entry.name),
+          type: entry.type === "directory" ? "folder" : getFileTypeByName(entry.name),
+          ...(entry.type === "directory" ? { children: buildNodes(entry.children ?? []) } : {}),
         } satisfies FileTreeNode
-      }),
-    )
+      })
   }
 
-  return buildNodes(".")
+  return buildNodes(entries)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,6 +3,7 @@ import type { FileType } from "@/shared/types/workspace"
 
 export type OpenCodeProjectFileNode = {
   absolute: string
+  children?: OpenCodeProjectFileNode[]
   ignored: boolean
   name: string
   path: string
@@ -42,6 +43,16 @@ export function listProjectFiles(directory: string, path: string, config?: ApiRe
       ...config?.query,
       directory,
       path,
+    },
+  })
+}
+
+export function listProjectFileTree(directory: string, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeProjectFileNode[]>("/bff/files/tree", {
+    ...config,
+    query: {
+      ...config?.query,
+      directory,
     },
   })
 }
