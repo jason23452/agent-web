@@ -25,7 +25,7 @@ export type ExtensionHost = {
   hostVersion: string
   api: {
     readProjectFile: (path: string) => Promise<unknown>
-    writeProjectFile: (input: { content: string; encoding?: "base64"; path: string }) => Promise<void>
+    writeProjectFile: (input: { content: string; encoding?: "base64"; overwrite?: boolean; path: string }) => Promise<void>
     executeAgentPrompt: (input: ExtensionAgentPromptInput) => Promise<unknown>
   }
   ui: {
@@ -132,7 +132,7 @@ export function createExtensionHost(
           content: input.content,
           directory: projectPath,
           ...(input.encoding ? { encoding: input.encoding } : {}),
-          overwrite: true,
+          overwrite: input.overwrite ?? true,
           path: input.path,
         }, { signal })
       },
