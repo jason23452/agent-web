@@ -163,7 +163,7 @@ export function PluginSkillModal({
             }
           : undefined
       }
-      bodyClassName="p-0"
+      bodyClassName="min-w-0 p-0"
       closeAriaLabel="關閉外掛與技能設定"
        description={<>Plugin {plugins.length} · Skill {skillSettings.length}</>}
        footer={!projectRequired && (
@@ -210,7 +210,8 @@ export function PluginSkillModal({
         }
       }}
        open={open}
-       panelClassName="h-[min(86dvh,640px)]"
+        maxWidth="max-w-[960px]"
+        panelClassName="h-[min(86dvh,640px)]"
       title={
          view === "edit-skill"
            ? "編輯 Skill"
@@ -223,7 +224,7 @@ export function PluginSkillModal({
             : "外掛/技能"
       }
     >
-       <div className="grid min-h-[420px] min-w-0 flex-1 content-start gap-5 overflow-y-auto px-6 pb-6">
+        <div className="grid min-h-[420px] min-w-0 w-full flex-1 content-start gap-5 overflow-y-auto px-6 pb-6">
          {view === "list" ? (
            <>
               <div className="grid grid-cols-2 rounded-lg bg-muted p-1">
@@ -258,8 +259,8 @@ export function PluginSkillModal({
                 <>
               {tab === "plugins" && pluginConfigMode === "document" ? (
               <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <button className="text-muted-foreground text-xs hover:text-foreground" onClick={() => onPluginConfigModeChange("interface")} type="button">
                       返回 Plugin 清單
                     </button>

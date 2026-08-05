@@ -35,7 +35,7 @@ export function PluginsList({
   onTogglePluginProject,
 }: PluginsListProps) {
   return (
-    <section className="grid gap-2" aria-labelledby="plugins-settings-title">
+    <section className="grid min-w-0 gap-2" aria-labelledby="plugins-settings-title">
       <div className="flex items-center justify-between gap-3 px-1">
         <h3 className="font-semibold text-muted-foreground text-xs uppercase tracking-wide" id="plugins-settings-title">
           已設定 Plugin
@@ -44,10 +44,10 @@ export function PluginsList({
           {plugins.length}
         </Badge>
       </div>
-      <ul className="grid gap-1">
+      <ul className="grid min-w-0 gap-1">
         {filteredPlugins.map((plugin) => (
-          <li className="rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent" key={plugin.id}>
-            <div className="group flex w-full items-start gap-3">
+          <li className="min-w-0 rounded-lg bg-muted/55 px-3 py-3 transition-colors hover:bg-accent" key={plugin.id}>
+            <div className="group flex min-w-0 w-full flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate font-semibold text-sm">{plugin.name}</span>
@@ -64,11 +64,11 @@ export function PluginsList({
                   </p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
                 {plugin.installTarget === "global" && onTogglePluginProject && (
-                  <label className="flex items-center gap-2 text-muted-foreground text-xs">
+                  <label className="flex min-w-0 max-w-full items-center gap-2 text-muted-foreground text-xs">
                     <Checkbox checked={plugin.useInProject !== false} onCheckedChange={(checked) => onTogglePluginProject(plugin, checked === true)} />
-                    <span className="whitespace-nowrap">此 Project 使用 Global Plugin</span>
+                    <span className="min-w-0">此 Project 使用 Global Plugin</span>
                   </label>
                 )}
               <Menu>
@@ -114,7 +114,7 @@ export function SkillsList({
   skillSettings,
 }: SkillsListProps) {
   return (
-    <section className="grid gap-2" aria-labelledby="skills-settings-title">
+    <section className="grid min-w-0 gap-2" aria-labelledby="skills-settings-title">
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-semibold text-sm" id="skills-settings-title">
           Skills
@@ -123,51 +123,69 @@ export function SkillsList({
           {skillSettings.filter((skill) => skill.enabled).length} enabled
         </Badge>
       </div>
-      <ul className="grid gap-2">
+      <ul className="grid min-w-0 gap-2">
         {filteredSkillSettings.map((skill) => (
           <li
-            className="flex items-start justify-between gap-3 rounded-lg bg-muted/55 px-4 py-3"
+            className="grid min-w-0 gap-4 rounded-lg bg-muted/55 px-4 py-4"
             key={skill.id}
           >
-            <div className="min-w-0">
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                <span className="truncate font-semibold text-sm">{skill.name}</span>
-                <Badge size="sm" variant={skill.enabled ? "success" : "secondary"}>
-                  {skill.enabled ? "enabled" : "disabled"}
-                </Badge>
-                <Badge size="sm" variant="outline">
-                  {skill.scope}
-                </Badge>
-                {skill.installTarget && (
-                  <Badge size="sm" variant="info">
-                    {skill.installTarget}
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate font-semibold text-sm">{skill.name}</span>
+                  <Badge size="sm" variant={skill.enabled ? "success" : "secondary"}>
+                    {skill.enabled ? "enabled" : "disabled"}
                   </Badge>
-                )}
-              </div>
-              <p className="mt-1 text-muted-foreground text-xs leading-5">
-                {skill.description}
-              </p>
-              {skill.archiveName && (
-                <p className="mt-1 truncate text-muted-foreground text-xs">
-                  Archive: {skill.archiveName}
+                  <Badge size="sm" variant="outline">
+                    {skill.scope}
+                  </Badge>
+                  {skill.installTarget && (
+                    <Badge size="sm" variant="info">
+                      {skill.installTarget}
+                    </Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-muted-foreground text-xs leading-5">
+                  {skill.description}
                 </p>
-              )}
-              <p className="mt-1 truncate font-mono text-muted-foreground text-xs">
-                {skill.path}
-              </p>
+                {skill.archiveName && (
+                  <p className="mt-1 truncate text-muted-foreground text-xs">
+                    Archive: {skill.archiveName}
+                  </p>
+                )}
+                <p className="mt-1 truncate font-mono text-muted-foreground text-xs">
+                  {skill.path}
+                </p>
+              </div>
+              <Menu>
+                <MenuTrigger
+                  aria-label={`${skill.name} 操作`}
+                  className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <MoreHorizontalIcon aria-hidden="true" className="size-4" />
+                </MenuTrigger>
+                <MenuPopup align="end" className="min-w-32">
+                  {!skill.inherited && (
+                    <MenuItem onClick={() => onToggleSkill(skill.id)}>
+                      {skill.enabled ? "停用" : "啟用"}
+                    </MenuItem>
+                  )}
+                  {onEditSkill && <MenuItem onClick={() => onEditSkill(skill)}>編輯</MenuItem>}
+                  {onDeleteSkill && (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem onClick={() => onDeleteSkill(skill)} variant="destructive">刪除</MenuItem>
+                    </>
+                  )}
+                </MenuPopup>
+              </Menu>
             </div>
-            {skill.inherited && onToggleGlobalSkill ? (
-              <label className="flex shrink-0 items-center gap-2 text-xs">
+            {skill.inherited && onToggleGlobalSkill && (
+              <label className="flex min-w-0 max-w-full items-center gap-2 border-border/60 border-t pt-3 text-xs">
                 <Checkbox checked={skill.enabled} onCheckedChange={(checked) => onToggleGlobalSkill(skill, checked === true)} />
-                <span>此 Project 使用 Global Skill</span>
+                <span className="min-w-0 break-words">此 Project 使用 Global Skill</span>
               </label>
-            ) : (
-              <Button onClick={() => onToggleSkill(skill.id)} size="sm" variant={skill.enabled ? "outline" : "secondary"}>
-                {skill.enabled ? "停用" : "啟用"}
-              </Button>
             )}
-            {onEditSkill && <Button onClick={() => onEditSkill(skill)} size="sm" variant="ghost">編輯</Button>}
-            {onDeleteSkill && <Button onClick={() => onDeleteSkill(skill)} size="sm" variant="ghost">刪除</Button>}
           </li>
         ))}
       </ul>
@@ -306,9 +324,9 @@ export function SkillEditorForm({ files, name, onCancel, onFileChange, onScopeCh
   }
 
   return (
-    <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+    <div className="grid min-w-0 gap-4 rounded-xl bg-muted/35 p-5">
       <div>
-        <h3 className="font-semibold text-sm">編輯 Skill：{name}</h3>
+        <h3 className="break-words font-semibold text-sm">編輯 Skill：{name}</h3>
         <p className="mt-1 text-muted-foreground text-xs">可編輯 Skill 目錄內的所有文字檔案，儲存時會保留整個目錄。</p>
       </div>
       <label className="grid gap-1 text-muted-foreground text-xs">編輯 scope
@@ -373,7 +391,7 @@ export function AddPluginForm({
   editorMode,
 }: AddPluginFormProps) {
   return (
-    <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+    <div className="grid min-w-0 gap-4 rounded-xl bg-muted/35 p-5">
       <div className="grid gap-1">
         <h3 className="font-semibold text-sm">
           {editorMode === "view" ? "檢視 Plugin" : editorMode === "edit" ? "編輯 Plugin" : "新增 Plugin"}
@@ -507,7 +525,7 @@ export function AddPluginForm({
       </label>
       {installResult && (
         <div
-          className={`rounded-md border px-3 py-2 text-xs ${installResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
+          className={`break-words rounded-md border px-3 py-2 text-xs ${installResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
         >
           {installResult.message}
         </div>
@@ -547,7 +565,7 @@ export function AddSkillForm({
   currentProjectName,
 }: AddSkillFormProps) {
   return (
-    <div className="grid gap-4 rounded-xl bg-muted/35 p-5">
+    <div className="grid min-w-0 gap-4 rounded-xl bg-muted/35 p-5">
       <div className="grid gap-1">
         <h3 className="font-semibold text-sm">新增 Skill</h3>
         <p className="text-muted-foreground text-xs leading-5">
@@ -645,7 +663,7 @@ export function AddSkillForm({
       )}
       {installResult && (
         <div
-          className={`rounded-md border px-3 py-2 text-xs ${installResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
+          className={`break-words rounded-md border px-3 py-2 text-xs ${installResult.status === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}
         >
           {installResult.message}
         </div>
