@@ -158,13 +158,22 @@ export function AppRouter() {
     navigateToRoute({ name: "workspace" }, { replace: true })
   }, [navigateToRoute, route.name, workflowProjectName])
 
+  useEffect(() => {
+    if (route.name !== "extension" || (route.extensionId !== "open-design" && route.extensionId !== "opendesign")) return
+    const canonicalRoute = { ...route, extensionId: "open-design" as const }
+    const canonicalPath = getRoutePath(canonicalRoute)
+    if (`${window.location.pathname}${window.location.search}` !== canonicalPath) {
+      navigateToRoute(canonicalRoute, { replace: true })
+    }
+  }, [navigateToRoute, route])
+
   const deleteProject = useCallback((project: Parameters<typeof deleteWorkspaceProject>[0]) => {
     return deleteWorkspaceProject(project, getProjectRouteName(project.path), route)
   }, [deleteWorkspaceProject, route])
 
   const openExtension = useCallback((extensionId: string) => {
-    if (checkedProjectName) navigateToExtension(checkedProjectName, extensionId)
-  }, [checkedProjectName, navigateToExtension])
+    if (checkedProjectName) navigateToRoute({ name: "extension", extensionId, projectName: checkedProjectName })
+  }, [checkedProjectName, navigateToRoute])
 
   const closeExtension = useCallback(() => {
     if (route.name !== "extension") return

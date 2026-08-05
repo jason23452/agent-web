@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ExternalLinkIcon } from "lucide-react";
 import { getApiErrorMessage } from "@/shared/api";
 import {
   listPlatformExtensions,
@@ -7,12 +8,7 @@ import {
   PLATFORM_EXTENSIONS_CHANGED_EVENT,
   type PlatformExtension,
 } from "@/shared/api/platformExtensions";
-import {
-  createExtensionHost,
-  type ExtensionActionHandle,
-  type ExtensionModule,
-  type ExtensionRuntime,
-} from "@/shared/extensions/platformExtensionRuntime";
+import { createExtensionHost, type ExtensionModule, type ExtensionRuntime } from "@/shared/extensions/platformExtensionRuntime";
 
 export function ExtensionHostActions({
   onOpenExtension,
@@ -24,6 +20,7 @@ export function ExtensionHostActions({
   projectPath?: string | null;
 }) {
   const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!projectName || !projectPath) return;
@@ -46,99 +43,61 @@ export function ExtensionHostActions({
     };
   }, [projectName, projectPath]);
 
+  const xmindInstalled = extensions.some((extension) => canonicalExtensionId(extension.extensionId ?? extension.id) === "xmind");
+  if (!xmindInstalled) return null;
+
   return (
-    <>
-      {extensions.map((extension) => {
-        const extensionId = canonicalExtensionId(extension.extensionId ?? extension.id);
-        return (
-          <ExtensionHostAction
-            extensionId={extensionId}
-            key={`${extensionId}:${extension.installedAt ?? extension.version ?? ""}`}
-            onOpenEditor={() => onOpenExtension(extensionId)}
-            projectName={projectName}
-            projectPath={projectPath}
-          />
-        );
-      })}
-    </>
+    <div className="relative inline-flex">
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label="開啟已安裝的擴充套件"
+        className="xmind-context-action-button grid size-8 place-items-center rounded-lg border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => setOpen((value) => !value)}
+        title="已安裝的擴充套件"
+        type="button"
+      >
+        <svg aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+          <circle cx="6" cy="12" r="2.5" />
+          <circle cx="18" cy="6" r="2.5" />
+          <circle cx="18" cy="18" r="2.5" />
+          <path d="M8.5 11c3-1 4.2-3.2 7-4.2M8.5 13c3 1 4.2 3.2 7 4.2" />
+        </svg>
+        <span aria-hidden="true" className="absolute -right-1 -bottom-1 rounded bg-background text-[10px] leading-none">⌄</span>
+      </button>
+      {open ? (
+        <div className="absolute top-[calc(100%+8px)] right-0 z-50 min-w-56 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl" role="listbox" aria-label="已安裝的擴充套件">
+          {extensions.map((extension) => {
+            const extensionId = canonicalExtensionId(extension.extensionId ?? extension.id);
+            return (
+              <div
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-accent"
+                key={`${extensionId}:${extension.installedAt ?? extension.version ?? ""}`}
+                role="option"
+              >
+                <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold" aria-hidden="true">
+                  {extensionId === "xmind" ? "X" : extension.displayName.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{extension.displayName}</span>
+                <button
+                  aria-label={`開啟 ${extension.displayName}`}
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setOpen(false);
+                    onOpenExtension(extensionId);
+                  }}
+                  title={`開啟 ${extension.displayName}`}
+                  type="button"
+                >
+                  <ExternalLinkIcon aria-hidden="true" className="size-4" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
-}
-
-export function ExtensionHostAction({
-  extensionId,
-  onOpenEditor,
-  projectName,
-  projectPath,
-}: {
-  extensionId: string;
-  onOpenEditor: () => void;
-  projectName?: string;
-  projectPath?: string | null;
-}) {
-  const runtimeExtensionId = canonicalExtensionId(extensionId);
-  const containerRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!projectPath || !projectName) {
-      containerRef.current?.replaceChildren();
-      return;
-    }
-    const actionContainer = containerRef.current;
-    if (!actionContainer) return;
-    const stableActionContainer: HTMLSpanElement = actionContainer;
-
-    const controller = new AbortController();
-    const extensionProjectName = projectName;
-    const extensionProjectPath = projectPath;
-    let module: ExtensionModule | undefined;
-    let objectURL: string | undefined;
-    let actionHandle: ExtensionActionHandle | undefined;
-    let disposed = false;
-
-    async function loadAction() {
-      try {
-         const source = await loadPlatformExtensionFrontend(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
-        if (controller.signal.aborted || disposed) return;
-
-        objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
-        module = await import(/* @vite-ignore */ objectURL) as ExtensionModule;
-        if (controller.signal.aborted || disposed) return;
-        if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
-
-        const host = createExtensionHost(runtimeExtensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined, extensionProjectName);
-        const runtime = await module.activate(host);
-        if (controller.signal.aborted || disposed) return;
-
-        const mountAction = runtime?.contextAction?.mount;
-        if (!mountAction) return;
-        const mounted = await mountAction(stableActionContainer, {
-          openEditor: onOpenEditor,
-          projectName: extensionProjectName,
-          projectPath: extensionProjectPath,
-        });
-        if (controller.signal.aborted || disposed) {
-          mounted?.destroy?.();
-          return;
-        }
-        actionHandle = mounted ?? undefined;
-      } catch {
-        if (!controller.signal.aborted && !disposed) stableActionContainer.replaceChildren();
-      }
-    }
-
-    void loadAction();
-
-    return () => {
-      disposed = true;
-      controller.abort();
-      actionHandle?.destroy?.();
-      void module?.deactivate?.();
-      if (objectURL) URL.revokeObjectURL(objectURL);
-      stableActionContainer.replaceChildren();
-    };
-  }, [runtimeExtensionId, onOpenEditor, projectName, projectPath]);
-
-  return <span className="inline-flex" ref={containerRef} />;
 }
 
 export function ExtensionHostPage({
@@ -185,7 +144,9 @@ export function ExtensionHostPage({
       try {
          const [source, configuration] = await Promise.all([
            loadPlatformExtensionFrontend(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }),
-           loadPlatformExtensionConfiguration(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
+           runtimeExtensionId === "open-design" || runtimeExtensionId === "xmind"
+             ? Promise.resolve({})
+             : loadPlatformExtensionConfiguration(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
          ]);
         if (controller.signal.aborted || !containerRef.current) return;
 

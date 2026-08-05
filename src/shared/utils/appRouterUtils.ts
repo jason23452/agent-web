@@ -33,7 +33,14 @@ export function readBrowserRoute(): AppRoute {
   }
 
   if (pathname === OPEN_DESIGN_EXTENSION_ROUTE_PATH) {
-    return { extensionId: "open-design", name: "extension", projectName: "" }
+    const projectName = new URLSearchParams(window.location.search).get("project")?.trim() ?? ""
+    return { extensionId: "open-design", name: "extension", projectName }
+  }
+
+  if (pathname.startsWith("/extensions/")) {
+    const extensionId = pathname.slice("/extensions/".length).split("/")[0]
+    const projectName = new URLSearchParams(window.location.search).get("project")?.trim() ?? ""
+    if (extensionId) return { extensionId: decodeURIComponent(extensionId), name: "extension", projectName }
   }
 
   if (pathname.startsWith(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`)) {
@@ -66,7 +73,9 @@ export function getRoutePath(route: AppRoute) {
     return route.sessionId ? `${projectPath}/session/${encodeURIComponent(route.sessionId)}` : projectPath
   }
   if (route.name === "extension") {
-    if (!route.projectName && route.extensionId === "open-design") return OPEN_DESIGN_EXTENSION_ROUTE_PATH
+    const extensionId = route.extensionId === "opendesign" ? "open-design" : route.extensionId
+    if (!route.filePath && route.projectName && extensionId) return `/extensions/${encodeURIComponent(extensionId)}?project=${encodeURIComponent(route.projectName)}`
+    if (!route.filePath && !route.projectName) return `/extensions/${encodeURIComponent(extensionId)}`
     const path = `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}/${EXTENSION_ROUTE_SEGMENT}/${encodeURIComponent(route.extensionId)}`
     return route.filePath ? `${path}?file=${encodeURIComponent(route.filePath)}` : path
   }
