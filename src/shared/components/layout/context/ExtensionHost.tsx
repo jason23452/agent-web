@@ -118,7 +118,7 @@ export function ExtensionHostActions({
                 role="option"
               >
                 <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold" aria-hidden="true">
-                  {extensionId === "xmind" ? "X" : extension.displayName.slice(0, 1).toUpperCase()}
+                  {extension.displayName.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{extension.displayName}</span>
                 <button
@@ -186,9 +186,7 @@ export function ExtensionHostPage({
       try {
          const [source, configuration] = await Promise.all([
            loadPlatformExtensionFrontend(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }),
-           runtimeExtensionId === "open-design" || runtimeExtensionId === "xmind"
-             ? Promise.resolve({})
-             : loadPlatformExtensionConfiguration(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
+            loadPlatformExtensionConfiguration(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
          ]);
         if (controller.signal.aborted || !containerRef.current) return;
 
