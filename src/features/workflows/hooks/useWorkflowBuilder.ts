@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { getApiErrorMessage } from "@/shared/api"
 import { toastManager } from "@/shared/components/ui/toast"
+import { PLATFORM_EXTENSIONS_CHANGED_EVENT } from "@/shared/api/platformExtensions"
 import {
   clearNodeCache,
   createWorkflow,
@@ -93,6 +94,14 @@ export function useWorkflowBuilder(project?: string) {
       window.clearTimeout(timeoutID)
     }
   }, [loadCatalog, loadLibrary])
+
+  useEffect(() => {
+    const refreshCatalog = () => {
+      void loadCatalog()
+    }
+    window.addEventListener(PLATFORM_EXTENSIONS_CHANGED_EVENT, refreshCatalog)
+    return () => window.removeEventListener(PLATFORM_EXTENSIONS_CHANGED_EVENT, refreshCatalog)
+  }, [loadCatalog])
 
   useEffect(() => {
     if (!activeRunID || !activeRunWorkflowID || (activeRunStatus !== "queued" && activeRunStatus !== "running")) return
