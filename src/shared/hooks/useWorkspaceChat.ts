@@ -347,7 +347,7 @@ export function useWorkspaceChat({
         }
       }
 
-      if (payload.type === "file.edited") reloadContextFileTree()
+      if (payload.type === "file.edited" || payload.type === "file.watcher.updated") reloadContextFileTree()
     }, controller.signal).catch((error) => {
       if (!controller.signal.aborted) setMessagesError(getApiErrorMessage(error))
     })

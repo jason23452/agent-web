@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, readProjectFileContent } from "@/features/workspace/api/files"
 import { getApiErrorMessage } from "@/shared/api"
+import { consumeProjectFileEvents } from "@/shared/api/opencodeEvents"
 import type { FileNode } from "@/shared/types/workspace"
 import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
 import {
@@ -134,6 +135,17 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
       .finally(() => { if (!controller.signal.aborted) setContextFileTreeLoading(false) })
     return () => controller.abort()
   }, [activeProjectPath, contextFileTreeVersion])
+
+  useEffect(() => {
+    if (!activeProjectPath) return
+    const controller = new AbortController()
+    void consumeProjectFileEvents(activeProjectPath, () => {
+      triggerContextFileTreeReload()
+    }, controller.signal).catch((error: unknown) => {
+      if (!controller.signal.aborted) setContextFileTreeError(getApiErrorMessage(error))
+    })
+    return () => controller.abort()
+  }, [activeProjectPath, triggerContextFileTreeReload])
 
   return {
     contextFileTree,

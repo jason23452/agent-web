@@ -17,6 +17,23 @@ export async function consumeOpenCodeEvents(
   onEvent: (event: OpenCodeEvent) => void,
   signal: AbortSignal,
 ) {
+  return consumeEventStream("/bff/events", directory, onEvent, signal)
+}
+
+export async function consumeProjectFileEvents(
+  directory: string,
+  onEvent: (event: OpenCodeEvent) => void,
+  signal: AbortSignal,
+) {
+  return consumeEventStream("/bff/file-events", directory, onEvent, signal)
+}
+
+async function consumeEventStream(
+  endpoint: string,
+  directory: string,
+  onEvent: (event: OpenCodeEvent) => void,
+  signal: AbortSignal,
+) {
   let lastEventID = ""
   let retryDelay = 500
 
@@ -26,7 +43,7 @@ export async function consumeOpenCodeEvents(
 
     let response: Response
     try {
-      response = await fetch(buildApiUrl("/bff/events", { directory }), {
+      response = await fetch(buildApiUrl(endpoint, { directory }), {
         cache: "no-store",
         headers,
         signal,
