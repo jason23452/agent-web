@@ -8,6 +8,7 @@ import {
   PenLineIcon,
   PinIcon,
   RotateCcwIcon,
+  SaveIcon,
   SendIcon,
   UploadIcon,
   XIcon,
@@ -31,6 +32,7 @@ type AppFilePreviewDialogProps = {
   onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
+  onSaveFile?: (file: AppFilePreviewFile, content: string) => Promise<void>
   workspace?: string
 }
 
@@ -127,6 +129,7 @@ export function AppFilePreviewDialog({
   onPin,
   onLibraryUpload,
   onLocalUpload,
+  onSaveFile,
   workspace,
 }: AppFilePreviewDialogProps) {
   if (!file) return null
@@ -140,6 +143,7 @@ export function AppFilePreviewDialog({
       onPin={onPin}
       onLibraryUpload={onLibraryUpload}
       onLocalUpload={onLocalUpload}
+      onSaveFile={onSaveFile}
       workspace={workspace}
     />
   )
@@ -151,6 +155,7 @@ function AppFilePreviewDialogContent({
   onPin,
   onLibraryUpload,
   onLocalUpload,
+  onSaveFile,
   workspace,
 }: {
   file: AppFilePreviewFile
@@ -158,6 +163,7 @@ function AppFilePreviewDialogContent({
   onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
+  onSaveFile?: (file: AppFilePreviewFile, content: string) => Promise<void>
   workspace?: string
 }) {
   const isLoadingContent = file.contentLoading
@@ -171,6 +177,9 @@ function AppFilePreviewDialogContent({
   const [agentResult, setAgentResult] = useState<FilePreviewEditResult | null>(null)
   const [agentBusy, setAgentBusy] = useState(false)
   const [agentError, setAgentError] = useState<string | null>(null)
+  const [saveBusy, setSaveBusy] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [projectDirty, setProjectDirty] = useState(false)
   const [editStatus, setEditStatus] = useState("未修改")
   const [selectionPin, setSelectionPin] = useState<SelectionPin | null>(null)
   const [dialogPins, setDialogPins] = useState<AppFilePreviewPinContext[]>([])
@@ -188,6 +197,11 @@ function AppFilePreviewDialogContent({
   const draftChanged = draftContent !== savedContent
   const agentSourceContent = draftChanged ? draftContent : savedContent
   const canRunAgent = Boolean(workspace?.trim())
+    && !isLoadingContent
+    && !hasContentError
+    && file.contentType === "text"
+    && file.type !== "img"
+  const canSaveFile = Boolean(onSaveFile)
     && !isLoadingContent
     && !hasContentError
     && file.contentType === "text"
@@ -219,6 +233,7 @@ function AppFilePreviewDialogContent({
 
   function saveDraft() {
     setSavedContent(draftContent)
+    setProjectDirty(true)
     setEditStatus("已套用到預覽")
     setSelectionPin(null)
     setSelectionLineRange(null)
@@ -227,6 +242,26 @@ function AppFilePreviewDialogContent({
   function resetDraft() {
     setDraftContent(savedContent)
     setEditStatus("已還原草稿")
+  }
+
+  async function saveDraftToProject() {
+    if (!onSaveFile || !canSaveFile || (!draftChanged && !projectDirty) || saveBusy) return
+
+    setSaveBusy(true)
+    setSaveError(null)
+    try {
+      await onSaveFile(file, draftContent)
+      setSavedContent(draftContent)
+      setProjectDirty(false)
+      setEditStatus("已儲存到專案")
+      setSelectionPin(null)
+      setSelectionLineRange(null)
+    } catch (error) {
+      setSaveError(getApiErrorMessage(error))
+      setEditStatus("儲存失敗")
+    } finally {
+      setSaveBusy(false)
+    }
   }
 
   async function submitAgentPrompt() {
@@ -660,7 +695,7 @@ function AppFilePreviewDialogContent({
                       <p className="mt-1 text-muted-foreground text-xs">套用後會同步更新左側預覽。</p>
                     </div>
                     <span className={cn("rounded-md px-2 py-1 text-xs", draftChanged ? "bg-warning/10 text-warning-foreground" : "bg-success/10 text-success-foreground")}>
-                      {draftChanged ? "尚未套用" : editStatus}
+                      {draftChanged ? "尚未套用" : projectDirty ? "預覽尚未儲存" : editStatus}
                     </span>
                   </div>
 
@@ -684,7 +719,16 @@ function AppFilePreviewDialogContent({
                       <CheckIcon aria-hidden="true" />
                       套用到預覽
                     </Button>
+                    <Button disabled={!canSaveFile || (!draftChanged && !projectDirty)} loading={saveBusy} onClick={() => void saveDraftToProject()} size="sm">
+                      <SaveIcon aria-hidden="true" />
+                      {saveBusy ? "儲存中" : "儲存到專案"}
+                    </Button>
                   </div>
+                  {saveError && (
+                    <div aria-live="assertive" className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">
+                      {saveError}
+                    </div>
+                  )}
                 </section>
               </TabsPanel>
             </Tabs>

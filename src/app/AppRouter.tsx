@@ -65,6 +65,7 @@ export function AppRouter() {
     openProjectFile,
     previewFile,
     reloadContextFileTree,
+    savePreviewFile,
     setPreviewFile,
     uploadContextFiles,
   } = useProjectContextFiles({ activeProjectPath })
@@ -366,7 +367,7 @@ export function AppRouter() {
       }
     >
       {mainRoute}
-      <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} workspace={activeProjectName} />
+      <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} onSaveFile={savePreviewFile} workspace={activeProjectName} />
     </AppShell>
   )
 }

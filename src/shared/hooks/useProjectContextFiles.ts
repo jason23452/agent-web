@@ -373,6 +373,15 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     }
   }, [activeProjectPath])
 
+  const savePreviewFile = useCallback(async (file: FileNode, content: string) => {
+    if (!activeProjectPath) throw new Error("尚未啟用專案，無法儲存檔案。")
+    const path = normalizeDirectoryInput(file.path || toRelativePath(activeProjectPath, file.absolute || file.id))
+    if (!path || path === ".") throw new Error("找不到檔案路徑，無法儲存檔案。")
+
+    await createOrUpdateProjectFile({ directory: activeProjectPath, path, content, overwrite: true })
+    setContextFileTreeError(null)
+  }, [activeProjectPath])
+
   useEffect(() => {
     if (!activeProjectPath) return
     const controller = new AbortController()
@@ -414,6 +423,7 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     openProjectFile,
     previewFile,
     reloadContextFileTree: triggerContextFileTreeReload,
+    savePreviewFile,
     setPreviewFile,
     setContextFileTreeError,
     uploadContextFiles,
