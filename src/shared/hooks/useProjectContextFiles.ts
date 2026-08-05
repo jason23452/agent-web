@@ -19,6 +19,12 @@ type UseProjectContextFilesOptions = {
   activeProjectPath: string | null
 }
 
+export type ProjectFileUploadProgress = {
+  completed: number
+  currentPath: string | null
+  total: number
+}
+
 type ProjectFileChange = "add" | "change" | "unlink"
 type ProjectFileKind = "directory" | "file"
 
@@ -175,6 +181,7 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
   const [contextFileTreeError, setContextFileTreeError] = useState<string | null>(null)
   const [contextFileTreeVersion, setContextFileTreeVersion] = useState(0)
   const [contextFileTreeUploading, setContextFileTreeUploading] = useState(false)
+  const [contextFileTreeUploadProgress, setContextFileTreeUploadProgress] = useState<ProjectFileUploadProgress | null>(null)
   const contextFileTreeRef = useRef<FileTreeNode[]>([])
 
   const triggerContextFileTreeReload = useCallback(() => {
@@ -252,26 +259,36 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     if (!activeProjectPath) return
     const list = Array.from(files)
     if (list.length === 0) return
+    const targetDirectory = normalizeDirectoryInput(directory)
+    const directoryPaths = new Set<string>()
+    list.forEach((item) => {
+      const relativePath = normalizeProjectFilePath(item.relativePath)
+      const segments = relativePath.split("/").filter(Boolean)
+      const end = item.kind === "directory" ? segments.length : Math.max(0, segments.length - 1)
+      for (let index = 1; index <= end; index += 1) directoryPaths.add(segments.slice(0, index).join("/"))
+    })
+    const sortedDirectoryPaths = Array.from(directoryPaths).sort((first, second) => first.split("/").length - second.split("/").length)
+    const fileItems = list.filter((item): item is Extract<ProjectUploadEntry, { kind: "file" }> => item.kind === "file")
+    const total = Math.max(1, sortedDirectoryPaths.length + fileItems.length)
+    let completed = 0
+    const updateUploadProgress = (currentPath: string | null) => {
+      setContextFileTreeUploadProgress({ completed, currentPath, total })
+    }
+
     setContextFileTreeUploading(true)
+    updateUploadProgress(null)
 
     try {
-      const targetDirectory = normalizeDirectoryInput(directory)
-      const directoryPaths = new Set<string>()
-      list.forEach((item) => {
-        const relativePath = normalizeProjectFilePath(item.relativePath)
-        const segments = relativePath.split("/").filter(Boolean)
-        const end = item.kind === "directory" ? segments.length : Math.max(0, segments.length - 1)
-        for (let index = 1; index <= end; index += 1) directoryPaths.add(segments.slice(0, index).join("/"))
-      })
-
       const directoryResponses: Array<{ path: string } | null> = []
-      const sortedDirectoryPaths = Array.from(directoryPaths).sort((first, second) => first.split("/").length - second.split("/").length)
       for (const relativePath of sortedDirectoryPaths) {
         const path = combineRelativePath(targetDirectory, relativePath)
+        updateUploadProgress(`建立資料夾：${relativePath}`)
         const existing = await projectFileExists(activeProjectPath, path)
         if (existing.exists) {
           if (existing.type !== "directory") throw new Error(`上傳路徑不是資料夾：${path}`)
           directoryResponses.push(null)
+          completed += 1
+          updateUploadProgress(relativePath)
           continue
         }
 
@@ -281,24 +298,33 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
           if (isExistingDirectoryError(error)) directoryResponses.push(null)
           else throw error
         }
+        completed += 1
+        updateUploadProgress(relativePath)
       }
       directoryResponses.forEach((response) => {
         if (response) applyProjectFileChange(response.path, "add", "directory")
       })
 
-      const responses = await Promise.all(list.filter((item): item is Extract<ProjectUploadEntry, { kind: "file" }> => item.kind === "file").map(async (item) => createOrUpdateProjectFile({
+      const responses = await Promise.all(fileItems.map(async (item) => {
+        updateUploadProgress(`上傳檔案：${item.relativePath}`)
+        const response = await createOrUpdateProjectFile({
           directory: activeProjectPath,
           path: combineRelativePath(targetDirectory, normalizeProjectFilePath(item.relativePath)),
           content: await readFileAsBase64(item.file),
           encoding: "base64",
           overwrite: true,
-        })))
+        })
+        completed += 1
+        updateUploadProgress(item.relativePath)
+        return response
+      }))
       setContextFileTreeError(null)
       responses.forEach((response) => applyProjectFileChange(response.path, "add", "file"))
     } catch (error) {
       setContextFileTreeError(getApiErrorMessage(error))
     } finally {
       setContextFileTreeUploading(false)
+      setContextFileTreeUploadProgress(null)
     }
   }, [activeProjectPath, applyProjectFileChange])
 
@@ -380,6 +406,7 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     contextFileTreeError: activeProjectPath ? contextFileTreeError : "尚未啟用專案，請先到側邊欄開啟專案。",
     contextFileTreeLoading: activeProjectPath ? contextFileTreeLoading : false,
     contextFileTreeUploading: activeProjectPath ? contextFileTreeUploading : false,
+    contextFileTreeUploadProgress: activeProjectPath ? contextFileTreeUploadProgress : null,
     createContextProjectFile,
     createContextProjectFolder,
     deleteContextNode,

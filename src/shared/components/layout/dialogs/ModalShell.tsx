@@ -22,6 +22,7 @@ type ModalShellProps = {
   onOpenChange: (open: boolean) => void;
   open: boolean;
   panelClassName?: string;
+  showCloseButton?: boolean;
   showHeader?: boolean;
   title?: ReactNode;
   backButton?: ModalShellBackButton;
@@ -42,6 +43,7 @@ export function ModalShell({
   onOpenChange,
   open,
   panelClassName,
+  showCloseButton = true,
   showHeader = true,
   title,
 }: ModalShellProps) {
@@ -92,14 +94,16 @@ export function ModalShell({
             </div>
             <div className="flex items-center gap-1.5">
               {headerActions}
-              <button
-                aria-label={closeAriaLabel}
-                className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => onOpenChange(false)}
-                type="button"
-              >
-                <XIcon aria-hidden="true" className="size-4" />
-              </button>
+              {showCloseButton ? (
+                <button
+                  aria-label={closeAriaLabel}
+                  className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onOpenChange(false)}
+                  type="button"
+                >
+                  <XIcon aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
             </div>
           </div>
         )}

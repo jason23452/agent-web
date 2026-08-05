@@ -57,6 +57,7 @@ export function AppRouter() {
     contextFileTreeError,
     contextFileTreeLoading,
     contextFileTreeUploading,
+    contextFileTreeUploadProgress,
     createContextProjectFile,
     createContextProjectFolder,
     deleteContextNode,
@@ -254,6 +255,7 @@ export function AppRouter() {
             message={contextFileTreeError}
             projectActive={Boolean(activeProjectPath)}
             uploading={contextFileTreeUploading}
+            uploadProgress={contextFileTreeUploadProgress}
             open={contextPanelOpen}
             onClose={() => setContextPanelOpen(false)}
             extensionAction={

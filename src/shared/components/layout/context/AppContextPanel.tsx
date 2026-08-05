@@ -1,13 +1,15 @@
 import { FileIcon, FolderPlusIcon, FolderOpenIcon, PlusIcon, UploadIcon, XIcon } from "lucide-react"
-import type { ChangeEvent, ReactNode } from "react"
+import type { ChangeEvent, DragEvent, ReactNode } from "react"
 import { useRef, useState } from "react"
 import { FileTree, type FileTreeNode } from "@/shared/components/layout/context/FileTree"
-import type { ProjectUploadEntry } from "@/shared/components/layout/context/fileUpload"
+import { collectDroppedProjectFiles, type ProjectUploadEntry } from "@/shared/components/layout/context/fileUpload"
 import { Sidebar } from "@/shared/components/layout/app/Sidebar"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
+import { Progress, ProgressIndicator, ProgressTrack } from "@/shared/components/ui/progress"
 import { Skeleton } from "@/shared/components/ui/skeleton"
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell"
+import type { ProjectFileUploadProgress } from "@/shared/hooks/useProjectContextFiles"
 
 type CreateItemType = "file" | "folder"
 
@@ -17,6 +19,7 @@ type AppContextPanelProps = {
   projectActive?: boolean
   loading?: boolean
   uploading?: boolean
+  uploadProgress?: ProjectFileUploadProgress | null
   message?: string | null
   onClose: () => void
   extensionAction?: ReactNode
@@ -30,7 +33,7 @@ type AppContextPanelProps = {
   onPreviewFile: (file: FileTreeNode) => void
 }
 
-export function AppContextPanel({ fileTree, message, loading = false, uploading = false, onClose, extensionAction, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onDownloadNode, onOpenExtensionFile, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
+export function AppContextPanel({ fileTree, message, loading = false, uploading = false, uploadProgress = null, onClose, extensionAction, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onDownloadNode, onOpenExtensionFile, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
   const [createItemOpen, setCreateItemOpen] = useState(false)
   const [createItemDirectory, setCreateItemDirectory] = useState(".")
   const [createItemType, setCreateItemType] = useState<CreateItemType>("file")
@@ -59,6 +62,22 @@ export function AppContextPanel({ fileTree, message, loading = false, uploading 
     if (files.length === 0 || !onUploadFiles) return
 
     void Promise.resolve(onUploadFiles(files, uploadDirectoryRef.current)).catch(() => undefined)
+  }
+
+  function handleSidebarDragOver(event: DragEvent<HTMLElement>) {
+    if (!projectActive || !onUploadFiles || uploading) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+  }
+
+  async function handleSidebarDrop(event: DragEvent<HTMLElement>) {
+    if (!projectActive || !onUploadFiles || uploading) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    const files = await collectDroppedProjectFiles(event.dataTransfer)
+    if (files.length === 0) return
+    await onUploadFiles(files, ".")
   }
 
   function openCreateItemPanel(itemType: CreateItemType, directory = ".") {
@@ -205,6 +224,8 @@ export function AppContextPanel({ fileTree, message, loading = false, uploading 
       aria-label="Context panel"
       className={`z-40 grid min-h-dvh min-w-0 grid-rows-[auto_minmax(0,1fr)] border-border border-l bg-background transition-transform max-[1180px]:fixed max-[1180px]:inset-y-0 max-[1180px]:right-0 max-[1180px]:w-[min(360px,92vw)] max-[1180px]:shadow-[-20px_0_50px_rgb(15_23_42_/_12%)] min-[1181px]:static min-[1181px]:translate-x-0 ${open ? "max-[1180px]:translate-x-0" : "max-[1180px]:translate-x-full"}`}
       data-region="context-panel"
+      onDragOver={handleSidebarDragOver}
+      onDrop={(event) => void handleSidebarDrop(event)}
     >
       <div className="flex h-16 items-center gap-2 border-border/70 border-b px-4">
         <FolderOpenIcon aria-hidden="true" className="size-5 text-muted-foreground" />
@@ -359,6 +380,36 @@ export function AppContextPanel({ fileTree, message, loading = false, uploading 
         title="確認刪除"
       >
         <p className="text-sm">確定要刪除「{deleteNode?.name ?? ""}」嗎？此操作無法復原。</p>
+      </ModalShell>
+
+      <ModalShell
+        ariaLabel="檔案上傳進度"
+        bodyClassName="grid gap-4 px-5 py-5"
+        onOpenChange={() => undefined}
+        open={Boolean(uploadProgress)}
+        showCloseButton={false}
+        title="正在上傳檔案"
+      >
+        <div aria-live="polite" className="grid gap-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span>已處理項目</span>
+            <span className="font-mono text-xs">{uploadProgress?.completed ?? 0} / {uploadProgress?.total ?? 0}</span>
+          </div>
+          <Progress
+            aria-label="檔案上傳進度"
+            className="gap-0"
+            getAriaValueText={() => `${uploadProgress?.completed ?? 0} / ${uploadProgress?.total ?? 0}`}
+            max={uploadProgress?.total ?? 1}
+            value={uploadProgress?.completed ?? 0}
+          >
+            <ProgressTrack className="h-2 bg-muted">
+              <ProgressIndicator />
+            </ProgressTrack>
+          </Progress>
+          <p className="min-w-0 truncate text-muted-foreground text-xs" title={uploadProgress?.currentPath ?? undefined}>
+            {uploadProgress?.currentPath ?? "準備上傳..."}
+          </p>
+        </div>
       </ModalShell>
     </Sidebar>
   )
