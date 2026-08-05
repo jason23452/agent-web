@@ -4,6 +4,7 @@ import {
   HardDriveIcon,
   MailIcon,
   MonitorIcon,
+  PaletteIcon,
   PresentationIcon,
   PuzzleIcon,
   Table2Icon,
@@ -20,7 +21,7 @@ import { Badge } from "@/shared/components/ui/badge";
 import { Button } from "@/shared/components/ui/button";
 import { ModalShell } from "@/shared/components/layout/dialogs/ModalShell";
 
-export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: string }) {
+export function ExtensionsPanel({ activeProjectName, onOpenExtension }: { activeProjectName?: string; onOpenExtension?: (extensionId: string) => void }) {
   const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -143,7 +144,10 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {extensions.map((extension) => (
             <li className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-card p-4 shadow-sm" key={extension.id}>
-              <ExtensionIcon extension={extension} />
+               <ExtensionIcon
+                 extension={extension}
+                 onOpen={extension.installed && onOpenExtension ? () => onOpenExtension(extension.extensionId ?? extension.id) : undefined}
+               />
               <div className="min-w-0 flex-1">
                 <div className="flex min-w-0 items-center gap-2">
                   <h4 className="truncate font-semibold text-sm">{extension.displayName}</h4>
@@ -209,18 +213,59 @@ export function ExtensionsPanel({ activeProjectName }: { activeProjectName?: str
   );
 }
 
-function ExtensionIcon({ extension }: { extension: PlatformExtension }) {
+function ExtensionIcon({ extension, onOpen }: { extension: PlatformExtension; onOpen?: () => void }) {
   const iconClassName = "size-5";
-  const icon = extension.icon ?? (extension.packageFormat === ".aicxt" ? "mindmap" : undefined);
+  const icon = extension.extensionId === "open-design" || extension.id === "open-design"
+    ? "open-design"
+    : extension.icon ?? (extension.packageFormat === ".aicxt" ? "mindmap" : undefined);
+  const iconContent = icon === "browser"
+    ? <GlobeIcon aria-hidden="true" className={iconClassName} />
+    : icon === "computer"
+      ? <MonitorIcon aria-hidden="true" className={iconClassName} />
+      : icon === "drive"
+        ? <HardDriveIcon aria-hidden="true" className={iconClassName} />
+        : icon === "mail"
+          ? <MailIcon aria-hidden="true" className={iconClassName} />
+          : icon === "presentation"
+            ? <PresentationIcon aria-hidden="true" className={iconClassName} />
+            : icon === "spreadsheet"
+              ? <Table2Icon aria-hidden="true" className={iconClassName} />
+              : icon === "mindmap"
+                ? <GitBranchIcon aria-hidden="true" className={iconClassName} />
+                : icon === "open-design"
+                  ? <PaletteIcon aria-hidden="true" className={iconClassName} />
+                  : <PuzzleIcon aria-hidden="true" className={iconClassName} />;
+  const iconTone = icon === "browser"
+    ? "border border-border bg-background text-foreground"
+    : icon === "computer"
+      ? "bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white"
+      : icon === "drive"
+        ? "bg-blue-500/12 text-blue-600"
+        : icon === "mail"
+          ? "bg-red-500/12 text-red-600"
+          : icon === "presentation"
+            ? "bg-amber-500/15 text-amber-600"
+            : icon === "spreadsheet"
+              ? "bg-emerald-600/15 text-emerald-600"
+              : icon === "mindmap"
+                ? "bg-violet-500/15 text-violet-600"
+                : icon === "open-design"
+                  ? "bg-gradient-to-br from-slate-900 via-blue-700 to-cyan-500 text-white"
+                  : "bg-muted text-muted-foreground";
+  const iconShell = <ExtensionIconShell className={iconTone}>{iconContent}</ExtensionIconShell>;
 
-  if (icon === "browser") return <ExtensionIconShell className="border border-border bg-background text-foreground"><GlobeIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  if (icon === "computer") return <ExtensionIconShell className="bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-500 text-white"><MonitorIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  if (icon === "drive") return <ExtensionIconShell className="bg-blue-500/12 text-blue-600"><HardDriveIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  if (icon === "mail") return <ExtensionIconShell className="bg-red-500/12 text-red-600"><MailIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  if (icon === "presentation") return <ExtensionIconShell className="bg-amber-500/15 text-amber-600"><PresentationIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  if (icon === "spreadsheet") return <ExtensionIconShell className="bg-emerald-600/15 text-emerald-600"><Table2Icon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  if (icon === "mindmap") return <ExtensionIconShell className="bg-violet-500/15 text-violet-600"><GitBranchIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
-  return <ExtensionIconShell className="bg-muted text-muted-foreground"><PuzzleIcon aria-hidden="true" className={iconClassName} /></ExtensionIconShell>;
+  if (!onOpen) return iconShell;
+  return (
+    <button
+      aria-label={`開啟 ${extension.displayName}`}
+      className="shrink-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={onOpen}
+      title={`開啟 ${extension.displayName}`}
+      type="button"
+    >
+      {iconShell}
+    </button>
+  );
 }
 
 function ExtensionIconShell({ children, className }: { children: ReactNode; className: string }) {

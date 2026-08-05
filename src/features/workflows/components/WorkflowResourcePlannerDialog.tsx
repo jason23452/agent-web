@@ -16,8 +16,6 @@ export type PlannedResource = {
   config?: Record<string, unknown>
 }
 
-const DEFAULT_REQUEST = "請依 target node 類型與 Workflow graph 產出可直接套用的單一資源。預設保留目前 name 與 scope，內容必須符合對應 registry 契約，只使用直接連接的能力並採最小權限；不得加入未確認的 model、依賴或秘密。請同時檢查 frontmatter、輸入輸出、完成條件、安全限制與可執行驗證，資訊不足時明確回傳 validation.valid=false。"
-
 export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyResource: (resource: PlannedResource) => void
   onOpenChange: (open: boolean) => void
@@ -26,7 +24,7 @@ export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, o
   workflow: WorkflowV1
   workspace: string
 }) {
-  const [request, setRequest] = useState(DEFAULT_REQUEST)
+  const [request, setRequest] = useState("")
   const [result, setResult] = useState("")
   const [plannedResource, setPlannedResource] = useState<PlannedResource | null>(null)
   const [busy, setBusy] = useState(false)
@@ -55,17 +53,14 @@ export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, o
     setError(null)
     setResult("")
     setPlannedResource(null)
-    const text = [
-      `resourceType: ${resourceType}`,
-      `Target node ID: ${targetNode.id}`,
-      "使用者需求：",
-      request.trim(),
-      "",
-      "完整 target workflow JSON：",
-      JSON.stringify(workflow, null, 2),
-    ].join("\n")
+    const input = {
+      resourceType,
+      targetNodeID: targetNode.id,
+      request: request.trim(),
+      workflow,
+    }
     try {
-      const response = await runWorkflowSystemCommand(workflowID, text, controller.signal, workspace)
+      const response = await runWorkflowSystemCommand(workflowID, input, controller.signal, workspace)
       if (controller.signal.aborted) return
       setResult(response.text)
       const parsed = parsePlannerResult(response.text)
@@ -93,7 +88,7 @@ export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, o
         </DialogHeader>
         <DialogPanel className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" scrollFade={false}>
           <div className="mx-auto grid w-full max-w-3xl gap-4">
-             <label className="grid gap-1.5 text-muted-foreground text-xs">使用者需求<Textarea aria-label={`${resourceType} Writer 使用者需求`} className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} value={request} /></label>
+              <label className="grid gap-1.5 text-muted-foreground text-xs">使用者需求<Textarea aria-label={`${resourceType} Writer 使用者需求`} className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} placeholder="輸入這個 target resource 要完成的工作與限制。" value={request} /></label>
              <Button disabled={!targetNode || !workflowID || !request.trim()} loading={busy} onClick={() => void planResource()}><SparklesIcon aria-hidden="true" />{busy ? `正在撰寫 ${resourceType}...` : `執行 /${workflowCommand}`}</Button>
             {busy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />Coordinator 規劃完成後會委派專用 writer 產出資源 JSON。</div>}
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{error}</div>}

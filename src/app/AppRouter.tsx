@@ -82,6 +82,12 @@ export function AppRouter() {
   const modelOptions = buildOpenCodeModelOptions(openCodeProviderCatalog).filter((model) => !disabledOpenCodeModelKeySet.has(getModelSettingsKey(model.providerID, model.id)))
   const selectedModel = modelOptions.find((model) => model.key === selectedModelKey) ?? null
   const openCodeCommands = openCodeCommandState?.directory === activeProjectPath ? openCodeCommandState.commands : []
+  const standaloneExtensionProjectName = route.name === "extension" && !route.projectName ? projects[0]?.name : undefined
+  const extensionProjectName = route.name === "extension" ? route.projectName || standaloneExtensionProjectName : undefined
+  const extensionProjectPath = extensionProjectName
+    ? projects.find((project) => project.id === extensionProjectName || project.name === extensionProjectName)?.path
+      ?? (route.name === "extension" && route.projectName ? activeProjectPath : null)
+    : null
   const {
     attachments: chatAttachments,
     cancelMessage,
@@ -161,8 +167,13 @@ export function AppRouter() {
   }, [checkedProjectName, navigateToExtension])
 
   const closeExtension = useCallback(() => {
-    if (route.name === "extension") navigateToWorkspaceProject(route.projectName)
-  }, [navigateToWorkspaceProject, route])
+    if (route.name !== "extension") return
+    if (route.projectName) {
+      navigateToWorkspaceProject(route.projectName)
+      return
+    }
+    navigateToRoute({ name: "workspace" })
+  }, [navigateToRoute, navigateToWorkspaceProject, route])
 
   const startNewConversationAndCloseSurfaces = useCallback(() => {
     if (!startNewConversation()) return
@@ -210,9 +221,9 @@ export function AppRouter() {
         extensionId={route.extensionId}
         initialFilePath={route.filePath}
         onBack={closeExtension}
-        project={route.projectName}
-        projectLoading={projectsLoading}
-        projectPath={activeProjectPath}
+        project={extensionProjectName ?? ""}
+        projectLoading={projectsLoading || !extensionProjectName}
+        projectPath={extensionProjectPath}
       />
     )
   }

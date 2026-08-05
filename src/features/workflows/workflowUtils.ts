@@ -764,17 +764,7 @@ function uniqueID(base: string, existing: Set<string>) {
   return `${base}-${index}`
 }
 
-export const DEFAULT_WORKFLOW_COMMAND_PROMPT = `處理以下使用者需求：
-
-$ARGUMENTS
-
-執行要求：
-1. 先確認目標、限制、必要輸入與完成條件。
-2. 只使用此 Workflow graph 直接提供的 Agent 與 capabilities。
-3. 對可驗證的結果執行檢查，不得把未執行的動作描述成已完成。
-4. 若資訊不足或執行受阻，明確指出缺少內容、已完成部分與可採取的下一步。
-
-輸出必須包含完成狀態、主要結果、驗證結果，以及必要的風險或限制。`
+export const DEFAULT_WORKFLOW_COMMAND_PROMPT = "$ARGUMENTS"
 
 export function createManagedResourceData(
   type: Extract<WorkflowNodeType, `resource.${string}`>,
@@ -888,7 +878,7 @@ ${role}
       name,
       scope,
       content: `---
-description: 將使用者需求交給此 Workflow 的 entry Agent，並要求回傳可驗證結果
+description: Workflow command placeholder; business behavior is owned by the connected system Workflow Agent
 ---
 ${DEFAULT_WORKFLOW_COMMAND_PROMPT}
 `,

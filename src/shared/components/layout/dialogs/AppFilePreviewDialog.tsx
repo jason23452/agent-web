@@ -289,15 +289,8 @@ function AppFilePreviewDialogContent({
       selectedPins: dialogPins,
       references: [],
     }
-    const text = [
-      "請使用 file-preview-editor system workflow，先驗證輸入，再產生可由 AppFilePreviewDialog 預覽與確認的完整檔案修改提案。",
-      "",
-      "File preview edit input JSON:",
-      JSON.stringify(input, null, 2),
-    ].join("\n")
-
     try {
-      const result = await runWorkflowSystemCommand(FILE_PREVIEW_EDITOR_WORKFLOW_ID, text, controller.signal, workspace)
+      const result = await runWorkflowSystemCommand(FILE_PREVIEW_EDITOR_WORKFLOW_ID, input, controller.signal, workspace)
       if (controller.signal.aborted) return
 
       const parsed = parseFilePreviewEditResult(result.text)

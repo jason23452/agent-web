@@ -3,7 +3,7 @@ import { WORKSPACE_PROJECT_ROUTE_PREFIX } from "@/features/workspace/router/[nam
 import { HOME_ROUTE_PATH } from "@/features/home/router"
 import { WORKSPACE_ROUTE_PATH } from "@/features/workspace/router"
 import { WORKFLOWS_ROUTE_PATH } from "@/features/workflows/constants"
-import { EXTENSION_ROUTE_SEGMENT } from "@/features/extensions/constants"
+import { EXTENSION_ROUTE_SEGMENT, OPEN_DESIGN_EXTENSION_ROUTE_PATH } from "@/features/extensions/constants"
 import { getFileTypeByName, listProjectFileTree } from "@/features/workspace/api/files"
 import { getOpenCodeRuntimeOperation, getOpenCodeRuntimeStatus } from "@/shared/api/opencodeRuntime"
 import type { OpenCodeRuntimeOperation } from "@/shared/api/opencodeRuntime"
@@ -30,6 +30,10 @@ export function readBrowserRoute(): AppRoute {
 
   if (pathname === WORKSPACE_ROUTE_PATH) {
     return { name: "workspace" }
+  }
+
+  if (pathname === OPEN_DESIGN_EXTENSION_ROUTE_PATH) {
+    return { extensionId: "open-design", name: "extension", projectName: "" }
   }
 
   if (pathname.startsWith(`${WORKSPACE_PROJECT_ROUTE_PREFIX}/`)) {
@@ -62,6 +66,7 @@ export function getRoutePath(route: AppRoute) {
     return route.sessionId ? `${projectPath}/session/${encodeURIComponent(route.sessionId)}` : projectPath
   }
   if (route.name === "extension") {
+    if (!route.projectName && route.extensionId === "open-design") return OPEN_DESIGN_EXTENSION_ROUTE_PATH
     const path = `${WORKSPACE_PROJECT_ROUTE_PREFIX}/${encodeURIComponent(route.projectName)}/${EXTENSION_ROUTE_SEGMENT}/${encodeURIComponent(route.extensionId)}`
     return route.filePath ? `${path}?file=${encodeURIComponent(route.filePath)}` : path
   }

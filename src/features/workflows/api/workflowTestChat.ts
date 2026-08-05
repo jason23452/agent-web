@@ -15,6 +15,7 @@ export const RESOURCE_WRITER_WORKFLOW_IDS = {
 } as const
 
 export type ResourceWriterType = keyof typeof RESOURCE_WRITER_WORKFLOW_IDS
+export type WorkflowSystemCommandInput = string | Record<string, unknown>
 
 export function getResourceWriterWorkflowID(resourceType: string) {
   return resourceType in RESOURCE_WRITER_WORKFLOW_IDS
@@ -55,22 +56,16 @@ export function sendWorkflowTestChatMessage(
   })
 }
 
-export async function runWorkflowSystemCommand(workflowID: string, text: string, signal?: AbortSignal, workspace?: string) {
+export async function runWorkflowSystemCommand(workflowID: string, input: WorkflowSystemCommandInput, signal?: AbortSignal, workspace?: string) {
   const session = await createWorkflowTestChatSession(workflowID, { scope: "global" }, signal, workspace)
+  const text = typeof input === "string" ? input : JSON.stringify(input, null, 2)
   return sendWorkflowTestChatMessage(workflowID, session.sessionID, { scope: "global", text }, signal, workspace)
 }
 
 export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID: string, request: string, signal?: AbortSignal, workspace?: string) {
-  const text = [
-    "請先由 coordinator 驗證輸入並整理 planning brief，再委派 prompt-writer-agent 為目前 target node 建立可直接回寫的 prompt。",
-    "",
-    "使用者需求：",
-    request.trim(),
-    "",
-    `Target node ID: ${targetNodeID}`,
-    "",
-    "完整 target workflow JSON：",
-    JSON.stringify(workflow, null, 2),
-  ].join("\n")
-  return runWorkflowSystemCommand(PROMPT_WRITER_WORKFLOW_ID, text, signal, workspace ?? workflow.project)
+  return runWorkflowSystemCommand(PROMPT_WRITER_WORKFLOW_ID, {
+    targetNodeID,
+    request: request.trim(),
+    workflow,
+  }, signal, workspace ?? workflow.project)
 }

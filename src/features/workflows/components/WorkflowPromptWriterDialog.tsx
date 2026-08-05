@@ -9,8 +9,6 @@ import { runPromptWriterForNode } from "@/features/workflows/api/workflowTestCha
 import type { WorkflowNode, WorkflowV1 } from "@/features/workflows/types"
 import { getWorkflowNodeTitle } from "@/features/workflows/workflowUtils"
 
-const DEFAULT_REQUEST = "請依目前 Workflow graph 改寫 target node 的完整 content。保留有效的 name、mode、agent、permission 與工具設定，只使用 current Agent 直接連接的 capabilities 和 delegation；補齊角色、目標、輸入、執行步驟、輸出契約、完成條件、限制與失敗處理。不得新增未連接資源、綁定未確認可用的 model 或放寬權限，結果必須可直接取代目前 node 的 content。"
-
 export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyPrompt: (content: string) => void
   onOpenChange: (open: boolean) => void
@@ -19,7 +17,7 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
   workflow: WorkflowV1
   workspace: string
 }) {
-  const [request, setRequest] = useState(DEFAULT_REQUEST)
+  const [request, setRequest] = useState("")
   const [result, setResult] = useState("")
   const [promptDraft, setPromptDraft] = useState("")
   const [busy, setBusy] = useState(false)
@@ -82,7 +80,7 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
           <div className="mx-auto grid w-full max-w-3xl gap-4">
             <label className="grid gap-1.5 text-muted-foreground text-xs">
               使用者需求
-              <Textarea aria-label="Prompt Writer 使用者需求" className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} value={request} />
+              <Textarea aria-label="Prompt Writer 使用者需求" className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} placeholder="輸入要套用到 target node 的需求。" value={request} />
             </label>
             <Button disabled={!targetNode || !request.trim()} loading={busy} onClick={() => void generatePrompt()}><SparklesIcon aria-hidden="true" />{busy ? "正在規劃並委派 Writer..." : "執行 /prompt-writer-coordinator"}</Button>
             {busy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />Coordinator 整理 brief 後會委派 prompt-writer-agent，可能需要一些時間。</div>}

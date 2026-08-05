@@ -10,15 +10,13 @@ import { validateWorkflow } from "@/features/workflows/api/workflows"
 import type { ResourceNodeData, WorkflowV1 } from "@/features/workflows/types"
 import { issueMessage } from "@/features/workflows/workflowUtils"
 
-const DEFAULT_REQUEST = "請建立一個可直接驗證與發布的 Workflow V3：只包含一個 Command 與一個 entry primary Agent；只有在職責可明確拆分時才新增 delegated subagent，只有在需求確實需要時才新增 Skill、Tool、Plugin 或 MCP。所有 managed resources 必須有完整內容、採最小權限、不得綁定未確認可用的 model，並定義清楚的輸入、輸出、完成條件與失敗處理。"
-
 export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, project }: {
   onCreateWorkflow: (workflow: WorkflowV1) => Promise<void>
   onOpenChange: (open: boolean) => void
   open: boolean
   project: string
 }) {
-  const [request, setRequest] = useState(DEFAULT_REQUEST)
+  const [request, setRequest] = useState("")
   const [result, setResult] = useState("")
   const [generated, setGenerated] = useState<WorkflowV1 | null>(null)
   const [busy, setBusy] = useState(false)
@@ -41,16 +39,9 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
     setError(null)
     setResult("")
     setGenerated(null)
-    const text = [
-      "請根據以下需求產生完整 agent-system.workflow.v3 JSON。",
-      `目前 UI project: ${project}`,
-      "workflow.scope 必須是 project，workflow.project 必須是目前 UI project；Command 與所有 managed resources 的 scope 也必須是 project。Reference resources 可以保留原本 scope。",
-      "只輸出 JSON object，不要輸出說明或 Markdown；nodes 必須使用 resource.command/resource.agent/resource.skill/resource.tool/resource.mcp/resource.plugin，edges 必須使用 kind、sourceHandle、targetHandle，絕對不要使用舊版的 node type command/agent/skill/tool/reference 或 edge type。",
-      "",
-      request.trim(),
-    ].join("\n")
+    const input = { project, request: request.trim() }
     try {
-      const response = await runWorkflowSystemCommand(WORKFLOW_GENERATOR_WORKFLOW_ID, text, controller.signal, project)
+      const response = await runWorkflowSystemCommand(WORKFLOW_GENERATOR_WORKFLOW_ID, input, controller.signal, project)
       if (controller.signal.aborted) return
       setResult(response.text)
       const parsed = parseWorkflowResult(response.text)
