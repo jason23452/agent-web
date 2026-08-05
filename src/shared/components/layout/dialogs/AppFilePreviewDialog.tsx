@@ -29,7 +29,6 @@ type AppFilePreviewPinContext = PinContext
 type AppFilePreviewDialogProps = {
   file: AppFilePreviewFile | null
   onClose: () => void
-  onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
   onSaveFile?: (file: AppFilePreviewFile, content: string) => Promise<void>
@@ -126,7 +125,6 @@ function parseFilePreviewEditResult(text: string): FilePreviewEditResult | null 
 export function AppFilePreviewDialog({
   file,
   onClose,
-  onPin,
   onLibraryUpload,
   onLocalUpload,
   onSaveFile,
@@ -140,7 +138,6 @@ export function AppFilePreviewDialog({
       file={file}
       key={fileKey}
       onClose={onClose}
-      onPin={onPin}
       onLibraryUpload={onLibraryUpload}
       onLocalUpload={onLocalUpload}
       onSaveFile={onSaveFile}
@@ -152,7 +149,6 @@ export function AppFilePreviewDialog({
 function AppFilePreviewDialogContent({
   file,
   onClose,
-  onPin,
   onLibraryUpload,
   onLocalUpload,
   onSaveFile,
@@ -160,7 +156,6 @@ function AppFilePreviewDialogContent({
 }: {
   file: AppFilePreviewFile
   onClose: () => void
-  onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
   onSaveFile?: (file: AppFilePreviewFile, content: string) => Promise<void>
@@ -452,7 +447,6 @@ function AppFilePreviewDialogContent({
                       text: selectionPin.text,
                     }
 
-                    onPin(nextPin)
                     setDialogPins((current) => {
                       const alreadyPinned = current.some((pin) => pin.meta === nextPin.meta && pin.text === nextPin.text)
                       return alreadyPinned ? current : [...current, nextPin]

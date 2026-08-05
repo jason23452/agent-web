@@ -188,11 +188,6 @@ export function AppRouter() {
     selectSession(sessionId)
   }
 
-  function pinPreviewContext(context: PinContext) {
-    setPinContext(context)
-    setPreviewFile(null)
-  }
-
   if (route.name === "workflows" && !route.projectName) {
     return <div className="grid min-h-dvh place-items-center bg-background text-sm text-muted-foreground" role="status">正在返回 Workspace...</div>
   }
@@ -367,7 +362,7 @@ export function AppRouter() {
       }
     >
       {mainRoute}
-      <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} onSaveFile={savePreviewFile} workspace={activeProjectName} />
+      <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onSaveFile={savePreviewFile} workspace={activeProjectName} />
     </AppShell>
   )
 }
