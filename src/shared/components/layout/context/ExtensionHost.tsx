@@ -49,7 +49,7 @@ export function ExtensionHostActions({
   return (
     <>
       {extensions.map((extension) => {
-        const extensionId = extension.extensionId ?? extension.id;
+        const extensionId = canonicalExtensionId(extension.extensionId ?? extension.id);
         return (
           <ExtensionHostAction
             extensionId={extensionId}
@@ -75,6 +75,7 @@ export function ExtensionHostAction({
   projectName?: string;
   projectPath?: string | null;
 }) {
+  const runtimeExtensionId = canonicalExtensionId(extensionId);
   const containerRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -96,7 +97,7 @@ export function ExtensionHostAction({
 
     async function loadAction() {
       try {
-         const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
+         const source = await loadPlatformExtensionFrontend(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
         if (controller.signal.aborted || disposed) return;
 
         objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
@@ -104,7 +105,7 @@ export function ExtensionHostAction({
         if (controller.signal.aborted || disposed) return;
         if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
 
-        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined, extensionProjectName);
+        const host = createExtensionHost(runtimeExtensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined, extensionProjectName);
         const runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
@@ -135,7 +136,7 @@ export function ExtensionHostAction({
       if (objectURL) URL.revokeObjectURL(objectURL);
       stableActionContainer.replaceChildren();
     };
-  }, [extensionId, onOpenEditor, projectName, projectPath]);
+  }, [runtimeExtensionId, onOpenEditor, projectName, projectPath]);
 
   return <span className="inline-flex" ref={containerRef} />;
 }
@@ -155,6 +156,7 @@ export function ExtensionHostPage({
   projectName?: string;
   projectPath?: string | null;
 }) {
+  const runtimeExtensionId = canonicalExtensionId(extensionId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -182,8 +184,8 @@ export function ExtensionHostPage({
 
       try {
          const [source, configuration] = await Promise.all([
-           loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }),
-           loadPlatformExtensionConfiguration(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
+           loadPlatformExtensionFrontend(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }),
+           loadPlatformExtensionConfiguration(runtimeExtensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
          ]);
         if (controller.signal.aborted || !containerRef.current) return;
 
@@ -192,7 +194,7 @@ export function ExtensionHostPage({
         if (controller.signal.aborted || disposed) return;
         if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
 
-        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, setError, extensionProjectName);
+        const host = createExtensionHost(runtimeExtensionId, extensionProjectPath, controller.signal, () => undefined, setError, extensionProjectName);
         runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
@@ -227,7 +229,7 @@ export function ExtensionHostPage({
       if (objectURL) URL.revokeObjectURL(objectURL);
       runtime = undefined;
     };
-  }, [extensionId, initialFilePath, onBack, projectName, projectPath]);
+  }, [runtimeExtensionId, initialFilePath, onBack, projectName, projectPath]);
 
   return (
     <main className="h-dvh overflow-hidden bg-background text-foreground">
@@ -243,4 +245,8 @@ export function ExtensionHostPage({
       </section>
     </main>
   );
+}
+
+function canonicalExtensionId(extensionId: string) {
+  return extensionId === "opendesign" ? "open-design" : extensionId;
 }
