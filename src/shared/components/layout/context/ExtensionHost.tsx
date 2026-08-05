@@ -20,6 +20,7 @@ export function ExtensionHostActions({
   projectPath?: string | null;
 }) {
   const [extensions, setExtensions] = useState<PlatformExtension[]>([]);
+  const [contextActionExtensionIds, setContextActionExtensionIds] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -43,8 +44,54 @@ export function ExtensionHostActions({
     };
   }, [projectName, projectPath]);
 
-  const xmindInstalled = extensions.some((extension) => canonicalExtensionId(extension.extensionId ?? extension.id) === "xmind");
-  if (!xmindInstalled) return null;
+  useEffect(() => {
+    if (!projectName || !projectPath || extensions.length === 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const extensionProjectName = projectName;
+    const extensionProjectPath = projectPath;
+    let disposed = false;
+
+    async function findContextActionExtensions() {
+      const ids = await Promise.all(extensions.map(async (extension) => {
+        const extensionId = canonicalExtensionId(extension.extensionId ?? extension.id);
+        let objectURL: string | undefined;
+        let module: ExtensionModule | undefined;
+        try {
+          const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
+          if (controller.signal.aborted) return undefined;
+          objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+          module = await import(/* @vite-ignore */ objectURL) as ExtensionModule;
+          if (!module.activate) return undefined;
+          const runtime = await module.activate(createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined, extensionProjectName));
+          return runtime?.contextAction?.mount ? extensionId : undefined;
+        } catch {
+          return undefined;
+        } finally {
+          await module?.deactivate?.();
+          if (objectURL) URL.revokeObjectURL(objectURL);
+        }
+      }));
+
+      if (!disposed && !controller.signal.aborted) {
+        setContextActionExtensionIds(ids.filter((id): id is string => Boolean(id)));
+      }
+    }
+
+    void findContextActionExtensions();
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [extensions, projectName, projectPath]);
+
+  const availableContextActionExtensionIds = contextActionExtensionIds.filter((id) => extensions.some((extension) => canonicalExtensionId(extension.extensionId ?? extension.id) === id));
+  if (availableContextActionExtensionIds.length === 0) return null;
+
+  const firstContextActionExtension = extensions.find((extension) => availableContextActionExtensionIds.includes(canonicalExtensionId(extension.extensionId ?? extension.id)));
+  const triggerMark = firstContextActionExtension?.displayName.slice(0, 1).toUpperCase() || "E";
 
   return (
     <div className="relative inline-flex">
@@ -52,17 +99,12 @@ export function ExtensionHostActions({
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-label="開啟已安裝的擴充套件"
-        className="xmind-context-action-button grid size-8 place-items-center rounded-lg border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="extension-context-action-button grid size-8 place-items-center rounded-lg border border-input bg-background text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => setOpen((value) => !value)}
         title="已安裝的擴充套件"
         type="button"
       >
-        <svg aria-hidden="true" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
-          <circle cx="6" cy="12" r="2.5" />
-          <circle cx="18" cy="6" r="2.5" />
-          <circle cx="18" cy="18" r="2.5" />
-          <path d="M8.5 11c3-1 4.2-3.2 7-4.2M8.5 13c3 1 4.2 3.2 7 4.2" />
-        </svg>
+        <span aria-hidden="true" className="text-xs font-bold">{triggerMark}</span>
         <span aria-hidden="true" className="absolute -right-1 -bottom-1 rounded bg-background text-[10px] leading-none">⌄</span>
       </button>
       {open ? (
