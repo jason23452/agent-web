@@ -45,6 +45,7 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
       "請根據以下需求產生完整 agent-system.workflow.v3 JSON。",
       `目前 UI project: ${project}`,
       "workflow.scope 必須是 project，workflow.project 必須是目前 UI project；Command 與所有 managed resources 的 scope 也必須是 project。Reference resources 可以保留原本 scope。",
+      "只輸出 JSON object，不要輸出說明或 Markdown；nodes 必須使用 resource.command/resource.agent/resource.skill/resource.tool/resource.mcp/resource.plugin，edges 必須使用 kind、sourceHandle、targetHandle，絕對不要使用舊版的 node type command/agent/skill/tool/reference 或 edge type。",
       "",
       request.trim(),
     ].join("\n")
@@ -101,14 +102,261 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
 }
 
 function parseWorkflowResult(text: string): WorkflowV1 | null {
-  const fenced = Array.from(text.matchAll(/```(?:json)?\s*\r?\n([\s\S]*?)```/gi), (match) => match[1]?.trim() ?? "").find(Boolean)
-  const candidate = fenced ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)
-  if (!candidate) return null
-  try {
-    return JSON.parse(candidate) as WorkflowV1
-  } catch {
-    return null
+  const candidates = [
+    ...Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi), (match) => match[1]?.trim() ?? ""),
+    text.trim(),
+    ...extractJsonObjectCandidates(text),
+  ]
+  const seen = new Set<string>()
+
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue
+    seen.add(candidate)
+    try {
+      const parsed: unknown = JSON.parse(candidate)
+      const workflow = normalizeWorkflowShape(parsed)
+      if (workflow) return workflow
+    } catch {
+      // Try the next JSON candidate when the agent surrounds its response with text.
+    }
   }
+
+  return null
+}
+
+function extractJsonObjectCandidates(text: string): string[] {
+  const candidates: string[] = []
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "{") continue
+    const candidate = readBalancedJsonObject(text, index)
+    if (candidate) candidates.push(candidate)
+  }
+  return candidates
+}
+
+function readBalancedJsonObject(text: string, start: number): string | null {
+  let depth = 0
+  let escaped = false
+  let inString = false
+
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (character === "\\") escaped = true
+      else if (character === '"') inString = false
+      continue
+    }
+    if (character === '"') {
+      inString = true
+      continue
+    }
+    if (character === "{") depth += 1
+    if (character === "}") {
+      depth -= 1
+      if (depth === 0) return text.slice(start, index + 1).trim()
+    }
+  }
+
+  return null
+}
+
+function normalizeWorkflowShape(value: unknown): WorkflowV1 | null {
+  if (!isRecord(value) || !Array.isArray(value.nodes) || !Array.isArray(value.edges)) return null
+
+  const rawNodes = value.nodes.filter(isRecord)
+  if (rawNodes.length !== value.nodes.length) return null
+  const rawEdges = value.edges.filter(isRecord)
+  if (rawEdges.length !== value.edges.length) return null
+  let nodes: Array<{ id: string; type: `resource.${string}`; position: { x: number; y: number }; data: Record<string, unknown> }> = []
+
+  for (const rawNode of rawNodes) {
+    const id = stringValue(rawNode.id)
+    const rawType = stringValue(rawNode.type)
+    const type = normalizeResourceNodeType(rawType)
+    if (!id || !rawType) return null
+    if (!type) {
+      if (rawType === "reference" || rawType === "resource.reference") continue
+      return null
+    }
+
+    const data = normalizeResourceNodeData(rawNode.data, type)
+    if (!data) return null
+    const position = isRecord(rawNode.position)
+      && typeof rawNode.position.x === "number"
+      && typeof rawNode.position.y === "number"
+      ? { x: rawNode.position.x, y: rawNode.position.y }
+      : { x: 0, y: 0 }
+    nodes.push({ id, type, position, data })
+  }
+
+  const nodeIDs = new Set(nodes.map((node) => node.id))
+  const edges: WorkflowV1["edges"] = []
+  const edgeIDs = new Set<string>()
+  for (const [index, rawEdge] of rawEdges.entries()) {
+    let source = stringValue(rawEdge.source)
+    let target = stringValue(rawEdge.target)
+    if (!source || !target || !nodeIDs.has(source) || !nodeIDs.has(target)) continue
+    const rawKind = stringValue(rawEdge.kind) || stringValue(rawEdge.type)
+    if (rawKind !== "capability" && rawKind !== "delegation" && rawKind !== "primary-link") return null
+    const initialSourceNode = nodes.find((node) => node.id === source)
+    const initialTargetNode = nodes.find((node) => node.id === target)
+    if (rawKind === "capability" && initialSourceNode?.type === "resource.agent" && isCapabilityResourceNodeType(initialTargetNode?.type)) {
+      [source, target] = [target, source]
+    }
+    const sourceNode = nodes.find((node) => node.id === source)
+    const targetNode = nodes.find((node) => node.id === target)
+    if (!sourceNode || !targetNode) continue
+    const edgeID = uniqueEdgeID(stringValue(rawEdge.id) || `${rawKind}-${source}-${target}-${index}`, edgeIDs)
+    const sourceHandle = rawKind === "delegation" || rawKind === "primary-link" ? "delegation" : "capability"
+    const targetHandle = rawKind === "delegation" || rawKind === "primary-link" || (sourceNode.type === "resource.command" && targetNode.type === "resource.agent")
+      ? "agent"
+      : "capability"
+    edges.push({ id: edgeID, source, target, kind: rawKind, sourceHandle, targetHandle })
+  }
+
+  nodes.sort((left, right) => Number(right.type === "resource.command") - Number(left.type === "resource.command"))
+  const commandNode = nodes.find((node) => node.type === "resource.command")
+  const entryAgentID = edges.find((edge) => edge.kind === "capability"
+    && edge.source === commandNode?.id
+    && edge.targetHandle === "agent"
+    && nodes.find((node) => node.id === edge.target)?.type === "resource.agent")?.target
+  const entryAgent = nodes.find((node) => node.id === entryAgentID && node.type === "resource.agent")
+  const delegatedAgentIDs = new Set(edges.filter((edge) => edge.kind === "delegation").map((edge) => edge.target))
+  nodes = nodes.map((node) => {
+    if (node.type === "resource.command" && node.data.mode === "managed") {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          content: normalizeCommandContent(stringValue(node.data.content), stringValue(entryAgent?.data.name) || undefined),
+        },
+      }
+    }
+    if (node.type === "resource.agent" && node.data.mode === "managed") {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          content: normalizeAgentContent(stringValue(node.data.content), stringValue(node.data.name), delegatedAgentIDs.has(node.id) ? "subagent" : "primary"),
+        },
+      }
+    }
+    return node
+  })
+  const normalized: Record<string, unknown> = {
+    schemaVersion: "agent-system.workflow.v3",
+    id: stringValue(value.id) || "generated-workflow",
+    name: stringValue(value.name) || "Generated Workflow",
+    scope: value.scope === "global" ? "global" : "project",
+    nodes,
+    edges,
+    createdAt: stringValue(value.createdAt) || new Date().toISOString(),
+    updatedAt: stringValue(value.updatedAt) || new Date().toISOString(),
+  }
+  if (typeof value.description === "string") normalized.description = value.description
+  if (typeof value.project === "string") normalized.project = value.project
+  if (isRecord(value.variables)) normalized.variables = value.variables
+  if (isRecord(value.metadata)) normalized.metadata = value.metadata
+  return normalized as WorkflowV1
+}
+
+function normalizeResourceNodeType(type: string): `resource.${string}` | null {
+  if (["resource.agent", "resource.command", "resource.skill", "resource.tool", "resource.mcp", "resource.plugin"].includes(type)) {
+    return type as `resource.${string}`
+  }
+  const legacyType: Record<string, `resource.${string}`> = {
+    agent: "resource.agent",
+    command: "resource.command",
+    skill: "resource.skill",
+    tool: "resource.tool",
+    mcp: "resource.mcp",
+    plugin: "resource.plugin",
+  }
+  return legacyType[type] ?? null
+}
+
+function isCapabilityResourceNodeType(type: string | undefined): boolean {
+  return type === "resource.skill" || type === "resource.tool" || type === "resource.mcp" || type === "resource.plugin"
+}
+
+function normalizeResourceNodeData(value: unknown, type: `resource.${string}`): Record<string, unknown> | null {
+  if (!isRecord(value)) return null
+  const mode = value.mode === "reference" || value.mode === "managed"
+    ? value.mode
+    : type === "resource.agent" && (value.mode === "primary" || value.mode === "subagent")
+      ? "managed"
+      : null
+  const name = stringValue(value.name)
+  const scope = value.scope === "global" || value.scope === "project" ? value.scope : null
+  if (!mode || !name || !scope) return null
+  const data: Record<string, unknown> = { mode, name, scope }
+  if (mode === "reference") return data
+  if (type === "resource.mcp") {
+    if (isRecord(value.config)) data.config = value.config
+    return data
+  }
+  if (type === "resource.plugin" && typeof value.content !== "string" && isRecord(value.config)) {
+    data.config = value.config
+    return data
+  }
+  if (typeof value.content === "string") data.content = type === "resource.skill" ? normalizeSkillContent(value.content, name) : value.content
+  return data
+}
+
+function normalizeCommandContent(content: string, agentName?: string): string {
+  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
+  const frontmatter = match?.[1]?.split(/\r?\n/) ?? []
+  const body = match ? content.slice(match[0].length).trim() : content.trim()
+  setFrontmatterValue(frontmatter, "description", "Generated managed workflow command")
+  if (agentName) setFrontmatterValue(frontmatter, "agent", agentName, true)
+  const nextBody = body.includes("$ARGUMENTS") ? body : `${body}${body ? "\n\n" : ""}$ARGUMENTS`
+  return `---\n${frontmatter.filter(Boolean).join("\n")}\n---\n${nextBody}`
+}
+
+function normalizeAgentContent(content: string, name: string, mode: "primary" | "subagent"): string {
+  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\s*\r?\n|$)/)
+  const frontmatter = match?.[1]?.split(/\r?\n/) ?? []
+  const body = match ? content.slice(match[0].length).trim() : content.trim()
+  setFrontmatterValue(frontmatter, "name", name, true)
+  setFrontmatterValue(frontmatter, "description", "Generated managed workflow agent")
+  setFrontmatterValue(frontmatter, "mode", mode, true)
+  return `---\n${frontmatter.filter(Boolean).join("\n")}\n---\n${body || "Follow the Workflow contract and return the requested result."}`
+}
+
+function setFrontmatterValue(lines: string[], key: string, value: string, force = false): void {
+  const index = lines.findIndex((line) => line.startsWith(`${key}:`))
+  if (index < 0) {
+    lines.unshift(`${key}: ${value}`)
+    return
+  }
+  if (force || !lines[index]?.slice(key.length + 1).trim()) lines[index] = `${key}: ${value}`
+}
+
+function normalizeSkillContent(content: string, name: string): string {
+  if (!content.trim()) return content
+  const frontmatter = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/)
+  if (!frontmatter) return `---\nname: ${name}\ndescription: Generated managed skill\n---\n\n${content.trim()}`
+  let next = frontmatter[1] ?? ""
+  next = /^name:\s*[^\r\n]*$/m.test(next) ? next.replace(/^name:\s*[^\r\n]*$/m, `name: ${name}`) : `name: ${name}\n${next}`
+  if (!/^description:\s*[^\r\n]+$/m.test(next)) next = `description: Generated managed skill\n${next}`
+  return content.replace(frontmatter[1] ?? "", next)
+}
+
+function uniqueEdgeID(candidate: string, existing: Set<string>): string {
+  let id = candidate
+  let suffix = 2
+  while (existing.has(id)) id = `${candidate}-${suffix++}`
+  existing.add(id)
+  return id
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : ""
 }
 
 function scopeWorkflowToProject(workflow: WorkflowV1, project: string): WorkflowV1 {
