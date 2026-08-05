@@ -3,6 +3,7 @@ import type { WorkflowScope, WorkflowTestChatMessage, WorkflowTestChatSession, W
 
 export const PROMPT_WRITER_WORKFLOW_ID = "workflow-node-prompt-writer"
 export const WORKFLOW_GENERATOR_WORKFLOW_ID = "workflow-generator"
+export const FILE_PREVIEW_EDITOR_WORKFLOW_ID = "workflow-file-preview-editor"
 
 export const RESOURCE_WRITER_WORKFLOW_IDS = {
   agent: "workflow-agent-writer",

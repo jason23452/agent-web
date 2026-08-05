@@ -366,7 +366,7 @@ export function AppRouter() {
       }
     >
       {mainRoute}
-      <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} />
+      <AppFilePreviewDialog file={previewFile} onClose={() => setPreviewFile(null)} onPin={pinPreviewContext} workspace={activeProjectName} />
     </AppShell>
   )
 }

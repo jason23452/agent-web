@@ -1,6 +1,7 @@
 import {
   BotIcon,
   CheckIcon,
+  CircleDashedIcon,
   Code2Icon,
   FileIcon,
   PaperclipIcon,
@@ -12,6 +13,8 @@ import {
   XIcon,
 } from "lucide-react"
 import { type ChangeEvent, useEffect, useRef, useState } from "react"
+import { FILE_PREVIEW_EDITOR_WORKFLOW_ID, runWorkflowSystemCommand } from "@/features/workflows/api/workflowTestChat"
+import { getApiErrorMessage } from "@/shared/api"
 import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Tabs, TabsList, TabsPanel, TabsTab } from "@/shared/components/ui/tabs"
@@ -28,6 +31,7 @@ type AppFilePreviewDialogProps = {
   onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
+  workspace?: string
 }
 
 type WorkTab = "edit" | "agent"
@@ -42,36 +46,12 @@ type SelectionLineRange = {
   end: number
 }
 
-function getFileSample(file: AppFilePreviewFile) {
-  if (file.type === "html") {
-    return '<!doctype html>\n<html lang="zh-Hant">\n  <head>\n    <meta charset="UTF-8" />\n    <title>AICaht</title>\n  </head>\n  <body>\n    <div id="app"></div>\n  </body>\n</html>'
-  }
-
-  if (file.type === "css") {
-    return ":root {\n  --bg: oklch(97.6% 0 0);\n  --surface: oklch(100% 0 0);\n  --fg: oklch(17% 0 0);\n}\n\nbody {\n  background: var(--bg);\n  color: var(--fg);\n}"
-  }
-
-  if (file.type === "ts" || file.type === "tsx") {
-    return 'import { defineConfig } from "vite"\nimport react from "@vitejs/plugin-react"\n\nexport default defineConfig({\n  plugins: [react()],\n  server: { port: 5173 },\n})'
-  }
-
-  if (file.type === "md") {
-    return "# AICaht OpenCode Agent\n\n## 專案概觀\n\n- 多輪對話與串流回覆\n- 專案檔案樹瀏覽\n- 工具呼叫即時反饋"
-  }
-
-  if (file.type === "json") {
-    return '{\n  "name": "aicaht-agent",\n  "private": true,\n  "type": "module"\n}'
-  }
-
-  return `/* ${file.name} */\n此檔案可在預覽中檢視，也可以交給 Agent 或手動編輯。`
-}
-
 function getFilePreviewContent(file: AppFilePreviewFile) {
   if (file.contentType === "binary") {
     return `/* ${file.name} */\n此為二進位檔案，無法直接以文字預覽。`
   }
 
-  return file.content ?? getFileSample(file)
+  return file.content ?? ""
 }
 
 function getFileRevisionKey(file: AppFilePreviewFile) {
@@ -98,12 +78,56 @@ function summarizeText(text: string, limit = 240) {
   return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
 }
 
+type FilePreviewEditResult = {
+  schemaVersion: "agent-system.file-preview-edit.v1"
+  ok: boolean
+  filePath: string
+  summary: string
+  proposedContent: string
+  warnings: string[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function parseFilePreviewEditResult(text: string): FilePreviewEditResult | null {
+  const trimmed = text.trim()
+  const candidates = trimmed ? [trimmed] : []
+  const start = text.indexOf("{")
+  const end = text.lastIndexOf("}")
+  if (start >= 0 && end > start) candidates.push(text.slice(start, end + 1))
+
+  for (const candidate of candidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate)
+      if (!isRecord(parsed) || parsed.schemaVersion !== "agent-system.file-preview-edit.v1") continue
+      if (typeof parsed.ok !== "boolean" || typeof parsed.filePath !== "string" || typeof parsed.summary !== "string" || typeof parsed.proposedContent !== "string") continue
+      if (!Array.isArray(parsed.warnings) || !parsed.warnings.every((warning): warning is string => typeof warning === "string")) continue
+
+      return {
+        schemaVersion: parsed.schemaVersion,
+        ok: parsed.ok,
+        filePath: parsed.filePath,
+        summary: parsed.summary,
+        proposedContent: parsed.proposedContent,
+        warnings: parsed.warnings,
+      }
+    } catch {
+      // Try the next candidate when the runtime adds text around the JSON.
+    }
+  }
+
+  return null
+}
+
 export function AppFilePreviewDialog({
   file,
   onClose,
   onPin,
   onLibraryUpload,
   onLocalUpload,
+  workspace,
 }: AppFilePreviewDialogProps) {
   if (!file) return null
   const fileKey = getFileRevisionKey(file)
@@ -116,6 +140,7 @@ export function AppFilePreviewDialog({
       onPin={onPin}
       onLibraryUpload={onLibraryUpload}
       onLocalUpload={onLocalUpload}
+      workspace={workspace}
     />
   )
 }
@@ -126,12 +151,14 @@ function AppFilePreviewDialogContent({
   onPin,
   onLibraryUpload,
   onLocalUpload,
+  workspace,
 }: {
   file: AppFilePreviewFile
   onClose: () => void
   onPin: (context: AppFilePreviewPinContext) => void
   onLibraryUpload?: () => void
   onLocalUpload?: (file: File) => void
+  workspace?: string
 }) {
   const isLoadingContent = file.contentLoading
   const hasContentError = Boolean(file.contentError)
@@ -141,6 +168,9 @@ function AppFilePreviewDialogContent({
   const [draftContent, setDraftContent] = useState(initialContent)
   const [prompt, setPrompt] = useState("")
   const [response, setResponse] = useState("")
+  const [agentResult, setAgentResult] = useState<FilePreviewEditResult | null>(null)
+  const [agentBusy, setAgentBusy] = useState(false)
+  const [agentError, setAgentError] = useState<string | null>(null)
   const [editStatus, setEditStatus] = useState("未修改")
   const [selectionPin, setSelectionPin] = useState<SelectionPin | null>(null)
   const [dialogPins, setDialogPins] = useState<AppFilePreviewPinContext[]>([])
@@ -150,11 +180,18 @@ function AppFilePreviewDialogContent({
   const previewCodeRef = useRef<HTMLPreElement>(null)
   const attachMenuRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const agentControllerRef = useRef<AbortController | null>(null)
 
   const metadata = [file.size, file.date, file.type.toUpperCase()].filter(Boolean).join(" · ")
   const metadataText = metadata || file.type.toUpperCase()
   const lines = savedContent.split("\n")
   const draftChanged = draftContent !== savedContent
+  const agentSourceContent = draftChanged ? draftContent : savedContent
+  const canRunAgent = Boolean(workspace?.trim())
+    && !isLoadingContent
+    && !hasContentError
+    && file.contentType === "text"
+    && file.type !== "img"
 
   function handleLibraryUpload() {
     onLibraryUpload?.()
@@ -192,17 +229,70 @@ function AppFilePreviewDialogContent({
     setEditStatus("已還原草稿")
   }
 
-  function submitAgentPrompt() {
-    if (!prompt.trim()) return
+  async function submitAgentPrompt() {
+    const request = prompt.trim()
+    if (!request || agentBusy) return
+    if (!workspace?.trim()) {
+      setAgentError("目前沒有可用的專案 workspace，無法執行 Agent 修改。")
+      return
+    }
+    if (!canRunAgent) {
+      setAgentError("檔案內容尚未載入完成，或目前不是可編輯的文字檔案。")
+      return
+    }
 
-    const contextText = dialogPins.length > 0 ? `目前鎖定 ${dialogPins.map((pin) => pin.meta).join("、")} 作為修改範圍。` : "目前會依整份檔案判斷修改範圍。"
-    setResponse(`Agent 已讀取 ${file.name}。${contextText} 建議先縮小變更範圍，保留既有結構，再針對命名、重複邏輯與可讀性提出可套用的修改。`)
-    setPrompt("")
+    agentControllerRef.current?.abort()
+    const controller = new AbortController()
+    agentControllerRef.current = controller
+    setAgentBusy(true)
+    setAgentError(null)
+    setAgentResult(null)
+    setResponse("")
+
+    const input = {
+      filePath: file.path ?? file.name,
+      fileName: file.name,
+      fileType: file.type,
+      contentType: file.contentType,
+      content: agentSourceContent,
+      request,
+      selectedPins: dialogPins,
+      references: [],
+    }
+    const text = [
+      "請使用 file-preview-editor system workflow，先驗證輸入，再產生可由 AppFilePreviewDialog 預覽與確認的完整檔案修改提案。",
+      "",
+      "File preview edit input JSON:",
+      JSON.stringify(input, null, 2),
+    ].join("\n")
+
+    try {
+      const result = await runWorkflowSystemCommand(FILE_PREVIEW_EDITOR_WORKFLOW_ID, text, controller.signal, workspace)
+      if (controller.signal.aborted) return
+
+      const parsed = parseFilePreviewEditResult(result.text)
+      if (!parsed) {
+        setAgentError("Agent 回應不是可解析的檔案修改 JSON，請稍後重試。")
+        return
+      }
+      if (parsed.filePath !== input.filePath) {
+        setAgentError("Agent 回應的檔案路徑與目前預覽不一致，已拒絕套用。")
+        return
+      }
+
+      setAgentResult(parsed)
+      setResponse(parsed.summary)
+      if (parsed.ok) setPrompt("")
+    } catch (error) {
+      if (!controller.signal.aborted) setAgentError(getApiErrorMessage(error))
+    } finally {
+      if (!controller.signal.aborted) setAgentBusy(false)
+    }
   }
 
   function applyAgentSuggestion() {
-    const note = dialogPins.length > 0 ? `\n\n/* Agent note: 已針對 ${dialogPins.map((pin) => pin.meta).join("、")} 產生修改建議。 */` : "\n\n/* Agent note: 已產生整份檔案的修改建議。 */"
-    setDraftContent((current) => `${current}${note}`)
+    if (!agentResult?.ok) return
+    setDraftContent(agentResult.proposedContent)
     setEditStatus("Agent 建議已加入草稿")
     setActiveTab("edit")
   }
@@ -271,6 +361,8 @@ function AppFilePreviewDialogContent({
     document.addEventListener("mousedown", handleOutsideClick)
     return () => document.removeEventListener("mousedown", handleOutsideClick)
   }, [attachMenuOpen])
+
+  useEffect(() => () => agentControllerRef.current?.abort(), [])
 
   return (
     <Dialog
@@ -427,18 +519,45 @@ function AppFilePreviewDialogContent({
               <TabsPanel className="min-h-0 pt-2" value="agent">
                 <section aria-label="使用 Agent 修改檔案" className="grid gap-4">
                   {response && (
-                    <div className="grid gap-3 rounded-lg border border-info/20 bg-info/5 p-3 text-sm leading-6">
+                    <div
+                      aria-live="polite"
+                      className={cn(
+                        "grid gap-3 rounded-lg border p-3 text-sm leading-6",
+                        agentResult?.ok ? "border-info/20 bg-info/5" : "border-warning/30 bg-warning/8",
+                      )}
+                      role={agentResult?.ok ? "status" : "alert"}
+                    >
                       <div className="flex items-center gap-2 font-semibold text-info-foreground">
                         <Code2Icon aria-hidden="true" className="size-4" />
-                        建議修改
+                        {agentResult?.ok ? "建議修改" : "Agent 無法產生修改提案"}
                       </div>
                       <p>{response}</p>
-                      <div>
-                        <Button onClick={applyAgentSuggestion} size="sm" variant="outline">
-                          <PenLineIcon aria-hidden="true" />
-                          套用到編輯草稿
-                        </Button>
-                      </div>
+                      {agentResult && agentResult.warnings.length > 0 && (
+                        <ul className="grid gap-1 text-muted-foreground text-xs">
+                          {agentResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                        </ul>
+                      )}
+                      {agentResult?.ok && (
+                        <div>
+                          <Button disabled={agentBusy} onClick={applyAgentSuggestion} size="sm" variant="outline">
+                            <PenLineIcon aria-hidden="true" />
+                            套用到編輯草稿
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {agentError && (
+                    <div aria-live="assertive" className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">
+                      {agentError}
+                    </div>
+                  )}
+
+                  {agentBusy && (
+                    <div aria-live="polite" className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status">
+                      <CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+                      Coordinator 正在整理檔案上下文，完成後會委派 File Preview Editor。
                     </div>
                   )}
 
@@ -466,29 +585,30 @@ function AppFilePreviewDialogContent({
                           ))}
                         </div>
                       )}
-                    <textarea
-                      aria-label={`請 Agent 修改 ${file.name}`}
-                      className={cn(
-                        "min-h-[124px] max-h-[240px] w-full resize-none overflow-auto border-0 bg-transparent px-4 pb-3 text-sm leading-6 outline-none placeholder:text-muted-foreground/70",
-                        dialogPins.length > 0 ? "pt-2" : "pt-3",
-                      )}
-                      id="fileAgentPrompt"
-                      onChange={(event) => setPrompt(event.target.value)}
-                      placeholder="例如：找出這份檔案可改善的地方，並直接給出可套用的修改。"
-                      rows={5}
-                      value={prompt}
-                    />
+                      <textarea
+                        aria-label={`請 Agent 修改 ${file.name}`}
+                        className={cn(
+                          "min-h-[124px] max-h-[240px] w-full resize-none overflow-auto border-0 bg-transparent px-4 pb-3 text-sm leading-6 outline-none placeholder:text-muted-foreground/70",
+                          dialogPins.length > 0 ? "pt-2" : "pt-3",
+                        )}
+                        disabled={agentBusy}
+                        id="fileAgentPrompt"
+                        onChange={(event) => setPrompt(event.target.value)}
+                        placeholder="例如：找出這份檔案可改善的地方，並直接給出可套用的修改。"
+                        rows={5}
+                        value={prompt}
+                      />
                     </div>
                   </div>
 
                   <div className="relative flex flex-wrap items-center justify-between gap-3 border-border/70 border-t pt-3" ref={attachMenuRef}>
-                    <Button onClick={() => setAttachMenuOpen((current) => !current)} size="sm" variant="outline">
+                    <Button disabled={agentBusy} onClick={() => setAttachMenuOpen((current) => !current)} size="sm" variant="outline">
                       <PaperclipIcon aria-hidden="true" />
                       附加參考
                     </Button>
 
-                    <Button disabled={!prompt.trim()} onClick={submitAgentPrompt} size="sm">
-                      執行修改
+                    <Button disabled={!prompt.trim() || !canRunAgent} loading={agentBusy} onClick={() => void submitAgentPrompt()} size="sm">
+                      {agentBusy ? "正在執行修改" : "執行修改"}
                       <SendIcon aria-hidden="true" />
                     </Button>
 
@@ -496,6 +616,7 @@ function AppFilePreviewDialogContent({
                       <div className="absolute bottom-full left-0 z-20 mb-2 grid w-[234px] gap-1 rounded-lg border bg-popover p-1.5 text-left text-sm text-popover-foreground shadow-[0_16px_44px_rgb(0_0_0_/_18%)]">
                         <button
                           className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          disabled={agentBusy}
                           onClick={handleLibraryUpload}
                           type="button"
                         >
@@ -507,6 +628,7 @@ function AppFilePreviewDialogContent({
                         </button>
                         <button
                           className="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          disabled={agentBusy}
                           onClick={handleLocalUpload}
                           type="button"
                         >
