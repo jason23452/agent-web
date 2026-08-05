@@ -31,6 +31,11 @@ export type OpenCodeProjectFileDeleteInput = {
   recursive?: boolean
 }
 
+export type OpenCodeProjectFileExistsResponse = {
+  exists: boolean
+  type?: "directory" | "file"
+}
+
 export type OpenCodeProjectDirectoryInput = {
   directory: string
   path: string
@@ -53,6 +58,17 @@ export function listProjectFileTree(directory: string, config?: ApiRequestConfig
     query: {
       ...config?.query,
       directory,
+    },
+  })
+}
+
+export function projectFileExists(directory: string, path: string, config?: ApiRequestConfig) {
+  return apiRequest<OpenCodeProjectFileExistsResponse>("/bff/files/exists", {
+    ...config,
+    query: {
+      ...config?.query,
+      directory,
+      path,
     },
   })
 }

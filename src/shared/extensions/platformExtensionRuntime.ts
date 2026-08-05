@@ -1,4 +1,4 @@
-import { createOrUpdateProjectFile, readProjectFileContent } from "@/features/workspace/api/files"
+import { createOrUpdateProjectFile, projectFileExists, readProjectFileContent } from "@/features/workspace/api/files"
 import { abortSession, listSessionMessages, sendSessionPrompt } from "@/features/workspace/api/messages"
 import { createProjectSession } from "@/features/workspace/api/sessions"
 import { listPlatformExtensions, loadPlatformExtensionFrontend } from "@/shared/api/platformExtensions"
@@ -25,6 +25,7 @@ export type ExtensionHost = {
   hostVersion: string
   api: {
     readProjectFile: (path: string) => Promise<unknown>
+    fileExists: (path: string) => Promise<boolean>
     writeProjectFile: (input: { content: string; encoding?: "base64"; overwrite?: boolean; path: string }) => Promise<void>
     executeAgentPrompt: (input: ExtensionAgentPromptInput) => Promise<unknown>
   }
@@ -127,6 +128,7 @@ export function createExtensionHost(
         }
       },
       readProjectFile: async (path) => readProjectFileContent(projectPath, path, { signal }),
+      fileExists: async (path) => (await projectFileExists(projectPath, path, { signal })).exists,
       writeProjectFile: async (input) => {
         await createOrUpdateProjectFile({
           content: input.content,
