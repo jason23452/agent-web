@@ -5,6 +5,7 @@ import {
   clearNodeCache,
   createWorkflow,
   deleteWorkflow,
+  exportWorkflow,
   getWorkflow,
   getNodeCache,
   getWorkflowResources,
@@ -15,6 +16,7 @@ import {
   updateWorkflow,
   validateWorkflow,
 } from "@/features/workflows/api/workflows"
+import { createProjectWorkflowArchive, readProjectWorkflowArchive } from "@/features/workflows/workflowArchive"
 import type {
   WorkflowPublishReport,
   WorkflowCacheMetadataResult,
@@ -26,6 +28,7 @@ import type {
   WorkflowV1,
 } from "@/features/workflows/types"
 import { createWorkflowDraft, ensureWorkflowCapabilityConnections, issueMessage, normalizeWorkflowSchemaVersion, syncWorkflowAgentConfigs, touchWorkflow } from "@/features/workflows/workflowUtils"
+import { downloadBytes } from "@/shared/utils/projectFileDownload"
 
 export function useWorkflowBuilder(project?: string) {
   const [workflow, setWorkflow] = useState<WorkflowV1>(() => createWorkflowDraft(project))
@@ -249,6 +252,53 @@ export function useWorkflowBuilder(project?: string) {
     }
   }
 
+  async function exportProjectArchive() {
+    if (!project) return
+    setBusyAction("export-project")
+    try {
+      const projectSummaries = workflows.filter((summary) => summary.scope === "project" && summary.project === project)
+      if (projectSummaries.length === 0) {
+        toast("沒有可匯出的 Project Workflow", "目前專案沒有已儲存的 project-scoped workflow。", "info")
+        return
+      }
+
+      const exported = await Promise.all(projectSummaries.map((summary) => exportWorkflow(summary.id, "project", project, { workspace: project })))
+      downloadBytes(createProjectWorkflowArchive(exported, project), `${project}-workflows.zip`, "application/zip")
+      toast("Project Workflow 已匯出", `已下載 ${exported.length} 個 workflow 的壓縮包。`, "success")
+    } catch (error) {
+      toast("Project Workflow 匯出失敗", getApiErrorMessage(error), "error")
+      throw error
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function importProjectArchive(file: File) {
+    if (!project) return
+    setBusyAction("import-project")
+    try {
+      const imported = await readProjectWorkflowArchive(file)
+      const validated: WorkflowV1[] = []
+      for (const workflow of imported) {
+        const projectWorkflow = syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion({ ...workflow, project, scope: "project" }))
+        const report = await validateWorkflow(projectWorkflow, { workspace: project })
+        if (!report.valid || !report.workflow) {
+          throw new Error(`${workflow.name || workflow.id}：${report.errors.map(issueMessage).join("；") || "Workflow 驗證失敗。"}`)
+        }
+        validated.push(report.workflow)
+      }
+
+      for (const workflow of validated) await createWorkflow(workflow, { workspace: project })
+      await loadLibrary()
+      toast("Project Workflow 已匯入", `已匯入 ${validated.length} 個 workflow；尚未發布到 OpenCode。`, "success")
+    } catch (error) {
+      toast("Project Workflow 匯入失敗", getApiErrorMessage(error), "error")
+      throw error
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function publish(target: WorkflowTarget) {
     setBusyAction(`publish-${target}`)
     try {
@@ -331,6 +381,8 @@ export function useWorkflowBuilder(project?: string) {
     createNew,
     createGenerated,
     dirty,
+    exportProjectArchive,
+    importProjectArchive,
     libraryError,
     libraryLoading,
     load,

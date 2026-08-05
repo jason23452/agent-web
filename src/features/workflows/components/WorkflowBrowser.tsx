@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { ArrowLeftIcon, Clock3Icon, FilePlus2Icon, FolderOpenIcon, GitBranchIcon, SparklesIcon, Trash2Icon } from "lucide-react"
+import { useRef, useState, type ChangeEvent } from "react"
+import { ArrowLeftIcon, Clock3Icon, DownloadIcon, FilePlus2Icon, FolderOpenIcon, GitBranchIcon, SparklesIcon, Trash2Icon, UploadIcon } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogClose,
@@ -26,6 +26,8 @@ type WorkflowBrowserProps = {
   workflows: WorkflowSummary[]
   onCreate: (input: Pick<WorkflowV1, "name" | "description" | "scope">) => Promise<void>
   onDelete: (workflow: WorkflowSummary) => Promise<void>
+  onExportProject: () => Promise<void>
+  onImportProject: (file: File) => Promise<void>
   onLoad: (workflow: WorkflowSummary) => Promise<void>
   onOpenChange: (open: boolean) => void
   onOpenGenerator: () => void
@@ -38,6 +40,8 @@ export function WorkflowBrowser({
   loading,
   onCreate,
   onDelete,
+  onExportProject,
+  onImportProject,
   onLoad,
   onOpenChange,
   onOpenGenerator,
@@ -50,6 +54,7 @@ export function WorkflowBrowser({
   const [description, setDescription] = useState("")
   const [scope, setScope] = useState<WorkflowScope>(project ? "project" : "global")
   const [deleteTarget, setDeleteTarget] = useState<WorkflowSummary | null>(null)
+  const archiveInputRef = useRef<HTMLInputElement>(null)
   const systemWorkflows = workflows.filter((workflow) => workflow.protected)
   const customWorkflows = workflows.filter((workflow) => !workflow.protected)
 
@@ -61,6 +66,12 @@ export function WorkflowBrowser({
     setName("")
     setDescription("")
     onOpenChange(false)
+  }
+
+  function handleArchiveChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ""
+    if (file) void onImportProject(file).catch(() => undefined)
   }
 
   function renderWorkflowGroup(title: string, description: string, items: WorkflowSummary[], emptyMessage: string) {
@@ -89,11 +100,21 @@ export function WorkflowBrowser({
     <>
       <Dialog onOpenChange={onOpenChange} open={open}>
         <DialogPopup className="max-h-[calc(100dvh-2rem)] max-w-2xl" closeProps={{ "aria-label": "關閉 Workflow 瀏覽器" }}>
-          <DialogHeader>
-            <div className="flex items-start justify-between gap-4 pr-8">
-              <div><DialogTitle>{createMode ? "建立 Workflow" : "Workflow"}</DialogTitle><DialogDescription className="mt-1">{createMode ? "建立後可在 Workflow Builder 編輯與發布。" : `瀏覽、載入或建立 ${project ? `${project} 專案與全域` : "全域"} workflow。`}</DialogDescription></div>
-              {createMode ? <Button aria-label="返回 Workflow 列表" onClick={() => setCreateMode(false)} size="icon" variant="ghost"><ArrowLeftIcon aria-hidden="true" /></Button> : <div className="flex gap-2"><Button onClick={onOpenGenerator} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />需求生成</Button><Button onClick={() => setCreateMode(true)} size="sm"><FilePlus2Icon aria-hidden="true" />新增</Button></div>}
+          <DialogHeader className="gap-3">
+            <div className="flex min-w-0 items-start justify-between gap-4 pr-8">
+              <DialogTitle>{createMode ? "建立 Workflow" : "Workflow"}</DialogTitle>
+              {createMode ? <Button aria-label="返回 Workflow 列表" onClick={() => setCreateMode(false)} size="icon" variant="ghost"><ArrowLeftIcon aria-hidden="true" /></Button> : null}
             </div>
+            <DialogDescription>{createMode ? "建立後可在 Workflow Builder 編輯與發布。" : `瀏覽、載入或建立 ${project ? `${project} 專案與全域` : "全域"} workflow；匯入與匯出固定使用目前 project。`}</DialogDescription>
+            {!createMode ? (
+              <div className="grid grid-cols-2 gap-2 border-border/70 border-t pt-3 sm:flex sm:flex-wrap sm:justify-end">
+                <Button aria-label="匯出目前 Project Workflow" className="w-full sm:w-auto" disabled={busy || !project} onClick={() => void onExportProject().catch(() => undefined)} size="sm" title="匯出目前 project 的 workflow 壓縮包" variant="outline"><DownloadIcon aria-hidden="true" />匯出</Button>
+                <Button aria-label="匯入 Project Workflow 壓縮包" className="w-full sm:w-auto" disabled={busy || !project} onClick={() => archiveInputRef.current?.click()} size="sm" title="匯入 project workflow 壓縮包" variant="outline"><UploadIcon aria-hidden="true" />匯入</Button>
+                <input accept=".zip,application/zip" className="hidden" onChange={handleArchiveChange} ref={archiveInputRef} type="file" />
+                <Button className="w-full sm:w-auto" onClick={onOpenGenerator} size="sm" variant="secondary"><SparklesIcon aria-hidden="true" />需求生成</Button>
+                <Button className="w-full sm:w-auto" onClick={() => setCreateMode(true)} size="sm"><FilePlus2Icon aria-hidden="true" />新增</Button>
+              </div>
+            ) : null}
           </DialogHeader>
           <DialogPanel className="min-h-0 min-w-0 w-full max-w-full flex-1 grid gap-4 overflow-x-hidden overflow-y-auto">
             {createMode ? (
