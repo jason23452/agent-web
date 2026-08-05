@@ -1,7 +1,8 @@
-import { FileIcon, FolderPlusIcon, FolderOpenIcon, PlusIcon, XIcon } from "lucide-react"
-import type { ReactNode } from "react"
-import { useState } from "react"
+import { FileIcon, FolderPlusIcon, FolderOpenIcon, PlusIcon, UploadIcon, XIcon } from "lucide-react"
+import type { ChangeEvent, ReactNode } from "react"
+import { useRef, useState } from "react"
 import { FileTree, type FileTreeNode } from "@/shared/components/layout/context/FileTree"
+import type { ProjectUploadEntry } from "@/shared/components/layout/context/fileUpload"
 import { Sidebar } from "@/shared/components/layout/app/Sidebar"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
@@ -15,6 +16,7 @@ type AppContextPanelProps = {
   open: boolean
   projectActive?: boolean
   loading?: boolean
+  uploading?: boolean
   message?: string | null
   onClose: () => void
   extensionAction?: ReactNode
@@ -22,12 +24,13 @@ type AppContextPanelProps = {
   onCreateFolder?: (directory: string, itemName?: string) => void
   onCreateItem?: (itemType: CreateItemType, directory: string, itemName: string) => Promise<void> | void
   onDeleteNode?: (node: FileTreeNode) => Promise<void> | void
+  onDownloadNode?: (node: FileTreeNode) => Promise<void> | void
   onOpenExtensionFile?: (file: FileTreeNode) => void
-  onUploadFiles?: (files: readonly File[], targetDirectory: string) => Promise<void> | void
+  onUploadFiles?: (files: readonly ProjectUploadEntry[], targetDirectory: string) => Promise<void> | void
   onPreviewFile: (file: FileTreeNode) => void
 }
 
-export function AppContextPanel({ fileTree, message, loading = false, onClose, extensionAction, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onOpenExtensionFile, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
+export function AppContextPanel({ fileTree, message, loading = false, uploading = false, onClose, extensionAction, onCreateFile, onCreateFolder, onCreateItem, onDeleteNode, onDownloadNode, onOpenExtensionFile, onUploadFiles, onPreviewFile, open, projectActive = true }: AppContextPanelProps) {
   const [createItemOpen, setCreateItemOpen] = useState(false)
   const [createItemDirectory, setCreateItemDirectory] = useState(".")
   const [createItemType, setCreateItemType] = useState<CreateItemType>("file")
@@ -37,6 +40,26 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, e
 
   const [deleteNode, setDeleteNode] = useState<FileTreeNode | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const uploadDirectoryRef = useRef(".")
+
+  function requestUpload(directory = ".") {
+    if (!projectActive || !onUploadFiles || uploading) return
+    uploadDirectoryRef.current = directory
+    fileInputRef.current?.click()
+  }
+
+  function handleUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.currentTarget.files ?? []).map((file): ProjectUploadEntry => ({
+      file,
+      kind: "file",
+      relativePath: file.webkitRelativePath || file.name,
+    }))
+    event.currentTarget.value = ""
+    if (files.length === 0 || !onUploadFiles) return
+
+    void Promise.resolve(onUploadFiles(files, uploadDirectoryRef.current)).catch(() => undefined)
+  }
 
   function openCreateItemPanel(itemType: CreateItemType, directory = ".") {
     if (!projectActive) {
@@ -192,21 +215,45 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, e
         </Button>
       </div>
 
-      <section className="min-h-0 overflow-y-auto px-3 py-3">
+      <section className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-3 py-3">
         <div className="mb-2 flex items-center justify-between gap-2 px-1">
           <p className="font-medium text-muted-foreground text-xs">Project files</p>
-          {projectActive ? (
-            <button
-              aria-label="新增檔案或資料夾"
-              className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => openCreateItemPanel("file")}
-              title="新增檔案或資料夾"
-              type="button"
-            >
-              <PlusIcon aria-hidden="true" className="size-4" />
-            </button>
-          ) : null}
+          <div className="flex items-center gap-1">
+            {projectActive && onUploadFiles ? (
+              <button
+                aria-label="上傳檔案到專案根目錄"
+                className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                disabled={uploading}
+                onClick={() => requestUpload()}
+                title="上傳檔案到專案根目錄"
+                type="button"
+              >
+                <UploadIcon aria-hidden="true" className="size-4" />
+              </button>
+            ) : null}
+            {projectActive ? (
+              <button
+                aria-label="新增檔案或資料夾"
+                className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => openCreateItemPanel("file")}
+                title="新增檔案或資料夾"
+                type="button"
+              >
+                <PlusIcon aria-hidden="true" className="size-4" />
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        <input
+          accept="*/*"
+          className="hidden"
+          disabled={uploading || !projectActive || !onUploadFiles}
+          multiple
+          onChange={handleUploadChange}
+          ref={fileInputRef}
+          type="file"
+        />
 
         {loading ? (
           <div className="grid min-h-24 gap-2 rounded-lg  bg-muted/30 p-3">
@@ -231,15 +278,16 @@ export function AppContextPanel({ fileTree, message, loading = false, onClose, e
           <p className="rounded-lg border border-dashed bg-muted/40 p-3 text-muted-foreground text-sm">尚未啟用專案，請先到左側側邊欄開啟一個專案。</p>
         ) : message ? (
           <p className="rounded-lg border border-dashed bg-destructive/10 p-3 text-destructive text-sm">{message}</p>
-        ) : fileTree.length === 0 ? (
-          <p className="rounded-lg border border-dashed bg-muted/40 p-3 text-muted-foreground text-sm">目前沒有可顯示的專案檔案。</p>
         ) : (
           <FileTree
+            emptyMessage={fileTree.length === 0 ? <p className="text-muted-foreground text-sm">目前沒有可顯示的專案檔案。{onUploadFiles ? " 可將檔案或資料夾拖曳到這裡上傳。" : ""}</p> : undefined}
             nodes={fileTree}
             onCreateFile={handleCreateFile}
             onCreateFolder={handleCreateFolder}
             onDeleteNode={requestDeleteNode}
+            onDownloadNode={onDownloadNode}
             onPreviewFile={previewNode}
+            onRequestUpload={onUploadFiles ? requestUpload : undefined}
             onUploadFiles={onUploadFiles}
           />
         )}

@@ -1,6 +1,7 @@
-import { ChevronRightIcon, Code2Icon, FileIcon, FileImageIcon, FileJsonIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, PlusIcon, Trash2Icon } from "lucide-react"
-import { type DragEvent, type KeyboardEvent, useState } from "react"
+import { ChevronRightIcon, Code2Icon, DownloadIcon, FileIcon, FileImageIcon, FileJsonIcon, FolderIcon, FolderOpenIcon, FolderPlusIcon, PlusIcon, Trash2Icon, UploadIcon } from "lucide-react"
+import { type DragEvent, type KeyboardEvent, type ReactNode, useState } from "react"
 import type { FileNode, FileType } from "@/shared/types/workspace"
+import { collectDroppedProjectFiles, type ProjectUploadEntry } from "@/shared/components/layout/context/fileUpload"
 
 export type FileTreeNode = FileNode
 
@@ -9,8 +10,11 @@ type FileTreeProps = {
   onCreateFile?: (directory: string) => void
   onCreateFolder?: (directory: string) => void
   onDeleteNode?: (node: FileTreeNode) => void
+  onDownloadNode?: (node: FileTreeNode) => Promise<void> | void
   onPreviewFile: (file: FileTreeNode) => void
-  onUploadFiles?: (files: readonly File[], targetDirectory: string) => Promise<void> | void
+  onRequestUpload?: (targetDirectory: string) => void
+  onUploadFiles?: (files: readonly ProjectUploadEntry[], targetDirectory: string) => Promise<void> | void
+  emptyMessage?: ReactNode
 }
 
 function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileType }) {
@@ -28,7 +32,7 @@ function FileTypeIcon({ expanded, type }: { expanded?: boolean; type: FileType }
   return <FileIcon aria-hidden="true" className="size-4 text-muted-foreground" />
 }
 
-export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, onPreviewFile, onUploadFiles }: FileTreeProps) {
+export function FileTree({ emptyMessage, nodes, onCreateFile, onCreateFolder, onDeleteNode, onDownloadNode, onPreviewFile, onRequestUpload, onUploadFiles }: FileTreeProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
 
   function toggleNode(id: string) {
@@ -40,17 +44,23 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
     })
   }
 
+  function handleDragOver(event: DragEvent) {
+    if (!onUploadFiles) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+  }
+
+  async function handleDrop(event: DragEvent, targetDirectory: string) {
+    if (!onUploadFiles) return
+    event.preventDefault()
+    event.stopPropagation()
+
+    const files = await collectDroppedProjectFiles(event.dataTransfer)
+    if (files.length === 0) return
+    await onUploadFiles(files, targetDirectory)
+  }
+
   function renderNodes(items: FileTreeNode[], depth = 0, parentPath = ".") {
-    function handleDrop(event: DragEvent, targetDirectory: string) {
-      if (!onUploadFiles) return
-
-      event.preventDefault()
-      const files = Array.from(event.dataTransfer.files)
-      if (files.length === 0) return
-
-      void onUploadFiles(files, targetDirectory)
-    }
-
     return items.map((node) => {
       const isFolder = node.type === "folder"
       const expanded = expandedIds.has(node.id)
@@ -65,9 +75,9 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
       }
 
       return (
-        <li className="grid" key={node.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, actionDirectory)}>
+        <li className="grid min-w-0" key={node.id} onDragOver={handleDragOver} onDrop={(event) => void handleDrop(event, actionDirectory)}>
           <div
-            className="group/file-tree flex min-h-8 w-full items-center gap-1.5 rounded-lg pr-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group/file-tree flex min-h-8 min-w-0 w-full items-center gap-1.5 rounded-lg pr-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={activateNode}
             onKeyDown={handleNodeKeyDown}
             role="button"
@@ -83,7 +93,7 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
             <span className="min-w-0 flex-1 truncate text-sm">{node.name}</span>
             {node.size && <span className="shrink-0 font-mono text-muted-foreground text-[10px] opacity-0 transition-opacity group-hover/file-tree:opacity-100">{node.size}</span>}
 
-            <span className="ml-auto flex shrink-0 items-center gap-1.5 opacity-0 transition-opacity group-hover/file-tree:opacity-100" onClick={(event) => event.stopPropagation()}>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 opacity-0 transition-opacity pointer-coarse:opacity-100 group-focus-within/file-tree:opacity-100 group-hover/file-tree:opacity-100" onClick={(event) => event.stopPropagation()}>
               {isFolder && onCreateFile ? (
                 <button
                   aria-label="在此資料夾新增檔案"
@@ -114,6 +124,36 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
                 </button>
               ) : null}
 
+              {isFolder && onRequestUpload ? (
+                <button
+                  aria-label="在此資料夾上傳檔案"
+                  className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onRequestUpload(nodeDirectory)
+                  }}
+                  title="在此資料夾上傳檔案"
+                  type="button"
+                >
+                  <UploadIcon aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+
+              {onDownloadNode ? (
+                <button
+                  aria-label={`下載 ${node.name}`}
+                  className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void onDownloadNode(node)
+                  }}
+                  title={`下載 ${node.name}`}
+                  type="button"
+                >
+                  <DownloadIcon aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+
               {onDeleteNode ? (
                 <button
                   aria-label={`刪除 ${node.name}`}
@@ -131,11 +171,19 @@ export function FileTree({ nodes, onCreateFile, onCreateFolder, onDeleteNode, on
             </span>
           </div>
 
-          {isFolder && node.children && expanded && <ul className="grid">{renderNodes(node.children, depth + 1, nodeDirectory)}</ul>}
+          {isFolder && node.children && expanded && <ul className="grid min-w-0">{renderNodes(node.children, depth + 1, nodeDirectory)}</ul>}
         </li>
       )
     })
   }
 
-  return <ul className="grid gap-0.5">{renderNodes(nodes, 0, ".")}</ul>
+  if (nodes.length === 0) {
+    return (
+      <div className="min-w-0 rounded-lg border border-dashed bg-muted/30 p-3" onDragOver={handleDragOver} onDrop={(event) => void handleDrop(event, ".")}>
+        {emptyMessage}
+      </div>
+    )
+  }
+
+  return <ul className="grid min-w-0 gap-0.5" onDragOver={handleDragOver} onDrop={(event) => void handleDrop(event, ".")}>{renderNodes(nodes, 0, ".")}</ul>
 }

@@ -56,9 +56,11 @@ export function AppRouter() {
     contextFileTree,
     contextFileTreeError,
     contextFileTreeLoading,
+    contextFileTreeUploading,
     createContextProjectFile,
     createContextProjectFolder,
     deleteContextNode,
+    downloadContextNode,
     openProjectFile,
     previewFile,
     reloadContextFileTree,
@@ -251,6 +253,7 @@ export function AppRouter() {
             loading={contextFileTreeLoading}
             message={contextFileTreeError}
             projectActive={Boolean(activeProjectPath)}
+            uploading={contextFileTreeUploading}
             open={contextPanelOpen}
             onClose={() => setContextPanelOpen(false)}
             extensionAction={
@@ -271,6 +274,7 @@ export function AppRouter() {
               return createContextProjectFolder(directory, itemName)
             }}
             onDeleteNode={deleteContextNode}
+            onDownloadNode={downloadContextNode}
             onOpenExtensionFile={(file) => {
               if (activeProjectName) navigateToExtension(activeProjectName, "xmind", { filePath: file.path ?? file.name })
             }}

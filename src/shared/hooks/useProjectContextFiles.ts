@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, getFileTypeByName, readProjectFileContent } from "@/features/workspace/api/files"
-import { getApiErrorMessage } from "@/shared/api"
+import { createOrUpdateProjectFile, createProjectDirectory, deleteProjectFile, getFileTypeByName, projectFileExists, readProjectFileContent } from "@/features/workspace/api/files"
+import { ApiError, getApiErrorMessage } from "@/shared/api"
 import { consumeProjectFileEvents, type OpenCodeEvent } from "@/shared/api/opencodeEvents"
 import type { FileNode } from "@/shared/types/workspace"
 import type { FileTreeNode } from "@/shared/components/layout/context/FileTree"
+import type { ProjectUploadEntry } from "@/shared/components/layout/context/fileUpload"
 import {
   buildWorkspaceFileTree,
   combineRelativePath,
@@ -12,6 +13,7 @@ import {
   readFileAsBase64,
   toRelativePath,
 } from "@/shared/utils/appRouterUtils"
+import { createStoredZip, downloadBytes, type DownloadArchiveEntry } from "@/shared/utils/projectFileDownload"
 
 type UseProjectContextFilesOptions = {
   activeProjectPath: string | null
@@ -22,6 +24,45 @@ type ProjectFileKind = "directory" | "file"
 
 function normalizeProjectFilePath(path: string) {
   return path.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+|\/+$/g, "")
+}
+
+function isExistingDirectoryError(error: unknown) {
+  return error instanceof ApiError && error.status === 409 && error.code === "FILE_ALREADY_EXISTS"
+}
+
+function decodeBase64Bytes(value: string) {
+  const binary = atob(value.replace(/\s/g, ""))
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
+}
+
+function findProjectFileNode(nodes: FileTreeNode[], targetPath: string): FileTreeNode | undefined {
+  for (const node of nodes) {
+    if (node.path === targetPath) return node
+    if (node.children) {
+      const match = findProjectFileNode(node.children, targetPath)
+      if (match) return match
+    }
+  }
+  return undefined
+}
+
+async function buildDownloadEntries(directory: string, node: FileTreeNode, archivePath = node.name): Promise<DownloadArchiveEntry[]> {
+  if (node.type !== "folder") {
+    const path = normalizeDirectoryInput(node.path || node.name)
+    const response = await readProjectFileContent(directory, path)
+    const content = response.encoding === "base64" || response.type === "binary"
+      ? decodeBase64Bytes(response.content)
+      : new TextEncoder().encode(response.content)
+    return [{ content, name: archivePath }]
+  }
+
+  const entries: DownloadArchiveEntry[] = [{ content: new Uint8Array(), name: `${archivePath}/` }]
+  for (const child of node.children ?? []) {
+    entries.push(...await buildDownloadEntries(directory, child, `${archivePath}/${child.name}`))
+  }
+  return entries
 }
 
 function sortProjectFileNodes(nodes: FileTreeNode[]) {
@@ -133,6 +174,7 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
   const [contextFileTreeLoading, setContextFileTreeLoading] = useState(false)
   const [contextFileTreeError, setContextFileTreeError] = useState<string | null>(null)
   const [contextFileTreeVersion, setContextFileTreeVersion] = useState(0)
+  const [contextFileTreeUploading, setContextFileTreeUploading] = useState(false)
   const contextFileTreeRef = useRef<FileTreeNode[]>([])
 
   const triggerContextFileTreeReload = useCallback(() => {
@@ -206,18 +248,48 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     }
   }, [activeProjectPath, applyProjectFileChange])
 
-  const uploadContextFiles = useCallback(async (files: readonly File[], directory: string) => {
+  const uploadContextFiles = useCallback(async (files: readonly ProjectUploadEntry[], directory: string) => {
     if (!activeProjectPath) return
     const list = Array.from(files)
     if (list.length === 0) return
-    setContextFileTreeLoading(true)
+    setContextFileTreeUploading(true)
 
     try {
       const targetDirectory = normalizeDirectoryInput(directory)
-      const responses = await Promise.all(list.map(async (item) => createOrUpdateProjectFile({
+      const directoryPaths = new Set<string>()
+      list.forEach((item) => {
+        const relativePath = normalizeProjectFilePath(item.relativePath)
+        const segments = relativePath.split("/").filter(Boolean)
+        const end = item.kind === "directory" ? segments.length : Math.max(0, segments.length - 1)
+        for (let index = 1; index <= end; index += 1) directoryPaths.add(segments.slice(0, index).join("/"))
+      })
+
+      const directoryResponses: Array<{ path: string } | null> = []
+      const sortedDirectoryPaths = Array.from(directoryPaths).sort((first, second) => first.split("/").length - second.split("/").length)
+      for (const relativePath of sortedDirectoryPaths) {
+        const path = combineRelativePath(targetDirectory, relativePath)
+        const existing = await projectFileExists(activeProjectPath, path)
+        if (existing.exists) {
+          if (existing.type !== "directory") throw new Error(`上傳路徑不是資料夾：${path}`)
+          directoryResponses.push(null)
+          continue
+        }
+
+        try {
+          directoryResponses.push(await createProjectDirectory({ directory: activeProjectPath, path }))
+        } catch (error) {
+          if (isExistingDirectoryError(error)) directoryResponses.push(null)
+          else throw error
+        }
+      }
+      directoryResponses.forEach((response) => {
+        if (response) applyProjectFileChange(response.path, "add", "directory")
+      })
+
+      const responses = await Promise.all(list.filter((item): item is Extract<ProjectUploadEntry, { kind: "file" }> => item.kind === "file").map(async (item) => createOrUpdateProjectFile({
           directory: activeProjectPath,
-          path: combineRelativePath(targetDirectory, item.name),
-          content: await readFileAsBase64(item),
+          path: combineRelativePath(targetDirectory, normalizeProjectFilePath(item.relativePath)),
+          content: await readFileAsBase64(item.file),
           encoding: "base64",
           overwrite: true,
         })))
@@ -226,7 +298,7 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     } catch (error) {
       setContextFileTreeError(getApiErrorMessage(error))
     } finally {
-      setContextFileTreeLoading(false)
+      setContextFileTreeUploading(false)
     }
   }, [activeProjectPath, applyProjectFileChange])
 
@@ -246,6 +318,34 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
       setContextFileTreeError(getApiErrorMessage(error))
     }
   }, [activeProjectPath, applyProjectFileChange])
+
+  const downloadContextNode = useCallback(async (node: FileTreeNode) => {
+    if (!activeProjectPath) return
+
+    try {
+      let target = node
+      if (node.type === "folder") {
+        const tree = await buildWorkspaceFileTree(activeProjectPath, new AbortController().signal)
+        target = findProjectFileNode(tree, normalizeDirectoryInput(node.path || node.name)) ?? node
+      }
+
+      if (target.type === "folder") {
+        const entries = await buildDownloadEntries(activeProjectPath, target)
+        downloadBytes(createStoredZip(entries), `${target.name}.zip`, "application/zip")
+      } else {
+        const path = normalizeDirectoryInput(target.path || target.name)
+        const response = await readProjectFileContent(activeProjectPath, path)
+        const bytes = response.encoding === "base64" || response.type === "binary"
+          ? decodeBase64Bytes(response.content)
+          : new TextEncoder().encode(response.content)
+        downloadBytes(bytes, target.name, response.mimeType ?? "application/octet-stream")
+      }
+
+      setContextFileTreeError(null)
+    } catch (error) {
+      setContextFileTreeError(getApiErrorMessage(error))
+    }
+  }, [activeProjectPath])
 
   useEffect(() => {
     if (!activeProjectPath) return
@@ -279,9 +379,11 @@ export function useProjectContextFiles({ activeProjectPath }: UseProjectContextF
     contextFileTree,
     contextFileTreeError: activeProjectPath ? contextFileTreeError : "尚未啟用專案，請先到側邊欄開啟專案。",
     contextFileTreeLoading: activeProjectPath ? contextFileTreeLoading : false,
+    contextFileTreeUploading: activeProjectPath ? contextFileTreeUploading : false,
     createContextProjectFile,
     createContextProjectFolder,
     deleteContextNode,
+    downloadContextNode,
     openProjectFile,
     previewFile,
     reloadContextFileTree: triggerContextFileTreeReload,
