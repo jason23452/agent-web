@@ -20,6 +20,7 @@ export type AppSidebarProps = {
   onCreateSession: () => Promise<void> | void;
   onDeleteProject: (project: AppSidebarProject) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onOpenExtension: (extensionId: string) => void;
   onProjectChange: (path: string) => void;
   onOpenCodeProviderCatalogChange?: (catalog: OpenCodeProviderListResponse | null) => void;
   onOpenCodeDisabledModelsChange?: (disabledModelKeys: string[]) => void;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getApiErrorMessage } from "@/shared/api";
 import {
   listPlatformExtensions,
+  loadPlatformExtensionConfiguration,
   loadPlatformExtensionFrontend,
   PLATFORM_EXTENSIONS_CHANGED_EVENT,
   type PlatformExtension,
@@ -95,7 +96,7 @@ export function ExtensionHostAction({
 
     async function loadAction() {
       try {
-        const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
+         const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
         if (controller.signal.aborted || disposed) return;
 
         objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
@@ -103,7 +104,7 @@ export function ExtensionHostAction({
         if (controller.signal.aborted || disposed) return;
         if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
 
-        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined);
+        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, () => undefined, extensionProjectName);
         const runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
@@ -180,7 +181,10 @@ export function ExtensionHostPage({
       setError(null);
 
       try {
-        const source = await loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal });
+         const [source, configuration] = await Promise.all([
+           loadPlatformExtensionFrontend(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }),
+           loadPlatformExtensionConfiguration(extensionId, { project: extensionProjectName, scope: "project" }, { signal: controller.signal }).catch(() => ({})),
+         ]);
         if (controller.signal.aborted || !containerRef.current) return;
 
         objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
@@ -188,13 +192,19 @@ export function ExtensionHostPage({
         if (controller.signal.aborted || disposed) return;
         if (!module.activate) throw new Error("Extension frontend 缺少 activate()。");
 
-        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, setError);
+        const host = createExtensionHost(extensionId, extensionProjectPath, controller.signal, () => undefined, setError, extensionProjectName);
         runtime = await module.activate(host);
         if (controller.signal.aborted || disposed) return;
 
         const mountEditor = runtime?.editor?.mount;
         if (mountEditor && containerRef.current) {
-          editorHandle = await mountEditor(containerRef.current, { initialFilePath, onBack, projectName: extensionProjectName, projectPath: extensionProjectPath }) ?? undefined;
+           editorHandle = await mountEditor(containerRef.current, {
+             configuration,
+             initialFilePath,
+             onBack,
+             projectName: extensionProjectName,
+             projectPath: extensionProjectPath,
+           }) ?? undefined;
         } else {
           throw new Error("Extension 已載入，但沒有提供可掛載的 editor。");
         }

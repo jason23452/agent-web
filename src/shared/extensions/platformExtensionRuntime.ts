@@ -1,7 +1,8 @@
 import { createOrUpdateProjectFile, projectFileExists, readProjectFileContent } from "@/features/workspace/api/files"
 import { abortSession, listSessionMessages, sendSessionPrompt } from "@/features/workspace/api/messages"
 import { createProjectSession } from "@/features/workspace/api/sessions"
-import { listPlatformExtensions, loadPlatformExtensionFrontend } from "@/shared/api/platformExtensions"
+import { callPlatformExtensionBackend, listPlatformExtensions, loadPlatformExtensionConfiguration, loadPlatformExtensionFrontend } from "@/shared/api/platformExtensions"
+import { applyOpenCodeConfig, getOpenCodeConfig, type OpenCodeConfigApplyBody, type OpenCodeConfigScope } from "@/shared/api/opencodeProjectConfig"
 
 export type ExtensionAgentPromptInput = {
   agent: string
@@ -28,6 +29,10 @@ export type ExtensionHost = {
     fileExists: (path: string) => Promise<boolean>
     writeProjectFile: (input: { content: string; encoding?: "base64"; overwrite?: boolean; path: string }) => Promise<void>
     executeAgentPrompt: (input: ExtensionAgentPromptInput) => Promise<unknown>
+    callExtensionBackend: (path: string, options?: { body?: unknown; method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"; scope?: "global" | "project" }) => Promise<unknown>
+    readConfiguration: () => Promise<unknown>
+    readOpenCodeConfig: (scope?: OpenCodeConfigScope) => Promise<unknown>
+    applyOpenCodeConfig: (input: OpenCodeConfigApplyBody & { scope?: OpenCodeConfigScope }) => Promise<unknown>
   }
   ui: {
     announce: (message: string) => void
@@ -72,7 +77,7 @@ export async function preparePlatformExtensionAttachment(
       objectURL = URL.createObjectURL(new Blob([source], { type: "text/javascript" }))
       extensionModule = await import(/* @vite-ignore */ objectURL) as ExtensionModule
       if (!extensionModule.activate) continue
-      const runtime = await extensionModule.activate(createExtensionHost(extensionId, options.projectPath, signal, () => undefined, () => undefined))
+      const runtime = await extensionModule.activate(createExtensionHost(extensionId, options.projectPath, signal, () => undefined, () => undefined, options.projectName))
       const prepare = runtime?.attachments?.prepare
       if (!prepare) continue
       hasPrepareHandler = true
@@ -95,7 +100,14 @@ export function createExtensionHost(
   signal: AbortSignal,
   announce: (message: string) => void,
   showError: (message: string) => void,
+  projectName?: string,
 ): ExtensionHost {
+  const requireProjectName = () => {
+    const value = projectName?.trim()
+    if (!value) throw new Error("Extension API 需要目前 Project。")
+    return value
+  }
+
   return {
     extensionId,
     hostVersion: "1.0.0",
@@ -127,6 +139,26 @@ export function createExtensionHost(
           throw error
         }
       },
+      callExtensionBackend: async (path, options = {}) => {
+        const scope = options.scope === "global" ? "global" : "project";
+        return callPlatformExtensionBackend(extensionId, path, {
+          body: options.body,
+          method: options.method,
+          project: scope === "project" ? requireProjectName() : undefined,
+          scope,
+          }, { signal });
+      },
+      readConfiguration: async () => loadPlatformExtensionConfiguration(extensionId, {
+        project: projectName,
+        scope: projectName ? "project" : "global",
+      }, { signal }),
+      readOpenCodeConfig: async (scope = "project") => getOpenCodeConfig(scope, scope === "project" ? requireProjectName() : undefined, { signal }),
+      applyOpenCodeConfig: async ({ scope = "project", ...input }) => applyOpenCodeConfig(
+        scope,
+        input,
+        scope === "project" ? requireProjectName() : undefined,
+        { signal },
+      ),
       readProjectFile: async (path) => readProjectFileContent(projectPath, path, { signal }),
       fileExists: async (path) => (await projectFileExists(projectPath, path, { signal })).exists,
       writeProjectFile: async (input) => {

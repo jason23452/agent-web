@@ -71,6 +71,7 @@ type UserSettingsModalProps = {
   npmPackagesToInstall: string[];
   npmPackagesToDelete: string[];
   npmPackageTarget: NpmPackageScope;
+  onOpenExtension: (extensionId: string) => void;
   modelSettingsApplying?: boolean;
   modelSettingsChanged?: boolean;
   onClose: () => void;
@@ -133,6 +134,7 @@ export function UserSettingsModal({
   onModelToggle,
   onNpmPackageInputChange,
   onNpmPackageTargetChange,
+  onOpenExtension,
   onOpenChange,
   onProviderAuthMethodChange,
   onProviderApiKeySubmit,
@@ -227,9 +229,9 @@ export function UserSettingsModal({
             ) : section === "extensions" ? (
               <ExtensionsPanel activeProjectName={activeProjectName} />
             ) : section === "platform-management" ? (
-              <PlatformManagementPanel />
+              <PlatformManagementPanel activeProjectName={activeProjectName} onOpenExtension={onOpenExtension} />
             ) : (
-              <DeploymentPlatformsPanel />
+              <DeploymentPlatformsPanel activeProjectName={activeProjectName} onOpenExtension={onOpenExtension} />
             )}
           </main>
 

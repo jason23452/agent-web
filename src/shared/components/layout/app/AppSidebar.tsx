@@ -898,6 +898,7 @@ export function AppSidebar({
   onCreateSession,
   onDeleteProject,
   onDeleteSession,
+  onOpenExtension,
   onOpenCodeDisabledModelsChange,
   onOpenCodeProviderCatalogChange,
   onProjectChange,
@@ -4515,9 +4516,13 @@ export function AppSidebar({
         onModelToggle={toggleAvailableModel}
         onNpmPackageInputChange={setNpmPackageInput}
         onNpmPackageTargetChange={changeNpmPackageTarget}
-        onOpenChange={(settingsOpen) => {
-          if (!settingsOpen) closeUserSettings();
-        }}
+         onOpenChange={(settingsOpen) => {
+           if (!settingsOpen) closeUserSettings();
+         }}
+         onOpenExtension={(extensionId) => {
+           closeUserSettings();
+           onOpenExtension(extensionId);
+         }}
         onProviderApiKeySubmit={submitProviderApiKey}
         onProviderAuthMethodChange={startProviderAuthFlow}
         onProviderDisconnect={disconnectModelProvider}

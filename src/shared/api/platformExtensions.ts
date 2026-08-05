@@ -61,6 +61,15 @@ export type PlatformExtensionInstallResponse = {
   }>;
 };
 
+export type PlatformExtensionConfiguration = Record<string, unknown>;
+
+export type ExtensionBackendRequestOptions = {
+  body?: unknown;
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  project?: string;
+  scope: "global" | "project";
+};
+
 export function listPlatformExtensions(options: PlatformExtensionListOptions, config?: ApiRequestConfig) {
   return apiRequest<PlatformExtensionListResponse>("/bff/extensions", {
     ...config,
@@ -105,5 +114,35 @@ export function loadPlatformExtensionFrontend(
   return apiRequestText(`/bff/extensions/${encodeURIComponent(extensionId)}/frontend`, {
     ...config,
     query: { ...config?.query, project: options.scope === "project" ? options.project : undefined, scope: options.scope },
+  });
+}
+
+export function loadPlatformExtensionConfiguration(
+  extensionId: string,
+  options: { project?: string; scope: "global" | "project" },
+  config?: ApiRequestConfig,
+) {
+  return apiRequest<PlatformExtensionConfiguration>(`/bff/extensions/${encodeURIComponent(extensionId)}/configuration`, {
+    ...config,
+    query: { ...config?.query, project: options.scope === "project" ? options.project : undefined, scope: options.scope },
+  });
+}
+
+export function callPlatformExtensionBackend(
+  extensionId: string,
+  path: string,
+  options: ExtensionBackendRequestOptions,
+  config?: ApiRequestConfig,
+) {
+  const backendPath = path.split("/").filter(Boolean).map((segment) => encodeURIComponent(segment)).join("/");
+  return apiRequest<unknown>(`/bff/extensions/${encodeURIComponent(extensionId)}/backend/${backendPath}`, {
+    ...config,
+    body: options.body,
+    method: options.method ?? "GET",
+    query: {
+      ...config?.query,
+      ...(options.project && options.scope === "project" ? { project: options.project } : {}),
+      scope: options.scope,
+    },
   });
 }

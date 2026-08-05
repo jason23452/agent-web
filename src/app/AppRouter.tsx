@@ -316,8 +316,9 @@ export function AppRouter() {
            onCreateSession={startNewConversationAndCloseSurfaces}
           onDeleteProject={deleteProject}
           onDeleteSession={deleteSession}
-          onClose={() => setSidebarOpen(false)}
-           onOpenCodeDisabledModelsChange={setDisabledOpenCodeModelKeys}
+           onClose={() => setSidebarOpen(false)}
+           onOpenExtension={openExtension}
+            onOpenCodeDisabledModelsChange={setDisabledOpenCodeModelKeys}
            onOpenCodeProviderCatalogChange={setOpenCodeProviderCatalog}
            modelOptions={modelOptions}
            onProjectChange={changeProject}
