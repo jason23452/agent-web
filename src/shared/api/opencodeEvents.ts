@@ -37,6 +37,9 @@ async function consumeEventStream(
   let lastEventID = ""
   let retryDelay = 500
 
+  // Let React StrictMode dispose its test mount before opening a long-lived connection.
+  await waitForRetry(0, signal)
+
   while (!signal.aborted) {
     const headers = new Headers({ Accept: "text/event-stream" })
     if (lastEventID) headers.set("Last-Event-ID", lastEventID)
@@ -56,6 +59,7 @@ async function consumeEventStream(
     }
 
     if (!response.ok) {
+      await response.body?.cancel()
       if (response.status >= 400 && response.status < 500) {
         throw new Error(`OpenCode event stream failed (${response.status})`)
       }
@@ -104,6 +108,11 @@ async function consumeEventStream(
         }
       }
     } finally {
+      try {
+        await reader.cancel()
+      } catch {
+        // The response may already be closed or aborted.
+      }
       reader.releaseLock()
     }
 
