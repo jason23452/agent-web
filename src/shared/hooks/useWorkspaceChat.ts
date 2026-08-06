@@ -5,6 +5,8 @@ import { createProjectSession, toWorkspaceSession } from "@/features/workspace/a
 import { abortSession, applyOpenCodeMessageEvent, listSessionMessages, parseSessionCommand, sendSessionCommand, sendSessionPrompt, toWorkspaceMessages } from "@/features/workspace/api/messages"
 import type { OpenCodeMessageEvent, OpenCodeSessionMessage } from "@/features/workspace/api/messages"
 import { consumeOpenCodeEvents, type OpenCodeEvent } from "@/shared/api/opencodeEvents"
+import { listOpenCodeQuestions, rejectOpenCodeQuestion, replyOpenCodeQuestion } from "@/shared/api/opencodeQuestions"
+import type { OpenCodeQuestionAnswers, OpenCodeQuestionInfo, OpenCodeQuestionRequest } from "@/shared/api/opencodeQuestions"
 import type { OpenCodeRuntimeCommand } from "@/shared/api/opencodeCommands"
 import { getApiErrorMessage } from "@/shared/api"
 import { getProjectRouteName, readFileAsBase64 } from "@/shared/utils/appRouterUtils"
@@ -72,6 +74,48 @@ function getSessionTreeIDs(sessionID: string, sessions: Array<{ id: string; pare
   return sessionIDs
 }
 
+function getSessionFamilyIDs(sessionID: string, sessions: Array<{ id: string; parentID?: string }>) {
+  const byID = new Map(sessions.map((session) => [session.id, session]))
+  let rootID = sessionID
+  const visited = new Set<string>()
+  while (!visited.has(rootID)) {
+    visited.add(rootID)
+    const parentID = byID.get(rootID)?.parentID
+    if (!parentID) break
+    rootID = parentID
+  }
+  return getSessionTreeIDs(rootID, sessions)
+}
+
+function parseQuestionInfo(value: unknown): OpenCodeQuestionInfo | null {
+  if (!isRecord(value) || typeof value.question !== "string" || typeof value.header !== "string" || !Array.isArray(value.options)) return null
+  const options = value.options.flatMap((option) => isRecord(option) && typeof option.label === "string"
+    ? [{ label: option.label, description: typeof option.description === "string" ? option.description : "" }]
+    : [],
+  )
+  if (options.length !== value.options.length) return null
+  return {
+    custom: value.custom !== false,
+    header: value.header,
+    multiple: value.multiple === true,
+    options,
+    question: value.question,
+  }
+}
+
+function parseQuestionRequest(value: unknown): OpenCodeQuestionRequest | null {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.sessionID !== "string" || !Array.isArray(value.questions)) return null
+  const questions = value.questions.flatMap((question) => {
+    const parsed = parseQuestionInfo(question)
+    return parsed ? [parsed] : []
+  })
+  if (questions.length === 0 || questions.length !== value.questions.length) return null
+  const tool = isRecord(value.tool) && typeof value.tool.callID === "string" && typeof value.tool.messageID === "string"
+    ? { callID: value.tool.callID, messageID: value.tool.messageID }
+    : undefined
+  return { id: value.id, questions, sessionID: value.sessionID, ...(tool ? { tool } : {}) }
+}
+
 function isOpenCodeSession(value: unknown): value is OpenCodeSession {
   return isRecord(value)
     && typeof value.id === "string"
@@ -91,6 +135,7 @@ type UseWorkspaceChatOptions = {
   commands: OpenCodeRuntimeCommand[]
   emptyAgentId: string
   onSessionCreated?: (sessionID: string) => void
+  openCodeSessions: OpenCodeSession[]
   reloadContextFileTree: () => void
   selectedModel: ModelOption | null
   selectedThinkingVariant: string
@@ -106,6 +151,7 @@ export function useWorkspaceChat({
   commands,
   emptyAgentId,
   onSessionCreated,
+  openCodeSessions,
   reloadContextFileTree,
   selectedModel,
   selectedThinkingVariant,
@@ -118,6 +164,9 @@ export function useWorkspaceChat({
   const [messagesError, setMessagesError] = useState<string | null>(null)
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageSending, setMessageSending] = useState(false)
+  const [pendingQuestions, setPendingQuestions] = useState<OpenCodeQuestionRequest[]>([])
+  const [questionActionID, setQuestionActionID] = useState<string | null>(null)
+  const [questionError, setQuestionError] = useState<string | null>(null)
   const activeProjectRef = useRef(activeProjectPath)
   const activeSessionRef = useRef(activeSessionId)
   const abortInFlightRef = useRef(false)
@@ -150,6 +199,34 @@ export function useWorkspaceChat({
     window.clearTimeout(snapshotTimeoutRef.current)
     snapshotTimeoutRef.current = null
   }, [])
+
+  const refreshPendingQuestions = useCallback(async (directory: string, signal?: AbortSignal) => {
+    try {
+      const response = await listOpenCodeQuestions(directory, { signal })
+      if (signal?.aborted || activeProjectRef.current !== directory) return
+      setPendingQuestions(response.flatMap((question) => {
+        const parsed = parseQuestionRequest(question)
+        return parsed ? [parsed] : []
+      }))
+      setQuestionError(null)
+    } catch (error) {
+      if (!signal?.aborted && activeProjectRef.current === directory) setQuestionError(getApiErrorMessage(error))
+    }
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeoutID = window.setTimeout(() => {
+      setPendingQuestions([])
+      setQuestionActionID(null)
+      setQuestionError(null)
+      if (activeProjectPath) void refreshPendingQuestions(activeProjectPath, controller.signal)
+    }, 0)
+    return () => {
+      window.clearTimeout(timeoutID)
+      controller.abort()
+    }
+  }, [activeProjectPath, refreshPendingQuestions])
 
   const loadWorkspaceMessages = useCallback(async (
     sessionID: string,
@@ -224,12 +301,29 @@ export function useWorkspaceChat({
     const controller = new AbortController()
     void consumeOpenCodeEvents(activeProjectPath, (event) => {
       const payload = getEventPayload(event)
-      const properties = payload.properties ?? {}
+      const properties = payload.properties ?? payload.data ?? {}
       const sessionID = getSessionID(properties)
       const currentSessionID = activeSessionRef.current
 
       if (payload.type === "server.connected" && currentSessionID) {
         void loadWorkspaceMessages(currentSessionID, activeProjectPath, undefined, { showLoading: false })
+        void refreshPendingQuestions(activeProjectPath)
+      }
+
+      if (payload.type === "question.asked" || payload.type === "question.v2.asked") {
+        const question = parseQuestionRequest(properties)
+        if (question) {
+          setPendingQuestions((current) => [...current.filter((item) => item.id !== question.id), question])
+          setQuestionError(null)
+        }
+      }
+
+      if (payload.type === "question.replied" || payload.type === "question.rejected" || payload.type === "question.v2.replied" || payload.type === "question.v2.rejected") {
+        const requestID = typeof properties.requestID === "string" ? properties.requestID : undefined
+        if (requestID) {
+          setPendingQuestions((current) => current.filter((question) => question.id !== requestID))
+          setQuestionActionID((current) => current === requestID ? null : current)
+        }
       }
 
       if ((payload.type === "session.created" || payload.type === "session.updated") && isOpenCodeSession(properties.info)) {
@@ -352,7 +446,7 @@ export function useWorkspaceChat({
       if (!controller.signal.aborted) setMessagesError(getApiErrorMessage(error))
     })
     return () => controller.abort()
-  }, [activeProjectPath, clearSnapshotTimeout, commitMessages, loadWorkspaceMessages, reloadContextFileTree, setOpenCodeSessions, setProjectSessions])
+  }, [activeProjectPath, clearSnapshotTimeout, commitMessages, loadWorkspaceMessages, refreshPendingQuestions, reloadContextFileTree, setOpenCodeSessions, setProjectSessions])
 
   useEffect(() => () => {
     promptControllerRef.current?.abort()
@@ -409,6 +503,8 @@ export function useWorkspaceChat({
     setMessagesError(null)
     setMessagesLoading(false)
     setMessageSending(false)
+    setQuestionActionID(null)
+    setQuestionError(null)
   }, [clearSnapshotTimeout])
 
   const sendMessage = useCallback(async (text: string, selectedAttachments: Attachment[], context: PinContext | null): Promise<boolean> => {
@@ -498,6 +594,36 @@ export function useWorkspaceChat({
     }
   }, [activeAgent.id, activeProjectPath, activeSessionId, clearSnapshotTimeout, commands, commitMessages, emptyAgentId, loadWorkspaceMessages, onSessionCreated, selectedModel, selectedThinkingVariant, setActiveSessionId, setOpenCodeSessions, setProjectSessions])
 
+  const answerQuestion = useCallback(async (requestID: string, answers: OpenCodeQuestionAnswers) => {
+    if (!activeProjectPath || questionActionID) return
+    setQuestionActionID(requestID)
+    setQuestionError(null)
+    try {
+      const replied = await replyOpenCodeQuestion(requestID, activeProjectPath, answers)
+      if (!replied) throw new Error("OpenCode 未接受這組答案。")
+      setPendingQuestions((current) => current.filter((question) => question.id !== requestID))
+    } catch (error) {
+      setQuestionError(getApiErrorMessage(error))
+    } finally {
+      setQuestionActionID((current) => current === requestID ? null : current)
+    }
+  }, [activeProjectPath, questionActionID])
+
+  const rejectQuestion = useCallback(async (requestID: string) => {
+    if (!activeProjectPath || questionActionID) return
+    setQuestionActionID(requestID)
+    setQuestionError(null)
+    try {
+      const rejected = await rejectOpenCodeQuestion(requestID, activeProjectPath)
+      if (!rejected) throw new Error("OpenCode 未接受拒絕操作。")
+      setPendingQuestions((current) => current.filter((question) => question.id !== requestID))
+    } catch (error) {
+      setQuestionError(getApiErrorMessage(error))
+    } finally {
+      setQuestionActionID((current) => current === requestID ? null : current)
+    }
+  }, [activeProjectPath, questionActionID])
+
   const cancelMessage = useCallback(async () => {
     if (abortInFlightRef.current) return
     const sessionID = sendingSessionRef.current
@@ -529,5 +655,27 @@ export function useWorkspaceChat({
     }
   }, [activeProjectPath, clearSnapshotTimeout, loadWorkspaceMessages])
 
-  return { attachments, cancelMessage, messagesError, messagesLoading, messageSending, removeAttachment, resetConversation, sendMessage, setAttachments, setMessagesError, uploadChatFiles, workspaceMessages }
+  const activeQuestionSessionIDs = activeSessionId ? getSessionFamilyIDs(activeSessionId, openCodeSessions) : new Set<string>()
+  const activeQuestions = pendingQuestions.filter((question) => activeQuestionSessionIDs.has(question.sessionID))
+
+  return {
+    activeQuestion: activeQuestions[0] ?? null,
+    answerQuestion,
+    attachments,
+    cancelMessage,
+    messagesError,
+    messagesLoading,
+    messageSending,
+    pendingQuestionCount: activeQuestions.length,
+    questionActionID,
+    questionError,
+    rejectQuestion,
+    removeAttachment,
+    resetConversation,
+    sendMessage,
+    setAttachments,
+    setMessagesError,
+    uploadChatFiles,
+    workspaceMessages,
+  }
 }

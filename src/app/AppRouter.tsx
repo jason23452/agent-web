@@ -11,6 +11,7 @@ import { AppShell } from "@/shared/components/layout/app/AppShell"
 import { AppSidebar } from "@/shared/components/layout/app/AppSidebar"
 import { AppTopbar } from "@/shared/components/layout/app/AppTopbar"
 import { ChatComposer, SubagentComposerNotice } from "@/shared/components/layout/context/ChatComposer"
+import { OpenCodeQuestionPrompt } from "@/shared/components/layout/context/OpenCodeQuestionPrompt"
 import { listOpenCodeCommands, type OpenCodeRuntimeCommand } from "@/shared/api/opencodeCommands"
 import { getProjectRouteName, getRoutePath } from "@/shared/utils/appRouterUtils"
 import { useAppNavigation } from "@/shared/hooks/useAppNavigation"
@@ -89,11 +90,17 @@ export function AppRouter() {
       ?? (route.name === "extension" && route.projectName ? activeProjectPath : null)
     : null
   const {
+    activeQuestion,
+    answerQuestion,
     attachments: chatAttachments,
     cancelMessage,
     messagesError,
     messagesLoading,
     messageSending,
+    pendingQuestionCount,
+    questionActionID,
+    questionError,
+    rejectQuestion,
     removeAttachment,
     resetConversation,
     sendMessage,
@@ -106,6 +113,7 @@ export function AppRouter() {
     commands: openCodeCommands,
     emptyAgentId: "no-primary-agent",
     onSessionCreated: syncCreatedSessionRoute,
+    openCodeSessions,
     reloadContextFileTree,
     selectedModel,
     selectedThinkingVariant,
@@ -302,7 +310,17 @@ export function AppRouter() {
         }
       asideOpen={contextPanelOpen}
       composer={
-        activeParentSessionID ? (
+        activeQuestion ? (
+          <OpenCodeQuestionPrompt
+            busy={questionActionID === activeQuestion.id}
+            error={questionError}
+            key={activeQuestion.id}
+            onReject={() => rejectQuestion(activeQuestion.id)}
+            onReply={(answers) => answerQuestion(activeQuestion.id, answers)}
+            pendingCount={pendingQuestionCount}
+            request={activeQuestion}
+          />
+        ) : activeParentSessionID ? (
           <SubagentComposerNotice onBack={() => selectSession(activeParentSessionID)} parentTitle={activeParentSession?.title ?? "Parent session"} />
         ) : (
           <ChatComposer

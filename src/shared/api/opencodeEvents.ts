@@ -1,9 +1,11 @@
 import { buildApiUrl } from "./client"
 
 export type OpenCodeEvent = {
+  data?: Record<string, unknown>
   directory?: string
   id?: string
   payload?: {
+    data?: Record<string, unknown>
     id?: string
     properties?: Record<string, unknown>
     type?: string
