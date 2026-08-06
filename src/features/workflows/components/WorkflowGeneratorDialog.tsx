@@ -58,7 +58,10 @@ export function WorkflowGeneratorDialog({ onCreateWorkflow, onOpenChange, open, 
     } catch (requestError) {
       if (!controller.signal.aborted) setError(getApiErrorMessage(requestError))
     } finally {
-      if (!controller.signal.aborted) setBusy(false)
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+        setBusy(false)
+      }
     }
   }
 

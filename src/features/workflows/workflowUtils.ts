@@ -299,12 +299,13 @@ export function ensureWorkflowCapabilityConnections(workflow: WorkflowV1): Workf
   const primaryAgent = primaryID ? workflow.nodes.find((node) => node.id === primaryID && node.type === "resource.agent") : undefined
   if (!primaryAgent) return workflow
 
+  const agentIDs = new Set(workflow.nodes.filter((node) => node.type === "resource.agent").map((node) => node.id))
   const edges = [...workflow.edges]
   let changed = false
   for (const resource of workflow.nodes.filter((node) => isWorkflowCapabilityResource(node.type))) {
     const alreadyConnected = edges.some((edge) => edge.kind === "capability" && (
-      edge.source === resource.id && edge.target === primaryAgent.id
-      || edge.target === resource.id && edge.source === primaryAgent.id
+      edge.source === resource.id && agentIDs.has(edge.target)
+      || edge.target === resource.id && agentIDs.has(edge.source)
     ))
     if (alreadyConnected) continue
     const edge = createCapabilityEdge(resource, primaryAgent, `capability-${resource.id}-${primaryAgent.id}`.slice(0, 100))

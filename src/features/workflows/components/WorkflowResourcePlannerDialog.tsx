@@ -69,7 +69,10 @@ export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, o
     } catch (requestError) {
       if (!controller.signal.aborted) setError(getApiErrorMessage(requestError))
     } finally {
-      if (!controller.signal.aborted) setBusy(false)
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+        setBusy(false)
+      }
     }
   }
 
@@ -106,10 +109,17 @@ function parsePlannerResult(text: string): PlannedResource | null {
   const candidate = Array.from(text.matchAll(/```(?:json)?\s*\r?\n([\s\S]*?)```/gi), (match) => match[1]?.trim() ?? "").find(Boolean) ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)
   if (!candidate) return null
   try {
-    const parsed = JSON.parse(candidate) as { resource?: PlannedResource; validation?: { valid?: boolean } }
-    if (parsed.validation?.valid === false || !parsed.resource || typeof parsed.resource !== "object") return null
-    return parsed.resource
+    const parsed = JSON.parse(candidate) as PlannerResultEnvelope
+    const result = parsed.task_result && typeof parsed.task_result === "object" ? parsed.task_result : parsed
+    if (result.validation?.valid === false || !result.resource || typeof result.resource !== "object") return null
+    return result.resource
   } catch {
     return null
   }
+}
+
+type PlannerResultEnvelope = {
+  resource?: PlannedResource
+  task_result?: PlannerResultEnvelope
+  validation?: { valid?: boolean }
 }
