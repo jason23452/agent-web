@@ -86,16 +86,18 @@ export const emptySkillForm: SkillForm = {
 
 export const modelVariants = ["", "none", "minimal", "low", "medium", "high", "xhigh", "max"]
 export const agentColors = ["", "primary", "secondary", "accent", "success", "warning", "error", "info"]
+export const DEFAULT_AGENT_MODEL = "openai/gpt-5.6-luna-fast"
+export const DEFAULT_AGENT_VARIANT = "max"
 
 export const emptyAgentForm: AgentForm = {
   name: "",
   installTarget: "project",
   description: "",
   mode: "subagent",
-  model: "",
+  model: DEFAULT_AGENT_MODEL,
   temperature: "",
   top_p: "",
-  variant: "",
+  variant: DEFAULT_AGENT_VARIANT,
   steps: "",
   disable: false,
   hidden: false,

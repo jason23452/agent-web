@@ -17,6 +17,7 @@ import {
   WORKFLOW_V2_SCHEMA_VERSION,
   WORKFLOW_V3_SCHEMA_VERSION,
 } from "@/features/workflows/types"
+import { DEFAULT_AGENT_MODEL, DEFAULT_AGENT_VARIANT } from "@/shared/components/layout/app-sidebar/config"
 
 export type WorkflowAgentRole = "primary" | "subagent"
 
@@ -839,8 +840,10 @@ description: 在符合此技能用途的任務中，提供一致、可驗證且�
 name: ${name}
 description: 執行明確的 Workflow 任務，使用已連接能力並回傳可驗證結果
 mode: ${agentMode}
+model: ${DEFAULT_AGENT_MODEL}
 temperature: 0.3
 top_p: 1
+variant: ${DEFAULT_AGENT_VARIANT}
 tools:
   read: true
   grep: true
