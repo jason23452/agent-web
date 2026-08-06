@@ -6,9 +6,12 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Textarea } from "@/shared/components/ui/textarea"
 import { runWorkflowUpdater } from "@/features/workflows/api/workflowTestChat"
+import { WorkflowAiRuntimeSelector } from "@/features/workflows/components/WorkflowAiRuntimeSelector"
+import { useWorkflowAiRuntimeSelection } from "@/features/workflows/hooks/useWorkflowAiRuntimeSelection"
 import { validateWorkflow } from "@/features/workflows/api/workflows"
 import { WORKFLOW_V3_SCHEMA_VERSION, type ResourceNodeData, type WorkflowEdge, type WorkflowNode, type WorkflowV1 } from "@/features/workflows/types"
 import { issueMessage, scopeLabel } from "@/features/workflows/workflowUtils"
+import type { ModelOption } from "@/shared/types/workspace"
 
 type WorkflowUpdaterError = {
   code: string
@@ -29,7 +32,8 @@ const PROTECTED_METADATA_KEYS = [
   "workflowAsset",
 ] as const
 
-export function WorkflowUpdaterDialog({ onApplyWorkflow, onOpenChange, open, project, workflow, workspace }: {
+export function WorkflowUpdaterDialog({ modelOptions = [], onApplyWorkflow, onOpenChange, open, project, workflow, workspace }: {
+  modelOptions?: ModelOption[]
   onApplyWorkflow: (workflow: WorkflowV1, baseline: WorkflowV1) => boolean
   onOpenChange: (open: boolean) => void
   open: boolean
@@ -49,6 +53,7 @@ export function WorkflowUpdaterDialog({ onApplyWorkflow, onOpenChange, open, pro
   const controllerRef = useRef<AbortController | null>(null)
   const workflowRef = useRef(workflow)
   const operationBusy = busy || applying
+  const runtimeSelection = useWorkflowAiRuntimeSelection(modelOptions)
 
   useLayoutEffect(() => {
     workflowRef.current = workflow
@@ -79,7 +84,12 @@ export function WorkflowUpdaterDialog({ onApplyWorkflow, onOpenChange, open, pro
     const baseline = workflow
 
     try {
-      const response = await runWorkflowUpdater({ project, request, workflow: baseline }, controller.signal, workspace)
+      const response = await runWorkflowUpdater({ project, request, workflow: baseline }, {
+        model: runtimeSelection.model,
+        signal: controller.signal,
+        variant: runtimeSelection.variant,
+        workspace,
+      })
       if (controller.signal.aborted) return
       setRawResult(response.text)
 
@@ -223,6 +233,8 @@ export function WorkflowUpdaterDialog({ onApplyWorkflow, onOpenChange, open, pro
               更新需求
               <Textarea aria-label="Workflow Updater 使用者需求" className="min-h-28" disabled={operationBusy} onChange={(event) => setRequest(event.target.value)} placeholder="描述要如何修改目前 Workflow；未要求變更的節點與關係應保持不變。" value={request} />
             </label>
+            <WorkflowAiRuntimeSelector disabled={operationBusy} modelOptions={modelOptions} onModelChange={runtimeSelection.setSelectedModelKey} onVariantChange={runtimeSelection.setSelectedVariant} selectedModelKey={runtimeSelection.selectedModelKey} selectedVariant={runtimeSelection.selectedVariant} thinkingVariants={runtimeSelection.thinkingVariants} />
+
             <Button disabled={!request.trim() || operationBusy} loading={busy} onClick={() => void updateWorkflow()}><SparklesIcon aria-hidden="true" />{busy ? "正在產生更新候選..." : "執行 /workflow-updater"}</Button>
             {operationBusy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{applying ? "正在重新驗證候選 Workflow..." : "正在分析目前 Workflow 並產生完整 V3 JSON。"}</div>}
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{error}</div>}

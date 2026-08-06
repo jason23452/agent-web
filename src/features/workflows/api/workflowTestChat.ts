@@ -17,6 +17,21 @@ export const RESOURCE_WRITER_WORKFLOW_IDS = {
 
 export type ResourceWriterType = keyof typeof RESOURCE_WRITER_WORKFLOW_IDS
 export type WorkflowSystemCommandInput = string | Record<string, unknown>
+export type WorkflowRuntimeSelection = {
+  model?: string
+  variant?: string
+}
+export type WorkflowSystemCommandOptions = WorkflowRuntimeSelection & {
+  signal?: AbortSignal
+  workspace?: string
+}
+
+function normalizeSystemCommandOptions(optionsOrSignal?: WorkflowSystemCommandOptions | AbortSignal, legacyWorkspace?: string): WorkflowSystemCommandOptions {
+  if (optionsOrSignal && typeof optionsOrSignal === "object" && "aborted" in optionsOrSignal) {
+    return { signal: optionsOrSignal as AbortSignal, workspace: legacyWorkspace }
+  }
+  return optionsOrSignal ?? {}
+}
 export type WorkflowUpdaterInput = {
   project: string
   request: string
@@ -62,25 +77,31 @@ export function sendWorkflowTestChatMessage(
   })
 }
 
-export async function runWorkflowSystemCommand(workflowID: string, input: WorkflowSystemCommandInput, signal?: AbortSignal, workspace?: string) {
-  const session = await createWorkflowTestChatSession(workflowID, { scope: "global" }, signal, workspace)
+export async function runWorkflowSystemCommand(workflowID: string, input: WorkflowSystemCommandInput, optionsOrSignal?: WorkflowSystemCommandOptions | AbortSignal, legacyWorkspace?: string) {
+  const options = normalizeSystemCommandOptions(optionsOrSignal, legacyWorkspace)
+  const session = await createWorkflowTestChatSession(workflowID, { scope: "global" }, options.signal, options.workspace)
   const text = typeof input === "string" ? input : JSON.stringify(input)
-  return sendWorkflowTestChatMessage(workflowID, session.sessionID, { scope: "global", text }, signal, workspace)
+  return sendWorkflowTestChatMessage(workflowID, session.sessionID, {
+    scope: "global",
+    text,
+    ...(options.model ? { model: options.model } : {}),
+    ...(options.variant ? { variant: options.variant } : {}),
+  }, options.signal, options.workspace)
 }
 
-export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID: string, request: string, signal?: AbortSignal, workspace?: string) {
+export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID: string, request: string, options: WorkflowSystemCommandOptions = {}) {
   return runWorkflowSystemCommand(PROMPT_WRITER_WORKFLOW_ID, {
     targetNodeID,
     request: request.trim(),
     workflow,
-  }, signal, workspace ?? workflow.project)
+  }, { ...options, workspace: options.workspace ?? workflow.project })
 }
 
-export function runWorkflowUpdater(input: WorkflowUpdaterInput, signal?: AbortSignal, workspace?: string) {
+export function runWorkflowUpdater(input: WorkflowUpdaterInput, options: WorkflowSystemCommandOptions = {}) {
   const project = input.project.trim()
   return runWorkflowSystemCommand(WORKFLOW_UPDATER_WORKFLOW_ID, {
     project,
     request: input.request.trim(),
     workflow: input.workflow,
-  }, signal, workspace ?? project)
+  }, { ...options, workspace: options.workspace ?? project })
 }

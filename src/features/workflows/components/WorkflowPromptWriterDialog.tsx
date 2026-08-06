@@ -6,10 +6,14 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Textarea } from "@/shared/components/ui/textarea"
 import { runPromptWriterForNode } from "@/features/workflows/api/workflowTestChat"
+import { WorkflowAiRuntimeSelector } from "@/features/workflows/components/WorkflowAiRuntimeSelector"
+import { useWorkflowAiRuntimeSelection } from "@/features/workflows/hooks/useWorkflowAiRuntimeSelection"
 import type { WorkflowNode, WorkflowV1 } from "@/features/workflows/types"
 import { getWorkflowNodeTitle } from "@/features/workflows/workflowUtils"
+import type { ModelOption } from "@/shared/types/workspace"
 
-export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, targetNode, workflow, workspace }: {
+export function WorkflowPromptWriterDialog({ modelOptions = [], onApplyPrompt, onOpenChange, open, targetNode, workflow, workspace }: {
+  modelOptions?: ModelOption[]
   onApplyPrompt: (content: string) => void
   onOpenChange: (open: boolean) => void
   open: boolean
@@ -23,6 +27,7 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const controllerRef = useRef<AbortController | null>(null)
+  const runtimeSelection = useWorkflowAiRuntimeSelection(modelOptions)
 
   useEffect(() => {
     if (!open) controllerRef.current?.abort()
@@ -40,7 +45,12 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
     setResult("")
     setPromptDraft("")
     try {
-      const response = await runPromptWriterForNode(workflow, targetNode.id, request, controller.signal, workspace)
+      const response = await runPromptWriterForNode(workflow, targetNode.id, request, {
+        model: runtimeSelection.model,
+        signal: controller.signal,
+        variant: runtimeSelection.variant,
+        workspace,
+      })
       if (controller.signal.aborted) return
       setResult(response.text)
       setPromptDraft(extractPrompt(response.text))
@@ -85,6 +95,8 @@ export function WorkflowPromptWriterDialog({ onApplyPrompt, onOpenChange, open, 
               使用者需求
               <Textarea aria-label="Prompt Writer 使用者需求" className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} placeholder="輸入要套用到 target node 的需求。" value={request} />
             </label>
+            <WorkflowAiRuntimeSelector disabled={busy} modelOptions={modelOptions} onModelChange={runtimeSelection.setSelectedModelKey} onVariantChange={runtimeSelection.setSelectedVariant} selectedModelKey={runtimeSelection.selectedModelKey} selectedVariant={runtimeSelection.selectedVariant} thinkingVariants={runtimeSelection.thinkingVariants} />
+
             <Button disabled={!targetNode || !request.trim()} loading={busy} onClick={() => void generatePrompt()}><SparklesIcon aria-hidden="true" />{busy ? "正在規劃並委派 Writer..." : "執行 /prompt-writer-coordinator"}</Button>
             {busy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />Coordinator 整理 brief 後會委派 prompt-writer-agent，可能需要一些時間。</div>}
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{error}</div>}

@@ -181,7 +181,7 @@ export function WorkflowTestChatDialog({
         text: response.text || "OpenCode 已回傳空白訊息。",
       }])
       setSession((current) => current
-        ? { ...current, command: response.command, agent: response.agent, ...(response.model ? { model: response.model } : {}) }
+        ? { ...current, command: response.command, agent: response.agent, ...(response.model ? { model: response.model } : {}), ...(response.variant ? { variant: response.variant } : {}) }
         : current)
     } catch (requestError) {
       if (!controller.signal.aborted) setError(getApiErrorMessage(requestError))
