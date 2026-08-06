@@ -340,7 +340,6 @@ export type WorkflowTestChatSession = {
   command: string
   agent: string
   model?: string
-  variant?: string
   capabilities: Array<{ kind: WorkflowCapabilityKind; name: string }>
 }
 
@@ -351,7 +350,6 @@ export type WorkflowTestChatMessage = {
   command: string
   agent: string
   model?: string
-  variant?: string
 }
 
 export type WorkflowCacheClearResult = {

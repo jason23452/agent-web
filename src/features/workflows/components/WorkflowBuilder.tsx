@@ -3,7 +3,7 @@ import { BracesIcon, Layers2Icon, ListTreeIcon, PanelRightCloseIcon, PlayIcon, P
 import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { toastManager } from "@/shared/components/ui/toast"
-import { WORKFLOW_V3_SCHEMA_VERSION, type ResourceNodeData, type WorkflowEdge, type WorkflowNode, type WorkflowPaletteItem, type WorkflowPosition, type WorkflowTarget, type WorkflowV1 } from "@/features/workflows/types"
+import type { ResourceNodeData, WorkflowEdge, WorkflowNode, WorkflowPaletteItem, WorkflowPosition, WorkflowTarget, WorkflowV1 } from "@/features/workflows/types"
 import { createCapabilityEdge, createDelegationEdge, createNodeFromPalette, createPrimaryLinkEdge, duplicateWorkflowNode, ensureWorkflowCapabilityConnections, getWorkflowNodeTitle, isPromptEditableWorkflowNode, isProtectedWorkflow, normalizeWorkflowSchemaVersion, resolveConnectionKind, resolveWorkflowAgentRoles, syncCommandContentForAgents, syncCommandNodeToAgent, syncWorkflowAgentConfigs, touchWorkflow, validateWorkflowAgentEdge, workflowFrontmatterValue } from "@/features/workflows/workflowUtils"
 import { useWorkflowBuilder } from "@/features/workflows/hooks/useWorkflowBuilder"
 import { WorkflowBrowser } from "@/features/workflows/components/WorkflowBrowser"
@@ -18,7 +18,6 @@ import { WorkflowPublishReport } from "@/features/workflows/components/WorkflowP
 import { WorkflowPromptWriterDialog } from "@/features/workflows/components/WorkflowPromptWriterDialog"
 import { WorkflowResourcePlannerDialog, type PlannedResource } from "@/features/workflows/components/WorkflowResourcePlannerDialog"
 import { WorkflowGeneratorDialog } from "@/features/workflows/components/WorkflowGeneratorDialog"
-import { WorkflowUpdaterDialog } from "@/features/workflows/components/WorkflowUpdaterDialog"
 import { WorkflowResourceConfigPanel } from "@/features/workflows/components/WorkflowResourceConfigPanels"
 import { WorkflowSkillImportDialog, type ImportedWorkflowSkill } from "@/features/workflows/components/WorkflowSkillImportDialog"
 import { WorkflowRunPanel } from "@/features/workflows/components/WorkflowRunPanel"
@@ -51,7 +50,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   const [promptWriterTargetID, setPromptWriterTargetID] = useState<string | null>(null)
   const [resourcePlannerTargetID, setResourcePlannerTargetID] = useState<string | null>(null)
   const [workflowGeneratorOpen, setWorkflowGeneratorOpen] = useState(false)
-  const [workflowUpdaterOpen, setWorkflowUpdaterOpen] = useState(false)
   const [nodeDetailOpen, setNodeDetailOpen] = useState(false)
   const [cacheTarget, setCacheTarget] = useState<WorkflowTarget>("workflow-test")
   const busy = Boolean(builder.busyAction)
@@ -73,12 +71,11 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
-      if (workflowUpdaterOpen) return
       const target = event.target as HTMLElement | null
       const editing = target?.matches("input, textarea, select, [contenteditable='true']")
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault()
-        if (!busy && !protectedWorkflow) void builder.save()
+        if (!busy) void builder.save()
         return
       }
       if (editing) return
@@ -97,7 +94,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   })
 
   function mutate(updater: (workflow: WorkflowV1) => WorkflowV1) {
-    if (protectedWorkflow) return
     builder.updateDraft((workflow) => ensureWorkflowCapabilityConnections(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(updater(workflow)))))
   }
 
@@ -345,7 +341,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   }
 
   function openPromptWriter(nodeID: string) {
-    if (protectedWorkflow) return
     const node = builder.workflow.nodes.find((candidate) => candidate.id === nodeID)
     if (!isPromptEditableWorkflowNode(node)) return
     setNodeDetailOpen(false)
@@ -353,7 +348,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   }
 
   function openResourcePlanner(nodeID: string) {
-    if (protectedWorkflow) return
     const node = builder.workflow.nodes.find((candidate) => candidate.id === nodeID)
     if (!node || !node.type.startsWith("resource.") || (node.data as ResourceNodeData).mode !== "managed") return
     setNodeDetailOpen(false)
@@ -506,13 +500,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
   }
 
   function openNodeDetails(nodeID: string) {
-    if (protectedWorkflow) {
-      setSelectedNodeID(nodeID)
-      setSelectedEdgeID(null)
-      setRightTab("inspector")
-      setRightPanelOpen(true)
-      return
-    }
     const node = builder.workflow.nodes.find((candidate) => candidate.id === nodeID)
     if (node?.type === "resource.command") {
       const agents = builder.workflow.edges
@@ -533,51 +520,16 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
     setNodeDetailOpen(true)
   }
 
-  function importDraft(workflow: WorkflowV1): boolean {
-    if (protectedWorkflow || busy) return false
+  function importDraft(workflow: WorkflowV1) {
     builder.replaceDraft(syncWorkflowAgentConfigs(normalizeWorkflowSchemaVersion(touchWorkflow(workflow, {}))))
     setSelectedNodeID(workflow.nodes[0]?.id ?? null)
     setSelectedEdgeID(null)
     setRightTab("inspector")
-    return true
-  }
-
-  function openWorkflowUpdater() {
-    if (protectedWorkflow) {
-      toastManager.add({ id: `workflow-updater-protected-${Date.now()}`, title: "無法使用 AI 更新", description: "系統預設 Workflow 不提供自動更新。", type: "warning" })
-      return
-    }
-    if (busy) {
-      toastManager.add({ id: `workflow-updater-busy-${Date.now()}`, title: "Workflow 正在處理中", description: "請等待目前操作完成後再執行 AI 更新。", type: "info" })
-      return
-    }
-    if (builder.workflow.schemaVersion !== WORKFLOW_V3_SCHEMA_VERSION) {
-      toastManager.add({ id: `workflow-updater-version-${Date.now()}`, title: "AI 更新僅支援 Workflow V3", description: "請先將目前 Workflow 升級並儲存為 V3。", type: "warning" })
-      return
-    }
-    setWorkflowUpdaterOpen(true)
-  }
-
-  function applyWorkflowUpdate(workflow: WorkflowV1, baseline: WorkflowV1): boolean {
-    if (protectedWorkflow || busy) {
-      toastManager.add({ id: `workflow-updater-apply-blocked-${Date.now()}`, title: "更新未套用", description: protectedWorkflow ? "系統預設 Workflow 不提供自動更新。" : "Workflow 正在處理其他操作。", type: "warning" })
-      return false
-    }
-    if (JSON.stringify(builder.workflow) !== JSON.stringify(baseline)) {
-      toastManager.add({ id: `workflow-updater-stale-${Date.now()}`, title: "更新候選已過期", description: "目前 Workflow 已在候選產生後變更，請重新執行 AI 更新。", type: "warning" })
-      return false
-    }
-    builder.replaceDraft(workflow)
-    setSelectedNodeID(null)
-    setSelectedEdgeID(null)
-    setNodeDetailOpen(false)
-    toastManager.add({ id: `workflow-updater-applied-${Date.now()}`, title: "AI 更新已套用到草稿", description: "請檢查變更並按下「儲存」；目前尚未儲存或發布。", type: "success" })
-    return true
   }
 
   async function confirmAction(action: WorkflowRequestedAction) {
     if (protectedWorkflow && action.target === "main") {
-      toastManager.add({ id: `workflow-test-only-${Date.now()}`, title: "僅限測試環境", description: "系統預設 Workflow 不會發布或執行到正式環境。", type: "warning" })
+      toastManager.add({ id: `workflow-test-only-${Date.now()}`, title: "僅限測試環境", description: "Workflow Node Prompt Writer 不會發布或執行到正式環境。", type: "warning" })
       return
     }
     try {
@@ -612,7 +564,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         onNameChange={(name) => mutate((workflow) => ({ ...workflow, name }))}
         onOpenGenerator={() => setWorkflowGeneratorOpen(true)}
         onOpenPanel={() => setRightPanelOpen(true)}
-        onOpenUpdater={openWorkflowUpdater}
         onOpenTestChat={() => setTestChatOpen(true)}
         onRequestAction={setRequestedAction}
         onSave={async () => { await builder.save() }}
@@ -635,7 +586,6 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         onOpenNodeDetails={openNodeDetails}
         onSelectEdge={(edgeID) => { setSelectedEdgeID(edgeID); if (edgeID) { setRightTab("inspector"); setRightPanelOpen(true) } }}
         onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null) }}
-        readOnly={protectedWorkflow}
         selectedEdgeID={selectedEdgeID}
         selectedNodeID={selectedNodeID}
       />
@@ -650,9 +600,9 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
         <div className="min-h-0 overflow-hidden" id={`workflow-panel-${rightTab}`} role="tabpanel">
             {rightTab === "palette" && <WorkflowPalette catalog={builder.catalog} error={builder.catalogError} loading={builder.catalogLoading} nodes={builder.workflow.nodes} onAdd={(item) => addNode(item)} onImportSkill={() => setSkillImportOpen(true)} protectedWorkflow={protectedWorkflow} />}
             {rightTab === "apps" && <WorkflowAgentAppPanel onAddCapability={addAgentCapability} onAddPrimaryLink={addPrimaryLink} onAddDelegation={addDelegation} onOpenPalette={openPalette} onRemoveEdge={(edgeID) => deleteEdges([edgeID])} onSelectNode={(nodeID) => { setSelectedNodeID(nodeID); setSelectedEdgeID(null); setRightTab("inspector") }} onSetCommandAgent={setCommandAgent} protectedWorkflow={protectedWorkflow} workflow={builder.workflow} />}
-             {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} readOnly={protectedWorkflow} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
+            {rightTab === "inspector" && <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => deleteNodes([id])} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={selectedEdge} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />}
           {rightTab === "run" && <WorkflowRunPanel nodes={builder.workflow.nodes} polling={polling} run={builder.run} />}
-           {rightTab === "json" && <WorkflowJsonPanel disabled={busy} onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} protectedWorkflow={protectedWorkflow} workflow={builder.workflow} />}
+           {rightTab === "json" && <WorkflowJsonPanel onImport={importDraft} onValidateImport={(workflow, signal) => builder.validateImport(workflow, { signal })} protectedWorkflow={protectedWorkflow} workflow={builder.workflow} />}
         </div>
       </aside>
       {rightPanelOpen && <button aria-label="關閉 Workflow 工具面板" className="workflow-panel-backdrop" onClick={() => setRightPanelOpen(false)} type="button" />}
@@ -660,16 +610,15 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
       <div className="workflow-shortcuts" aria-hidden="true"><ListTreeIcon className="size-3" />Ctrl S 儲存 · Ctrl D 複製 · Delete 移除</div>
       <Button aria-label={rightPanelOpen ? "關閉工具面板" : "開啟工具面板"} className="workflow-panel-toggle" onClick={() => setRightPanelOpen((current) => !current)} size="icon" variant="outline"><PanelRightCloseIcon aria-hidden="true" /></Button>
 
-       <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onExportProject={builder.exportProjectArchive} onImportProject={builder.importProjectArchive} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setNodeDetailOpen(false); setPromptWriterTargetID(null); setResourcePlannerTargetID(null); setWorkflowUpdaterOpen(false); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} onOpenGenerator={() => { setBrowserOpen(false); setWorkflowGeneratorOpen(true) }} open={browserOpen} project={project} workflows={builder.workflows} />
+       <WorkflowBrowser activeWorkflowID={builder.workflow.id} busy={busy} error={builder.libraryError} loading={builder.libraryLoading} onCreate={builder.createNew} onDelete={builder.remove} onExportProject={builder.exportProjectArchive} onImportProject={builder.importProjectArchive} onLoad={async (summary) => { await builder.load(summary); setSelectedNodeID(null); setSelectedEdgeID(null); setBrowserOpen(false) }} onOpenChange={setBrowserOpen} onOpenGenerator={() => { setBrowserOpen(false); setWorkflowGeneratorOpen(true) }} open={browserOpen} project={project} workflows={builder.workflows} />
       <WorkflowConfirmDialog action={requestedAction} busy={busy} name={builder.workflow.name} onConfirm={confirmAction} onOpenChange={(open) => { if (!open && !busy) setRequestedAction(null) }} scope={builder.workflow.scope} />
        <WorkflowPublishReport onOpenChange={setPublishReportOpen} open={publishReportOpen} report={builder.publishReport} />
            <WorkflowTestChatDialog catalog={builder.catalog} key={`test-chat:${builder.workflow.id}:${testChatOpen ? "open" : "closed"}`} modelOptions={modelOptions} onOpenChange={setTestChatOpen} open={testChatOpen} published={builder.testPublished && !builder.dirty} workflow={builder.workflow} workspace={project} />
            <WorkflowSkillImportDialog defaultScope={builder.workflow.scope} key={`skill-import:${builder.workflow.scope}:${skillImportOpen ? "open" : "closed"}`} onImported={addImportedSkills} onOpenChange={setSkillImportOpen} open={skillImportOpen} workspace={project} />
-            <WorkflowResourcePlannerDialog key={`resource-planner:${builder.workflow.id}:${resourcePlannerTargetID ?? "none"}`} modelOptions={modelOptions} onApplyResource={applyResourcePlan} onOpenChange={(open) => { if (!open) setResourcePlannerTargetID(null) }} open={Boolean(resourcePlannerTarget)} targetNode={resourcePlannerTarget} workflow={builder.workflow} workspace={project} />
-            <WorkflowPromptWriterDialog key={`prompt-writer:${builder.workflow.id}:${promptWriterTargetID ?? "none"}`} modelOptions={modelOptions} onApplyPrompt={applyPromptWriterPrompt} onOpenChange={closePromptWriter} open={Boolean(promptWriterTarget)} targetNode={promptWriterTarget} workflow={builder.workflow} workspace={project} />
-           <WorkflowGeneratorDialog modelOptions={modelOptions} onCreateWorkflow={builder.createGenerated} onOpenChange={setWorkflowGeneratorOpen} open={workflowGeneratorOpen} project={workflowProject} />
-            <WorkflowUpdaterDialog key={`workflow-updater:${builder.workflow.id}:${workflowUpdaterOpen ? "open" : "closed"}`} modelOptions={modelOptions} onApplyWorkflow={applyWorkflowUpdate} onOpenChange={setWorkflowUpdaterOpen} open={workflowUpdaterOpen && !protectedWorkflow} project={workflowProject} workflow={builder.workflow} workspace={project} />
-          <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen && !protectedWorkflow}>
+           <WorkflowResourcePlannerDialog key={`resource-planner:${builder.workflow.id}:${resourcePlannerTargetID ?? "none"}`} onApplyResource={applyResourcePlan} onOpenChange={(open) => { if (!open) setResourcePlannerTargetID(null) }} open={Boolean(resourcePlannerTarget)} targetNode={resourcePlannerTarget} workflow={builder.workflow} workspace={project} />
+           <WorkflowPromptWriterDialog key={`prompt-writer:${builder.workflow.id}:${promptWriterTargetID ?? "none"}`} onApplyPrompt={applyPromptWriterPrompt} onOpenChange={closePromptWriter} open={Boolean(promptWriterTarget)} targetNode={promptWriterTarget} workflow={builder.workflow} workspace={project} />
+         <WorkflowGeneratorDialog onCreateWorkflow={builder.createGenerated} onOpenChange={setWorkflowGeneratorOpen} open={workflowGeneratorOpen} project={workflowProject} />
+         <Dialog onOpenChange={setNodeDetailOpen} open={nodeDetailOpen}>
           <DialogPopup className="max-w-4xl" closeProps={{ "aria-label": "關閉節點詳細配置" }}>
             <DialogHeader>
               <div className="flex items-start justify-between gap-3 pr-8">
@@ -677,7 +626,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
                   <DialogTitle>{selectedNode?.type.startsWith("resource.") ? `${getWorkflowNodeTitle(selectedNode)} 設定` : "節點詳細配置"}</DialogTitle>
                   <DialogDescription>{selectedNode ? getWorkflowNodeTitle(selectedNode) : "選取的 Agent App resource"}</DialogDescription>
                 </div>
-                {!protectedWorkflow && selectedResourceNode && (selectedResourceNode.data as ResourceNodeData).mode === "managed" && <Button aria-label={`AI 生成 ${getWorkflowNodeTitle(selectedResourceNode)}`} onClick={() => openResourcePlanner(selectedResourceNode.id)} size="icon-sm" title="AI 生成此 Resource" variant="ghost"><SparklesIcon aria-hidden="true" /></Button>}
+                {selectedResourceNode && (selectedResourceNode.data as ResourceNodeData).mode === "managed" && <Button aria-label={`AI 生成 ${getWorkflowNodeTitle(selectedResourceNode)}`} onClick={() => openResourcePlanner(selectedResourceNode.id)} size="icon-sm" title="AI 生成此 Resource" variant="ghost"><SparklesIcon aria-hidden="true" /></Button>}
               </div>
             </DialogHeader>
            <DialogPanel className="min-h-0 overflow-hidden p-0">
@@ -685,7 +634,7 @@ export function WorkflowBuilder({ modelOptions = [], onBack, project }: { modelO
                     <WorkflowResourceConfigPanel availableModels={availableModels} edges={builder.workflow.edges} key={`${selectedResourceNode.id}:${builder.workflow.edges.map((edge) => edge.id).join("|")}`} modelOptions={activeModelOptions} node={selectedResourceNode} nodes={builder.workflow.nodes} onAddDelegation={addDelegation} onClose={() => setNodeDetailOpen(false)} onOpenPromptWriter={openPromptWriter} onRemoveDelegation={(edgeID) => deleteEdges([edgeID])} onUpdateNode={updateNode} project={project} />
                ) : (
                  <div className="max-h-[68vh] overflow-y-auto">
-                      <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} readOnly={protectedWorkflow} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
+                     <WorkflowInspector availableModels={availableModels} cacheMetadata={builder.cacheMetadata} edges={builder.workflow.edges} nodes={builder.workflow.nodes} onClearCache={builder.clearCache} onDeleteEdge={(id) => deleteEdges([id])} onDeleteNode={(id) => { deleteNodes([id]); setNodeDetailOpen(false) }} onDuplicateNode={duplicateNode} onTargetChange={setCacheTarget} onUpdateEdge={updateEdge} onUpdateNode={updateNode} run={builder.run} selectedEdge={null} selectedNode={selectedNode} target={cacheTarget} workflowScope={builder.workflow.scope} />
                  </div>
              )}
            </DialogPanel>

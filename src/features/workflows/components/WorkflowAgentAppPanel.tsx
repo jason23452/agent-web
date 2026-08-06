@@ -39,11 +39,11 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddPrimaryLink, onAdd
       <header className="border-border border-b p-4">
         <p className="font-mono text-[10px] text-muted-foreground uppercase tracking-[0.08em]">Dify-like layer</p>
         <h2 className="mt-1 font-semibold text-sm">Agent Apps</h2>
-        <p className="mt-1 text-muted-foreground text-xs leading-5">{protectedWorkflow ? "系統預設 Workflow graph 為唯讀，只能由開發者修改 source definition。" : "Command 可以連接多個 primary；primary link 與 delegation 共同組成 Agent DAG。"}</p>
+        <p className="mt-1 text-muted-foreground text-xs leading-5">{protectedWorkflow ? "預設 Workflow 可以編輯 Agent App graph，但不能刪除整個 Workflow。" : "Command 可以連接多個 primary；primary link 與 delegation 共同組成 Agent DAG。"}</p>
       </header>
       <div className="grid gap-3 p-3">
         {!command && agents.length === 0 ? (
-          <EmptyState onOpenPalette={onOpenPalette} readOnly={protectedWorkflow} />
+          <EmptyState onOpenPalette={onOpenPalette} />
         ) : (
           <article className="grid gap-3 rounded-xl border border-border bg-card p-3">
             <div className="flex items-start gap-2">
@@ -68,7 +68,7 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddPrimaryLink, onAdd
                     const checked = commandAgentEdges.some((edge) => edge.target === candidate.id)
                     return (
                       <label className="flex min-w-0 items-center gap-2" key={candidate.id}>
-                        <input aria-label={`${checked ? "移除" : "加入"} ${resourceName(candidate)} entry primary`} checked={checked} disabled={protectedWorkflow || (!checked && roles.subagentIDs.has(candidate.id))} onChange={(event) => onSetCommandAgent(candidate.id, event.target.checked)} title={protectedWorkflow ? "系統預設 Workflow 為唯讀" : !checked && roles.subagentIDs.has(candidate.id) ? "請先解除這個 Agent 的 delegation，才能設為 primary" : undefined} type="checkbox" />
+                        <input aria-label={`${checked ? "移除" : "加入"} ${resourceName(candidate)} entry primary`} checked={checked} disabled={!checked && roles.subagentIDs.has(candidate.id)} onChange={(event) => onSetCommandAgent(candidate.id, event.target.checked)} title={!checked && roles.subagentIDs.has(candidate.id) ? "請先解除這個 Agent 的 delegation，才能設為 primary" : undefined} type="checkbox" />
                         <span className="min-w-0 flex-1 truncate">{resourceName(candidate)}</span>
                         <Badge size="sm" variant={checked ? "default" : "secondary"}>Primary</Badge>
                       </label>
@@ -90,7 +90,6 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddPrimaryLink, onAdd
                 onAddDelegation={onAddDelegation}
                 onRemoveEdge={onRemoveEdge}
                 onSelectNode={onSelectNode}
-                readOnly={protectedWorkflow}
                 resourceNodes={resourceNodes}
                 workflow={workflow}
               />
@@ -98,7 +97,7 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddPrimaryLink, onAdd
               <p className="rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">請先從節點面板建立一個 Agent。</p>
             )}
 
-            <Button disabled={protectedWorkflow} onClick={onOpenPalette} size="sm" title={protectedWorkflow ? "系統預設 Workflow 為唯讀" : undefined} variant="outline"><PlusIcon aria-hidden="true" />新增或加入資源</Button>
+            <Button onClick={onOpenPalette} size="sm" variant="outline"><PlusIcon aria-hidden="true" />新增或加入資源</Button>
             <p className="text-[11px] text-muted-foreground">黃色只代表 Agent-to-Agent；綠色代表 capability resource 連到 Agent input。每個 Agent 可以接多個 Tool、Plugin、Skill 或 MCP。</p>
           </article>
         )}
@@ -107,7 +106,7 @@ export function WorkflowAgentAppPanel({ onAddCapability, onAddPrimaryLink, onAdd
   )
 }
 
-function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPrimaryLink, onAddDelegation, onRemoveEdge, onSelectNode, readOnly, resourceNodes, workflow }: {
+function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPrimaryLink, onAddDelegation, onRemoveEdge, onSelectNode, resourceNodes, workflow }: {
   agent: AgentResourceNode
   agents: AgentResourceNode[]
   edges: WorkflowEdge[]
@@ -116,7 +115,6 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
   onAddDelegation: (sourceAgentID: string, targetAgentID: string) => void
   onRemoveEdge: (edgeID: string) => void
   onSelectNode: (nodeID: string) => void
-  readOnly: boolean
   resourceNodes: Array<WorkflowNode & { type: `resource.${string}`; data: ResourceNodeData }>
   workflow: WorkflowV1
 }) {
@@ -160,10 +158,10 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
           {primaryLinks.map(({ edge, node }) => (
             <div className="flex min-w-0 items-center gap-1.5" key={edge.id}>
               <button className="min-w-0 flex-1 truncate text-left text-xs hover:underline" onClick={() => onSelectNode(node.id)} type="button">{resourceName(node)}</button>
-               <Button aria-label={`解除 ${resourceName(node)} primary link`} disabled={readOnly} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
+              <Button aria-label={`解除 ${resourceName(node)} primary link`} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
             </div>
           ))}
-          <select aria-label={`新增 ${resourceName(agent)} primary link`} className="workflow-select h-8" disabled={readOnly} onChange={(event) => { if (event.target.value) onAddPrimaryLink(agent.id, event.target.value) }} value="">
+          <select aria-label={`新增 ${resourceName(agent)} primary link`} className="workflow-select h-8" onChange={(event) => { if (event.target.value) onAddPrimaryLink(agent.id, event.target.value) }} value="">
             <option value="">新增 primary Agent...</option>
             {availablePrimaryLinks.map((candidate) => <option key={candidate.id} value={candidate.id}>{resourceName(candidate)}</option>)}
           </select>
@@ -175,11 +173,11 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
         {delegations.map(({ edge, node }) => (
           <div className="flex min-w-0 items-center gap-1.5" key={edge.id}>
             <button className="min-w-0 flex-1 truncate text-left text-xs hover:underline" onClick={() => onSelectNode(node.id)} type="button">{resourceName(node)}</button>
-             <Button aria-label={`解除 ${resourceName(node)} delegation`} disabled={readOnly} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
+            <Button aria-label={`解除 ${resourceName(node)} delegation`} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
           </div>
         ))}
         {delegations.length === 0 && <span className="text-muted-foreground text-xs">未配置</span>}
-        <select aria-label={`新增 ${resourceName(agent)} delegation`} className="workflow-select h-8" disabled={readOnly || role === "unresolved" || agent.data.mode === "reference"} onChange={(event) => { if (event.target.value) onAddDelegation(agent.id, event.target.value) }} value="">
+        <select aria-label={`新增 ${resourceName(agent)} delegation`} className="workflow-select h-8" disabled={role === "unresolved" || agent.data.mode === "reference"} onChange={(event) => { if (event.target.value) onAddDelegation(agent.id, event.target.value) }} value="">
           <option value="">新增 delegated Agent...</option>
           {availableDelegates.map((candidate) => <option key={candidate.id} value={candidate.id}>{resourceName(candidate)}</option>)}
         </select>
@@ -200,14 +198,14 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
                     {connected.map(({ edge, node }) => (
                       <div className="flex min-w-0 items-center gap-1.5" key={edge.id}>
                         <button className="min-w-0 flex-1 truncate text-left text-xs hover:underline" onClick={() => onSelectNode(node.id)} type="button">{resourceName(node)}</button>
-                         <Button aria-label={`解除 ${resourceName(node)} capability`} disabled={readOnly} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
+                        <Button aria-label={`解除 ${resourceName(node)} capability`} onClick={() => onRemoveEdge(edge.id)} size="icon-xs" variant="ghost"><UnlinkIcon aria-hidden="true" /></Button>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             </div>
-            <select aria-label={`新增 ${meta.label} 到 ${resourceName(agent)}`} className="workflow-select h-8" disabled={readOnly} onChange={(event) => { if (event.target.value) onAddCapability(agent.id, event.target.value) }} value="">
+            <select aria-label={`新增 ${meta.label} 到 ${resourceName(agent)}`} className="workflow-select h-8" onChange={(event) => { if (event.target.value) onAddCapability(agent.id, event.target.value) }} value="">
               <option value="">新增 {meta.label}...</option>
               {available.map((node) => <option key={node.id} value={node.id}>{resourceName(node)}</option>)}
             </select>
@@ -218,12 +216,12 @@ function AgentRelationshipCard({ agent, agents, edges, onAddCapability, onAddPri
   )
 }
 
-function EmptyState({ onOpenPalette, readOnly }: { onOpenPalette: () => void; readOnly: boolean }) {
+function EmptyState({ onOpenPalette }: { onOpenPalette: () => void }) {
   return (
     <div className="grid gap-3 rounded-xl border border-dashed border-border px-4 py-8 text-center">
       <CircleAlertIcon aria-hidden="true" className="mx-auto size-5 text-muted-foreground" />
       <div><p className="font-medium text-sm">尚未建立 Agent App</p><p className="mt-1 text-muted-foreground text-xs leading-5">從節點面板建立 Command 與 Agent，不需要先編輯 JSON。</p></div>
-      <Button disabled={readOnly} onClick={onOpenPalette} size="sm" variant="outline"><PlusIcon aria-hidden="true" />開啟節點面板</Button>
+      <Button onClick={onOpenPalette} size="sm" variant="outline"><PlusIcon aria-hidden="true" />開啟節點面板</Button>
     </div>
   )
 }

@@ -58,7 +58,7 @@ export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, onImpor
   const [scope, setScope] = useState<"all" | "project" | "global">("all")
   const firstNodeIsCommand = nodes[0]?.type === "resource.command"
   const items = catalog
-    ? buildPaletteItems(catalog.resources).map((item) => ({ ...item, disabled: item.disabled || protectedWorkflow || (!firstNodeIsCommand && item.type !== "resource.command"), readOnly: protectedWorkflow }))
+    ? buildPaletteItems(catalog.resources).map((item) => ({ ...item, disabled: item.disabled || (!firstNodeIsCommand && item.type !== "resource.command") }))
     : []
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-Hant")
   const filteredItems = items.filter((item) => {
@@ -82,7 +82,7 @@ export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, onImpor
       <div className="grid gap-3 border-border border-b p-4">
         <div>
           <h2 className="font-semibold text-sm" id="workflow-palette-title">新增節點</h2>
-          <p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "系統預設 Workflow 為唯讀，只能由開發者修改 source definition。" : !firstNodeIsCommand ? "請先建立 Command；它必須是 workflow.nodes[0]。" : "選取既有資源，或建立 managed draft 後在畫布配置。"}</p>
+          <p className="mt-0.5 text-muted-foreground text-xs">{!firstNodeIsCommand ? "請先建立 Command；它必須是 workflow.nodes[0]。" : protectedWorkflow ? "預設 Workflow 可以編輯節點與資源，但不能刪除整個 Workflow。" : "選取既有資源，或建立 managed draft 後在畫布配置。"}</p>
         </div>
         <div className="relative">
           <SearchIcon aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 z-10 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -116,7 +116,7 @@ export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, onImpor
                   const Icon = TYPE_ICONS[item.type]
                   return (
                     <button
-                       aria-label={`${item.readOnly ? "唯讀" : item.disabled ? "尚未支援" : item.action === "import-skill" ? "匯入" : "新增"} ${item.label}`}
+                       aria-label={`${item.disabled ? "尚未支援" : item.action === "import-skill" ? "匯入" : "新增"} ${item.label}`}
                       className="group flex min-h-14 w-full items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left outline-none transition-colors hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-55"
                       disabled={item.disabled}
                        draggable={!item.disabled && !item.action}
@@ -133,7 +133,7 @@ export function WorkflowPalette({ catalog, error, loading, nodes, onAdd, onImpor
                           <strong className="truncate font-medium text-xs">{item.label}</strong>
                            {!item.resource && item.action === "import-skill" && <Badge size="sm" variant="info"><UploadCloudIcon aria-hidden="true" />匯入</Badge>}
                            {!item.resource && !item.action && item.resourceMode === "managed" && <Badge size="sm" variant="outline">建立</Badge>}
-                          {item.readOnly ? <Badge size="sm" variant="secondary">唯讀</Badge> : item.disabled && <Badge size="sm" variant="secondary">未來</Badge>}
+                          {item.disabled && <Badge size="sm" variant="secondary">未來</Badge>}
                           {item.resource?.inherited && <Badge size="sm" variant="info">繼承</Badge>}
                         </span>
                         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">

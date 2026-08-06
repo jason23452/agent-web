@@ -6,11 +6,8 @@ import { Button } from "@/shared/components/ui/button"
 import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "@/shared/components/ui/dialog"
 import { Textarea } from "@/shared/components/ui/textarea"
 import { getResourceWriterWorkflowID, runWorkflowSystemCommand } from "@/features/workflows/api/workflowTestChat"
-import { WorkflowAiRuntimeSelector } from "@/features/workflows/components/WorkflowAiRuntimeSelector"
-import { useWorkflowAiRuntimeSelection } from "@/features/workflows/hooks/useWorkflowAiRuntimeSelection"
 import type { ResourceNodeData, WorkflowNode, WorkflowV1 } from "@/features/workflows/types"
 import { getWorkflowNodeTitle } from "@/features/workflows/workflowUtils"
-import type { ModelOption } from "@/shared/types/workspace"
 
 export type PlannedResource = {
   name?: string
@@ -19,8 +16,7 @@ export type PlannedResource = {
   config?: Record<string, unknown>
 }
 
-export function WorkflowResourcePlannerDialog({ modelOptions = [], onApplyResource, onOpenChange, open, targetNode, workflow, workspace }: {
-  modelOptions?: ModelOption[]
+export function WorkflowResourcePlannerDialog({ onApplyResource, onOpenChange, open, targetNode, workflow, workspace }: {
   onApplyResource: (resource: PlannedResource) => void
   onOpenChange: (open: boolean) => void
   open: boolean
@@ -37,7 +33,6 @@ export function WorkflowResourcePlannerDialog({ modelOptions = [], onApplyResour
   const resourceType = targetNode?.type.replace("resource.", "") ?? "resource"
   const workflowID = getResourceWriterWorkflowID(resourceType)
   const workflowCommand = workflowID?.replace(/^workflow-/, "") ?? "resource-writer"
-  const runtimeSelection = useWorkflowAiRuntimeSelection(modelOptions)
 
   useEffect(() => {
     if (!open) controllerRef.current?.abort()
@@ -65,12 +60,7 @@ export function WorkflowResourcePlannerDialog({ modelOptions = [], onApplyResour
       workflow,
     }
     try {
-      const response = await runWorkflowSystemCommand(workflowID, input, {
-        model: runtimeSelection.model,
-        signal: controller.signal,
-        variant: runtimeSelection.variant,
-        workspace,
-      })
+      const response = await runWorkflowSystemCommand(workflowID, input, controller.signal, workspace)
       if (controller.signal.aborted) return
       setResult(response.text)
       const parsed = parsePlannerResult(response.text)
@@ -101,9 +91,7 @@ export function WorkflowResourcePlannerDialog({ modelOptions = [], onApplyResour
         </DialogHeader>
         <DialogPanel className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6" scrollFade={false}>
           <div className="mx-auto grid w-full max-w-3xl gap-4">
-               <label className="grid gap-1.5 text-muted-foreground text-xs">使用者需求<Textarea aria-label={`${resourceType} Writer 使用者需求`} className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} placeholder="輸入這個 target resource 要完成的工作與限制。" value={request} /></label>
-              <WorkflowAiRuntimeSelector disabled={busy} modelOptions={modelOptions} onModelChange={runtimeSelection.setSelectedModelKey} onVariantChange={runtimeSelection.setSelectedVariant} selectedModelKey={runtimeSelection.selectedModelKey} selectedVariant={runtimeSelection.selectedVariant} thinkingVariants={runtimeSelection.thinkingVariants} />
-
+              <label className="grid gap-1.5 text-muted-foreground text-xs">使用者需求<Textarea aria-label={`${resourceType} Writer 使用者需求`} className="min-h-24" disabled={busy} onChange={(event) => setRequest(event.target.value)} placeholder="輸入這個 target resource 要完成的工作與限制。" value={request} /></label>
              <Button disabled={!targetNode || !workflowID || !request.trim()} loading={busy} onClick={() => void planResource()}><SparklesIcon aria-hidden="true" />{busy ? `正在撰寫 ${resourceType}...` : `執行 /${workflowCommand}`}</Button>
             {busy && <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-muted-foreground text-xs" role="status"><CircleDashedIcon aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />Coordinator 規劃完成後會委派專用 writer 產出資源 JSON。</div>}
             {error && <div className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{error}</div>}
