@@ -3,6 +3,7 @@ import type { WorkflowScope, WorkflowTestChatMessage, WorkflowTestChatSession, W
 
 export const PROMPT_WRITER_WORKFLOW_ID = "workflow-node-prompt-writer"
 export const WORKFLOW_GENERATOR_WORKFLOW_ID = "workflow-generator"
+export const WORKFLOW_UPDATER_WORKFLOW_ID = "workflow-updater"
 export const FILE_PREVIEW_EDITOR_WORKFLOW_ID = "workflow-file-preview-editor"
 
 export const RESOURCE_WRITER_WORKFLOW_IDS = {
@@ -16,6 +17,11 @@ export const RESOURCE_WRITER_WORKFLOW_IDS = {
 
 export type ResourceWriterType = keyof typeof RESOURCE_WRITER_WORKFLOW_IDS
 export type WorkflowSystemCommandInput = string | Record<string, unknown>
+export type WorkflowUpdaterInput = {
+  project: string
+  request: string
+  workflow: WorkflowV1
+}
 
 export function getResourceWriterWorkflowID(resourceType: string) {
   return resourceType in RESOURCE_WRITER_WORKFLOW_IDS
@@ -58,7 +64,7 @@ export function sendWorkflowTestChatMessage(
 
 export async function runWorkflowSystemCommand(workflowID: string, input: WorkflowSystemCommandInput, signal?: AbortSignal, workspace?: string) {
   const session = await createWorkflowTestChatSession(workflowID, { scope: "global" }, signal, workspace)
-  const text = typeof input === "string" ? input : JSON.stringify(input, null, 2)
+  const text = typeof input === "string" ? input : JSON.stringify(input)
   return sendWorkflowTestChatMessage(workflowID, session.sessionID, { scope: "global", text }, signal, workspace)
 }
 
@@ -68,4 +74,13 @@ export async function runPromptWriterForNode(workflow: WorkflowV1, targetNodeID:
     request: request.trim(),
     workflow,
   }, signal, workspace ?? workflow.project)
+}
+
+export function runWorkflowUpdater(input: WorkflowUpdaterInput, signal?: AbortSignal, workspace?: string) {
+  const project = input.project.trim()
+  return runWorkflowSystemCommand(WORKFLOW_UPDATER_WORKFLOW_ID, {
+    project,
+    request: input.request.trim(),
+    workflow: input.workflow,
+  }, signal, workspace ?? project)
 }

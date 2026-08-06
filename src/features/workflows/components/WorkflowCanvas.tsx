@@ -31,7 +31,7 @@ type CanvasCallbacks = {
   onLockToggle: (nodeID: string) => void
 }
 
-function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, currentAgentID: string | null, callbacks: CanvasCallbacks): WorkflowCanvasNode[] {
+function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, currentAgentID: string | null, callbacks: CanvasCallbacks, readOnly: boolean): WorkflowCanvasNode[] {
   return nodes.map((node) => ({
     id: node.id,
     type: "workflow-node",
@@ -40,6 +40,7 @@ function buildCanvasNodes(nodes: WorkflowNode[], selectedNodeID: string | null, 
     data: {
       workflowNode: node,
       currentAgentID,
+      readOnly,
       onDelete: callbacks.onDelete,
       onDuplicate: callbacks.onDuplicate,
       onLockToggle: callbacks.onLockToggle,
@@ -52,7 +53,7 @@ function mergeCanvasNodes(current: WorkflowCanvasNode[], next: WorkflowCanvasNod
   return next.map((node) => {
     const previous = currentByID.get(node.id)
     if (!previous) return node
-    if (previous.data.workflowNode === node.data.workflowNode && previous.data.currentAgentID === node.data.currentAgentID && previous.data.onDelete === node.data.onDelete && previous.data.onDuplicate === node.data.onDuplicate && previous.data.onLockToggle === node.data.onLockToggle && previous.selected === node.selected && previous.position.x === node.position.x && previous.position.y === node.position.y) return previous
+    if (previous.data.workflowNode === node.data.workflowNode && previous.data.currentAgentID === node.data.currentAgentID && previous.data.readOnly === node.data.readOnly && previous.data.onDelete === node.data.onDelete && previous.data.onDuplicate === node.data.onDuplicate && previous.data.onLockToggle === node.data.onLockToggle && previous.selected === node.selected && previous.position.x === node.position.x && previous.position.y === node.position.y) return previous
     return {
       ...node,
       width: previous.width,
@@ -117,6 +118,7 @@ type WorkflowCanvasProps = {
   onSelectEdge: (edgeID: string | null) => void
   onSelectNode: (nodeID: string | null) => void
   currentAgentID: string | null
+  readOnly: boolean
 }
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
@@ -143,6 +145,7 @@ function WorkflowCanvasInner({
   onSelectEdge,
   onSelectNode,
   currentAgentID,
+  readOnly,
 }: WorkflowCanvasProps) {
   const [instance, setInstance] = useState<ReactFlowInstance<WorkflowCanvasNode, WorkflowCanvasEdge> | null>(null)
   const [connectionFeedback, setConnectionFeedback] = useState("")
@@ -153,13 +156,13 @@ function WorkflowCanvasInner({
     onLockToggle: onLockNode,
   }), [onDeleteNodes, onDuplicateNode, onLockNode])
 
-  const [canvasNodes, setCanvasNodes] = useState<WorkflowCanvasNode[]>(() => buildCanvasNodes(nodes, selectedNodeID, currentAgentID, canvasCallbacks))
+  const [canvasNodes, setCanvasNodes] = useState<WorkflowCanvasNode[]>(() => buildCanvasNodes(nodes, selectedNodeID, currentAgentID, canvasCallbacks, readOnly))
   const [canvasEdges, setCanvasEdges] = useState<WorkflowCanvasEdge[]>(() => buildCanvasEdges(edges, nodes, currentAgentID, selectedEdgeID))
 
   useEffect(() => {
-    const nextNodes = buildCanvasNodes(nodes, selectedNodeID, currentAgentID, canvasCallbacks)
+    const nextNodes = buildCanvasNodes(nodes, selectedNodeID, currentAgentID, canvasCallbacks, readOnly)
     startTransition(() => setCanvasNodes((current) => mergeCanvasNodes(current, nextNodes)))
-  }, [canvasCallbacks, currentAgentID, nodes, selectedNodeID])
+  }, [canvasCallbacks, currentAgentID, nodes, readOnly, selectedNodeID])
 
   useEffect(() => {
     const nextEdges = buildCanvasEdges(edges, nodes, currentAgentID, selectedEdgeID)
@@ -200,6 +203,7 @@ function WorkflowCanvasInner({
   }
 
   function connect(connection: Connection) {
+    if (readOnly) return
     if (!validateConnection(connection) || !connection.source || !connection.target) return
     const kind = connectionKind(connection)
     if (!kind) return
@@ -230,7 +234,9 @@ function WorkflowCanvasInner({
   }
 
   function handleNodeChanges(changes: NodeChange<WorkflowCanvasNode>[]) {
-    setCanvasNodes((current) => applyNodeChanges(changes, current))
+    const applicable = readOnly ? changes.filter((change) => change.type === "select" || change.type === "dimensions") : changes
+    setCanvasNodes((current) => applyNodeChanges(applicable, current))
+    if (readOnly) return
     const removed = changes.filter((change) => change.type === "remove").map((change) => change.id)
     if (removed.length) onDeleteNodes(removed)
     const moved = changes.flatMap((change) =>
@@ -240,12 +246,15 @@ function WorkflowCanvasInner({
   }
 
   function handleEdgeChanges(changes: EdgeChange<WorkflowCanvasEdge>[]) {
-    setCanvasEdges((current) => applyEdgeChanges(changes, current))
+    const applicable = readOnly ? changes.filter((change) => change.type === "select") : changes
+    setCanvasEdges((current) => applyEdgeChanges(applicable, current))
+    if (readOnly) return
     const removed = changes.filter((change) => change.type === "remove").map((change) => change.id)
     if (removed.length) onDeleteEdges(removed)
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
+    if (readOnly) return
     event.preventDefault()
     const raw = event.dataTransfer.getData("application/agent-system-workflow-node")
     if (!raw || !instance) return
@@ -262,23 +271,28 @@ function WorkflowCanvasInner({
     <section aria-label="Workflow 畫布" className="relative min-h-0 min-w-0 overflow-hidden bg-muted/30">
       <ReactFlow<WorkflowCanvasNode, WorkflowCanvasEdge>
         colorMode="light"
-        deleteKeyCode={["Backspace", "Delete"]}
+        deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
         edges={canvasEdges}
         fitView
         fitViewOptions={{ maxZoom: 1, padding: 0.45 }}
         isValidConnection={validateConnection}
         minZoom={0.15}
+        nodesConnectable={!readOnly}
+        nodesDraggable={!readOnly}
         nodeTypes={nodeTypes}
         nodes={canvasNodes}
         onConnect={connect}
         onConnectEnd={() => {
+          if (readOnly) return
           if (!connectionCommittedRef.current) setConnectionFeedback("這組 handle 不相容、已存在，或會形成循環。")
         }}
         onConnectStart={() => {
+          if (readOnly) return
           connectionCommittedRef.current = false
           setConnectionFeedback("")
         }}
         onDragOver={(event) => {
+          if (readOnly) return
           event.preventDefault()
           event.dataTransfer.dropEffect = "move"
         }}
@@ -315,7 +329,7 @@ function WorkflowCanvasInner({
         </div>
         <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-border bg-background/88 px-2.5 py-2 text-muted-foreground text-xs shadow-sm backdrop-blur-sm">
           <MousePointer2Icon aria-hidden="true" className="size-3.5" />
-          單擊選取 · 雙擊開啟詳細配置 · 拉動 handle 建立連線
+          {readOnly ? "單擊選取 · 系統預設 graph 為唯讀" : "單擊選取 · 雙擊開啟詳細配置 · 拉動 handle 建立連線"}
         </div>
       </ReactFlow>
       <p aria-live="polite" className={`workflow-connection-feedback ${connectionFeedback ? "workflow-connection-feedback--visible" : ""}`}>

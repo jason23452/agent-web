@@ -22,6 +22,7 @@ import { getWorkflowNodeSummary, getWorkflowNodeTitle, isWorkflowCapabilityResou
 export type WorkflowCanvasNodeData = Record<string, unknown> & {
   workflowNode: WorkflowNode
   currentAgentID: string | null
+  readOnly: boolean
   onDelete: (nodeID: string) => void
   onDuplicate: (nodeID: string) => void
   onLockToggle: (nodeID: string) => void
@@ -75,21 +76,21 @@ export function WorkflowNodeCard({ data, selected }: NodeProps<WorkflowCanvasNod
 
       <footer className="flex items-center justify-between border-border/70 border-t px-2.5 py-1.5">
         <span className="font-mono text-[10px] text-muted-foreground">{WORKFLOW_NODE_META[node.type].category}</span>
-        <div className="nodrag nopan flex items-center gap-0.5">
+        {!data.readOnly && <div className="nodrag nopan flex items-center gap-0.5">
           <Button aria-label={`複製 ${getWorkflowNodeTitle(node)}`} onClick={() => data.onDuplicate(node.id)} size="icon-xs" variant="ghost">
             <CopyIcon aria-hidden="true" />
           </Button>
           <Button aria-label={`刪除 ${getWorkflowNodeTitle(node)}`} onClick={() => data.onDelete(node.id)} size="icon-xs" variant="ghost">
             <Trash2Icon aria-hidden="true" />
           </Button>
-        </div>
+        </div>}
       </footer>
 
-      {node.type === "resource.command" && <Handle className="workflow-handle workflow-handle--entry" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
-      {isCapabilityResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Right} style={{ top: 38 }} type="source" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--entry" id="agent" position={Position.Left} style={{ top: 28 }} type="target" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--capability" id="capability" position={Position.Left} style={{ top: 48 }} type="target" />}
-      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" position={Position.Right} style={{ top: 68 }} type="source" />}
+      {node.type === "resource.command" && <Handle className="workflow-handle workflow-handle--entry" id="capability" isConnectable={!data.readOnly} position={Position.Right} style={{ top: 38 }} type="source" />}
+      {isCapabilityResource && <Handle className="workflow-handle workflow-handle--capability" id="capability" isConnectable={!data.readOnly} position={Position.Right} style={{ top: 38 }} type="source" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--entry" id="agent" isConnectable={!data.readOnly} position={Position.Left} style={{ top: 28 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--capability" id="capability" isConnectable={!data.readOnly} position={Position.Left} style={{ top: 48 }} type="target" />}
+      {node.type === "resource.agent" && <Handle className="workflow-handle workflow-handle--delegation" id="delegation" isConnectable={!data.readOnly} position={Position.Right} style={{ top: 68 }} type="source" />}
     </article>
   )
 }

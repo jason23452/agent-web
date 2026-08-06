@@ -1,24 +1,42 @@
-import { useRef, useState, type ChangeEvent } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react"
 import { CheckCircle2Icon, ClipboardIcon, DownloadIcon, FileUpIcon, ShieldCheckIcon } from "lucide-react"
 import { Button } from "@/shared/components/ui/button"
 import type { WorkflowV1, WorkflowValidationResult } from "@/features/workflows/types"
 import { issueMessage } from "@/features/workflows/workflowUtils"
 
 type WorkflowJsonPanelProps = {
+  disabled: boolean
   workflow: WorkflowV1
-  onImport: (workflow: WorkflowV1) => void
+  onImport: (workflow: WorkflowV1) => boolean
   onValidateImport: (workflow: WorkflowV1, signal?: AbortSignal) => Promise<WorkflowValidationResult>
   protectedWorkflow: boolean
 }
 
-export function WorkflowJsonPanel({ onImport, onValidateImport, protectedWorkflow, workflow }: WorkflowJsonPanelProps) {
+export function WorkflowJsonPanel({ disabled, onImport, onValidateImport, protectedWorkflow, workflow }: WorkflowJsonPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const controllerRef = useRef<AbortController | null>(null)
+  const workflowRef = useRef(workflow)
+  const protectedRef = useRef(protectedWorkflow)
+  const disabledRef = useRef(disabled)
+  const onImportRef = useRef(onImport)
   const [notice, setNotice] = useState("")
   const [errors, setErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
   const [validating, setValidating] = useState(false)
   const json = JSON.stringify(workflow, null, 2)
+
+  useLayoutEffect(() => {
+    workflowRef.current = workflow
+    protectedRef.current = protectedWorkflow
+    disabledRef.current = disabled
+    controllerRef.current?.abort()
+  }, [disabled, protectedWorkflow, workflow])
+
+  useLayoutEffect(() => {
+    onImportRef.current = onImport
+  }, [onImport])
+
+  useEffect(() => () => controllerRef.current?.abort(), [])
 
   async function copyJson() {
     try {
@@ -43,47 +61,64 @@ export function WorkflowJsonPanel({ onImport, onValidateImport, protectedWorkflo
   async function importFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     event.target.value = ""
-    if (!file) return
-    setErrors([])
-    setWarnings([])
-    setNotice("")
-    let parsed: WorkflowV1
-    try {
-      parsed = JSON.parse(await file.text()) as WorkflowV1
-    } catch {
-      setErrors(["檔案不是有效的 JSON。"])
-      return
-    }
+    if (!file || protectedWorkflow || disabled) return
+    const baseline = workflow
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
     setValidating(true)
+    setErrors([])
+    setWarnings([])
+    setNotice("")
     try {
+      const raw = await file.text()
+      if (controller.signal.aborted) return
+      let parsed: WorkflowV1
+      try {
+        parsed = JSON.parse(raw) as WorkflowV1
+      } catch {
+        setErrors(["檔案不是有效的 JSON。"])
+        return
+      }
+      if (protectedRef.current || disabledRef.current || workflowRef.current !== baseline) {
+        setErrors(["目前 Workflow 已切換、變更或正在處理其他操作，匯入內容未套用。"])
+        return
+      }
       const result = await onValidateImport(parsed, controller.signal)
       if (controller.signal.aborted) return
+      if (protectedRef.current || disabledRef.current || workflowRef.current !== baseline) {
+        setErrors(["目前 Workflow 已在驗證期間切換、變更或開始其他操作，匯入內容未套用。"])
+        return
+      }
       setErrors(result.errors.map(issueMessage))
       setWarnings(result.warnings.map(issueMessage))
       if (!result.valid) return
-      onImport(result.workflow ?? parsed)
+      if (!onImportRef.current(result.workflow ?? parsed)) {
+        setErrors(["目前 Workflow 已變更或正在處理其他操作，匯入內容未套用。"])
+        return
+      }
       setNotice("後端驗證通過，已還原到目前畫布；請明確按下「儲存」才會保存。")
     } catch (error) {
       if (!controller.signal.aborted) setErrors([error instanceof Error ? error.message : "後端驗證失敗。"])
     } finally {
-      if (!controller.signal.aborted) setValidating(false)
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+        setValidating(false)
+      }
     }
   }
 
   return (
     <section aria-labelledby="workflow-json-title" className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
       <header className="grid gap-3 border-border border-b p-4">
-        <div><h2 className="font-semibold text-sm" id="workflow-json-title">Workflow JSON</h2><p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "預設 Workflow 可以編輯與匯入，但不能刪除整個 Workflow。" : "目前草稿可複製、下載或經 BFF 驗證後匯入。"}</p></div>
+        <div><h2 className="font-semibold text-sm" id="workflow-json-title">Workflow JSON</h2><p className="mt-0.5 text-muted-foreground text-xs">{protectedWorkflow ? "系統預設 Workflow 為唯讀，可複製或下載供檢視。" : "目前草稿可複製、下載或經 BFF 驗證後匯入。"}</p></div>
         <div className="grid grid-cols-3 gap-1.5">
           <Button onClick={() => void copyJson()} size="sm" variant="outline"><ClipboardIcon aria-hidden="true" />複製</Button>
           <Button onClick={downloadJson} size="sm" variant="outline"><DownloadIcon aria-hidden="true" />下載</Button>
-          <Button loading={validating} onClick={() => inputRef.current?.click()} size="sm" variant="outline"><FileUpIcon aria-hidden="true" />匯入</Button>
-          <input accept="application/json,.json" aria-label="匯入 Workflow JSON" className="sr-only" onChange={(event) => void importFile(event)} ref={inputRef} type="file" />
+          <Button disabled={protectedWorkflow || disabled} loading={validating} onClick={() => inputRef.current?.click()} size="sm" title={protectedWorkflow ? "系統預設 Workflow 不接受匯入覆蓋" : disabled ? "Workflow 正在處理其他操作" : undefined} variant="outline"><FileUpIcon aria-hidden="true" />匯入</Button>
+          <input accept="application/json,.json" aria-label="匯入 Workflow JSON" className="sr-only" disabled={protectedWorkflow || disabled || validating} onChange={(event) => void importFile(event)} ref={inputRef} type="file" />
         </div>
-        <p className="flex items-start gap-1.5 rounded-lg bg-info/8 px-3 py-2 text-info-foreground text-[11px] leading-4"><ShieldCheckIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{protectedWorkflow ? "預設 Workflow 可修改並只會同步到 workflow-test；整個 Workflow 不可刪除。" : "匯入與儲存都不會修改 OpenCode。只有明確發布才會同步資源。"}</p>
+        <p className="flex items-start gap-1.5 rounded-lg bg-info/8 px-3 py-2 text-info-foreground text-[11px] leading-4"><ShieldCheckIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{protectedWorkflow ? "系統預設 Workflow 只能由 backend source definitions 與 bootstrap 更新，並限制於 workflow-test。" : "匯入與儲存都不會修改 OpenCode。只有明確發布才會同步資源。"}</p>
         {notice && <p aria-live="polite" className="flex items-start gap-1.5 rounded-lg bg-success/8 px-3 py-2 text-success-foreground text-xs"><CheckCircle2Icon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />{notice}</p>}
         {errors.length > 0 && <ul className="grid gap-1 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-destructive-foreground text-xs" role="alert">{errors.map((error) => <li key={error}>{error}</li>)}</ul>}
         {warnings.length > 0 && <ul className="grid gap-1 rounded-lg border border-warning/30 bg-warning/8 px-3 py-2 text-warning-foreground text-xs">{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}

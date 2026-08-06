@@ -40,18 +40,19 @@ type WorkflowInspectorProps = {
   onTargetChange: (target: WorkflowTarget) => void
   onUpdateEdge: (edge: WorkflowEdge) => void
   onUpdateNode: (node: WorkflowNode) => void
+  readOnly: boolean
 }
 
 export function WorkflowInspector(props: WorkflowInspectorProps) {
-  if (props.selectedNode) return <NodeInspector key={props.selectedNode.id} node={props.selectedNode} {...props} />
-  if (props.selectedEdge) return <EdgeInspector edge={props.selectedEdge} {...props} />
+  if (props.selectedNode) return <fieldset aria-label={props.readOnly ? "唯讀節點檢查器" : undefined} className="m-0 min-h-0 min-w-0 border-0 p-0" disabled={props.readOnly}><NodeInspector key={props.selectedNode.id} node={props.selectedNode} {...props} /></fieldset>
+  if (props.selectedEdge) return <fieldset aria-label={props.readOnly ? "唯讀連線檢查器" : undefined} className="m-0 min-h-0 min-w-0 border-0 p-0" disabled={props.readOnly}><EdgeInspector edge={props.selectedEdge} {...props} /></fieldset>
 
   return (
     <section className="grid place-items-center gap-3 px-7 py-16 text-center" aria-label="檢查器空白狀態">
       <span className="grid size-11 place-items-center rounded-2xl border border-border bg-muted"><Link2Icon aria-hidden="true" className="size-5" /></span>
       <div>
         <h2 className="font-semibold text-sm">選取節點或連線</h2>
-        <p className="mt-1 max-w-56 text-muted-foreground text-xs leading-5">在畫布上選取 resource 或 capability relationship 後，可編輯設定與 scope。</p>
+        <p className="mt-1 max-w-56 text-muted-foreground text-xs leading-5">{props.readOnly ? "在畫布上選取 resource 或 relationship 後，可查看唯讀設定。" : "在畫布上選取 resource 或 capability relationship 後，可編輯設定與 scope。"}</p>
       </div>
     </section>
   )
